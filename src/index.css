@@ -1,0 +1,256 @@
+@import 'tailwindcss';
+
+/* ── Bundled typefaces ──────────────────────────────────────────────
+   The app is offline-first and its CSP allows no CDN, so fonts ship with
+   the build. Vite inlines these as data: URIs (see vite.config.mts) so they
+   resolve under file:// in the packaged Electron app.
+
+   Declared by hand rather than importing @fontsource's stylesheets: those
+   also declare a legacy .woff source for every face, which doubled the
+   inlined payload. Chromium 132 (Electron 34) has native woff2.
+   Latin subsets only — the UI is English.
+   ------------------------------------------------------------------ */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2') format('woff2');
+}
+
+@theme {
+  /* ── Typefaces ────────────────────────────────────────────────────
+     Before this the app set no font-family at all, so every machine
+     rendered whatever it happened to have installed.
+     ---------------------------------------------------------------- */
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  /* ── UI type scale (absolute px) ──────────────────────────────────
+     `html` still carries font-size: clamp(10px … 15px), which makes every
+     rem-based Tailwind size shrink with the window — at 1366x768 `text-xs`
+     computes to 9.57px, smaller than the 165 hard-coded `text-[10px]`
+     spots, so the hierarchy inverts.
+
+     These tokens are absolute, so a screen built on them is immune to that.
+     New/redesigned screens use `text-ui-*`; the old rem sizes stay put until
+     every screen has moved over, at which point the clamp can go.
+     ---------------------------------------------------------------- */
+  --text-ui-2xs: 10px;
+  --text-ui-xs: 11px;
+  --text-ui-sm: 12px;
+  --text-ui-base: 13px;
+  --text-ui-lg: 15px;
+  --text-ui-xl: 16px;
+  --text-ui-2xl: 21px;
+  --text-ui-3xl: 25px;
+  --text-ui-4xl: 33px;
+  /* ── Brand palette ────────────────────────────────────────────────
+     Each ramp is exposed as Tailwind utilities automatically, e.g.
+     bg-jungle-teal-600  text-muted-teal-800  border-azure-mist-200
+     ---------------------------------------------------------------- */
+
+  /* Jungle Teal — desaturated green-grey; primary surfaces & chrome */
+  --color-jungle-teal-50: #f0f4f3;
+  --color-jungle-teal-100: #e2e9e6;
+  --color-jungle-teal-200: #c4d4cd;
+  --color-jungle-teal-300: #a7beb4;
+  --color-jungle-teal-400: #8aa89b;
+  --color-jungle-teal-500: #6c9382;
+  --color-jungle-teal-600: #577568;
+  --color-jungle-teal-700: #41584e;
+  --color-jungle-teal-800: #2b3b34;
+  --color-jungle-teal-900: #161d1a;
+  --color-jungle-teal-950: #0f1512;
+
+  /* Muted Teal — slightly greener sibling; secondary actions */
+  --color-muted-teal-50: #f0f5f2;
+  --color-muted-teal-100: #e0ebe5;
+  --color-muted-teal-200: #c1d7cb;
+  --color-muted-teal-300: #a2c3b1;
+  --color-muted-teal-400: #84ae97;
+  --color-muted-teal-500: #659a7d;
+  --color-muted-teal-600: #517b64;
+  --color-muted-teal-700: #3c5d4b;
+  --color-muted-teal-800: #283e32;
+  --color-muted-teal-900: #141f19;
+  --color-muted-teal-950: #0e1611;
+
+  /* Frozen Water — cool blue-green; informational states */
+  --color-frozen-water-50: #eff6f4;
+  --color-frozen-water-100: #deedea;
+  --color-frozen-water-200: #bddbd4;
+  --color-frozen-water-300: #9cc9bf;
+  --color-frozen-water-400: #7bb7aa;
+  --color-frozen-water-500: #5ba494;
+  --color-frozen-water-600: #488477;
+  --color-frozen-water-700: #366359;
+  --color-frozen-water-800: #24423b;
+  --color-frozen-water-900: #12211e;
+  --color-frozen-water-950: #0d1715;
+
+  /* Azure Mist — the bluest ramp; links, focus rings, highlights */
+  --color-azure-mist-50: #eef6f6;
+  --color-azure-mist-100: #deeded;
+  --color-azure-mist-200: #bcdcdc;
+  --color-azure-mist-300: #9bcaca;
+  --color-azure-mist-400: #79b9b9;
+  --color-azure-mist-500: #58a7a7;
+  --color-azure-mist-600: #468686;
+  --color-azure-mist-700: #356464;
+  --color-azure-mist-800: #234343;
+  --color-azure-mist-900: #122121;
+  --color-azure-mist-950: #0c1717;
+
+  /* Mint Cream — high-chroma neon green. Accent only: success pings,
+     active-state dots, small badges. Not for large fills or body text. */
+  --color-mint-cream-50: #e5ffeb;
+  --color-mint-cream-100: #ccffd7;
+  --color-mint-cream-200: #99ffaf;
+  --color-mint-cream-300: #66ff87;
+  --color-mint-cream-400: #33ff5f;
+  --color-mint-cream-500: #00ff37;
+  --color-mint-cream-600: #00cc2c;
+  --color-mint-cream-700: #009921;
+  --color-mint-cream-800: #006616;
+  --color-mint-cream-900: #00330b;
+  --color-mint-cream-950: #002408;
+
+  /* ── Role mapping ─────────────────────────────────────────────────
+     surfaces / chrome / body text ... jungle-teal
+     primary action, focus, links .... azure-mist   (600+ for fills)
+     success, paid, positive money ... muted-teal   (700+ for text)
+     informational, neutral metrics .. frozen-water (700+ for text)
+     live / active indicator only .... mint-cream   (never text or fill)
+
+     Deliberately NOT from this palette — it has no warm hues:
+     overdue / destructive ........... rose, red
+     low stock / warning ............. amber
+     bKash / Nagad / Card ............ pink, orange, blue (brand identity)
+
+     Dropped in the v4 migration: --color-brand-* and --color-slate-850
+     were never referenced; --color-slate-950 is now jungle-teal-950.
+     ---------------------------------------------------------------- */
+}
+
+/*
+  Tailwind v4 changed the default border color to `currentcolor`, which would
+  otherwise recolor every border that has no explicit color utility.
+
+  Pinned to jungle-teal-100 rather than the v3 default gray-200: it sits at
+  almost the same lightness (#e2e9e6 vs #e5e7eb), so border weight is
+  unchanged, but it carries the palette's hue instead of a neutral grey.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-jungle-teal-100, currentcolor);
+  }
+}
+
+@layer base {
+  html {
+    /* Was clamp(10px, 0.72vw + 0.38vh, 15px). That made every rem-based size
+       shrink with the window — at the 1280x800 window this app actually opens
+       at (electron/main.ts) the root resolved to 12.26px, so rem spacing sat at
+       82% of its intended size while absolute px type stayed at 100%, and text
+       looked oversized inside its own containers. It also inverted the type
+       hierarchy: `text-xs` computed smaller than the hard-coded `text-[10px]`.
+
+       A fixed root makes rem and px agree and renders identically at every
+       window size, which is what a till needs. 13px is chosen so the 1280-wide
+       window shows the same proportions the design was drawn at on 1440. */
+    font-size: 13px;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    @apply bg-jungle-teal-100 text-jungle-teal-900 font-sans antialiased selection:bg-azure-mist-100 selection:text-azure-mist-900;
+    height: 100%;
+    overflow: hidden;
+  }
+}
+
+/* Custom crisp scrollbars for modern light desktop UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-jungle-teal-100);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-jungle-teal-300);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-jungle-teal-400);
+}
+
+/* Horizontal chip rows scroll but should not show a bar under the chips */
+.no-scrollbar::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Disable number input arrows / spinners */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

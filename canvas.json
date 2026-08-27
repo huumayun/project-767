@@ -1,0 +1,48 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Current direction" },
+    { "id": "page-2", "name": "Earlier directions" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "POS Terminal", "page": "page-1" },
+
+    { "file": "DirectionA.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Direction A — Persistent Rail", "page": "page-2" },
+    { "file": "DirectionB.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 900, "title": "Direction B — One Stage at a Time", "page": "page-2" },
+    { "file": "DirectionC.dc.html", "x": 3120, "y": 0, "w": 1440, "h": 900, "title": "Direction C — Command Bar + Docked Total", "page": "page-2" }
+  ],
+  "annotations": [
+    {
+      "id": "note-sidebar",
+      "x": 0,
+      "y": -300,
+      "w": 660,
+      "page": "page-1",
+      "text": "COLLAPSIBLE SIDEBAR — click the menu button\n\nThe hamburger sits in the top bar, not inside the rail, so it stays reachable when the rail is closed. Click it and the sidebar animates between 216px and 64px over 240ms.\n\nThis one is live, not a picture — try it.\n\nWhat happens on collapse: labels and count badges fade out over 160ms while the rail width animates, and each nav row shrinks from 192px to 40px so the active highlight stays a neat square instead of running off the edge. Icons never move — they sit at a fixed 11px inset in both states, so the eye has a stable anchor.\n\nCollapsed gives the POS area another 152px, which is roughly two more characters of part name in the results list."
+    },
+    {
+      "id": "note-typeface",
+      "x": 700,
+      "y": -300,
+      "w": 480,
+      "page": "page-1",
+      "text": "TYPEFACE — IBM Plex Sans\n\nEnglish only now, so the Bengali face is gone. IBM Plex Sans has an industrial character that suits a parts shop, and pairs natively with IBM Plex Mono, which carries every figure here.\n\nThat pairing matters more than it looks: prices, barcodes, stock counts and quantities all sit in the mono face, so digits align in columns and a 1 never gets read as a 7.\n\nSay the word if you want to see alternatives."
+    },
+    {
+      "id": "note-categories",
+      "x": 1220,
+      "y": -300,
+      "w": 620,
+      "page": "page-1",
+      "text": "THE 100+ CATEGORY ANSWER (unchanged)\n\nCategories are flat in your schema — {id, name}, no parent_id — so a real tree needs a database change. What is here works without one:\n\n1. Filter box above the category list. Three letters cuts 124 to a handful.\n2. Recent pinned on top.\n3. Counts per row, so staff skip the empty ones.\n4. Brand chips as a second axis — brand already exists on products.\n\nThe middle is a list rather than a tile grid because products have no image column. Tiles with no pictures are text in boxes."
+    },
+    {
+      "id": "note-superseded",
+      "x": 0,
+      "y": -190,
+      "w": 720,
+      "page": "page-2",
+      "text": "SUPERSEDED — reference only.\n\nThese are the first three directions. All of them are out of date twice over: they put the cart in the middle instead of the right rail, and they are still in Bangla with the rejected Hind Siliguri face.\n\nOne thing here is still worth a look. The payment treatment differs across the three — always-visible rail in A, full takeover in B, docked bar in C — and that choice is still open in the current direction, which uses A's approach."
+    }
+  ],
+  "launch": { "view": "canvas", "page": "page-1" }
+}

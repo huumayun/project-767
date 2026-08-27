@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Production builds & artifacts
+dist/
+dist-electron/
+release/
+out/
+
+# Local databases & logs
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# IDE & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Scratch testing scripts
+scratch/

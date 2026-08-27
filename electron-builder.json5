@@ -1,0 +1,41 @@
+{
+  "appId": "com.mechanicalshop.pos",
+  "productName": "Mechanical Shop POS",
+  "copyright": "Copyright © 2026 Mechanical Shop POS",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*"
+  ],
+  "asar": true,
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "signAndEditExecutable": false,
+    "sign": null,
+    "forceCodeSigning": false
+  },
+
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Mechanical Shop POS",
+    "uninstallDisplayName": "Mechanical Shop POS"
+  },
+  "portable": {
+    "artifactName": "${productName}-Portable-${version}.${ext}"
+  }
+}

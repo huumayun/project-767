@@ -1,0 +1,421 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #356464; } a:hover { color: #234343; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; display: flex; background: #e2e9e6; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #161d1a; font-size: 15px;">
+
+  <!-- ============ COLLAPSIBLE SIDEBAR ============ -->
+  <div style="width: {{nav.railWidth}}; flex-shrink: 0; background: #f0f4f3; border-right: 1px solid #c4d4cd; display: flex; flex-direction: column; overflow: hidden; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+
+    <div style="height: 62px; flex-shrink: 0; border-bottom: 1px solid #c4d4cd; display: flex; align-items: center; padding: 0 14px; gap: 11px;">
+      <svg width="32" height="32" viewBox="0 0 48 48" fill="none" style="flex-shrink: 0;">
+        <path d="M24 4L40 13.24V31.76L24 41L8 31.76V13.24L24 4Z" fill="#517b64" fill-opacity="0.12"/>
+        <path d="M24 6L38 14.08V30.92L24 39L10 30.92V14.08L24 6Z" stroke="#283e32" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M24 6V22.5M38 14.08L24 22.5M10 14.08L24 22.5" stroke="#283e32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="24" cy="22.5" r="3.5" fill="#283e32"/>
+      </svg>
+      <div style="min-width: 0; white-space: nowrap; opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">
+        <div style="font-size: 14px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em;">Mechanical Shop</div>
+        <div style="font-size: 11px; color: #577568; font-family: 'IBM Plex Mono', monospace;">v1.0</div>
+      </div>
+    </div>
+
+    <div style="flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 2px; font-size: 14px;">
+
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 11px; border-radius: 10px; color: #41584e; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink: 0;"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span style="opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">Dashboard</span>
+      </div>
+
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 11px; border-radius: 10px; background: #283e32; color: #ffffff; font-weight: 600; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink: 0;"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.6L21 7H6"/></svg>
+        <span style="opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">POS Terminal</span>
+      </div>
+
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 11px; padding-right: 10px; border-radius: 10px; color: #41584e; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink: 0;"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+        <span style="opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">Customers</span>
+        <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; border-radius: 999px; padding: 1px 7px; opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">7</span>
+      </div>
+
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 11px; padding-right: 10px; border-radius: 10px; color: #41584e; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/></svg>
+        <span style="opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">Products</span>
+        <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; background: #ffe4e6; color: #be123c; border: 1px solid #fda4af; border-radius: 999px; padding: 1px 7px; opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">3</span>
+      </div>
+
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 11px; border-radius: 10px; color: #41584e; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M3 17V7h11v10H3zM14 10h4l3 3v4h-7"/><circle cx="7" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>
+        <span style="opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">Suppliers</span>
+      </div>
+
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 11px; border-radius: 10px; color: #41584e; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink: 0;"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <span style="opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">Reports</span>
+      </div>
+
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 11px; border-radius: 10px; color: #41584e; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M6 2h12l2 5H4l2-5z"/><path d="M4 7v13h16V7"/><path d="M9.5 11h5"/></svg>
+        <span style="opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">Sales</span>
+      </div>
+
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 11px; border-radius: 10px; color: #41584e; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+        <span style="opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">Settings</span>
+      </div>
+
+    </div>
+
+    <div style="flex-shrink: 0; padding: 8px; border-top: 1px solid #c4d4cd;">
+      <div style="width: {{nav.itemWidth}}; height: 40px; display: flex; align-items: center; gap: 11px; padding-left: 7px; padding-right: 10px; border-radius: 10px; overflow: hidden; white-space: nowrap; transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);">
+        <div style="width: 28px; height: 28px; border-radius: 999px; background: #e0ebe5; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#283e32" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+        </div>
+        <span style="font-size: 13px; font-weight: 600; opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;">Rafiq · Staff</span>
+        <span style="margin-left: auto; width: 7px; height: 7px; border-radius: 999px; background: #3c5d4b; flex-shrink: 0; opacity: {{nav.labelOpacity}}; transition: opacity 160ms linear;"></span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ POS AREA ============ -->
+  <div style="flex: 1; min-width: 0; padding: 14px; display: flex; flex-direction: column; gap: 12px;">
+
+    <!-- Menu toggle + scan bar -->
+    <div style="height: 58px; flex-shrink: 0; display: flex; align-items: center; gap: 10px;">
+
+      <div onClick="{{toggle}}" style="width: 58px; height: 58px; flex-shrink: 0; background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#41584e" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </div>
+
+      <div style="flex: 1; min-width: 0; height: 58px; display: flex; align-items: center; gap: 12px; background: #f0f4f3; border: 2px solid #356464; border-radius: 14px; padding: 0 16px; box-shadow: 0 0 0 4px rgba(53,100,100,0.10);">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#356464" stroke-width="2" stroke-linecap="round" style="flex-shrink: 0;"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10.5 8v8M14 8v8M17 8v8"/></svg>
+        <span style="font-size: 17px; color: #41584e;">Scan barcode or type a part name…</span>
+        <span style="width: 2px; height: 22px; background: #356464;"></span>
+        <span style="margin-left: auto; font-size: 13px; color: #577568; white-space: nowrap;">Most sales start here — browse below is for when the name isn't known</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #41584e; background: #e2e9e6; border: 1px solid #c4d4cd; border-radius: 7px; padding: 3px 9px; flex-shrink: 0;">F2</span>
+      </div>
+    </div>
+
+    <div style="flex: 1; min-height: 0; display: flex; gap: 12px;">
+
+      <!-- ===== CATEGORY COLUMN ===== -->
+      <div style="width: 190px; flex-shrink: 0; background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 14px; display: flex; flex-direction: column; overflow: hidden;">
+
+        <div style="padding: 9px; border-bottom: 1px solid #c4d4cd;">
+          <div style="height: 36px; background: #e2e9e6; border: 1px solid #c4d4cd; border-radius: 9px; display: flex; align-items: center; gap: 7px; padding: 0 10px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#577568" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <span style="font-size: 13px; color: #577568;">Filter categories</span>
+          </div>
+        </div>
+
+        <div style="flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column;">
+          <div style="padding: 9px 11px 5px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #577568;">Recent</div>
+          <div style="display: flex; flex-direction: column; padding: 0 6px;">
+            <div style="display: flex; align-items: center; height: 34px; padding: 0 9px; border-radius: 8px; background: #283e32;">
+              <span style="font-size: 14px; font-weight: 600; color: #ffffff;">Filters</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #a2c3b1;">42</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 34px; padding: 0 9px; border-radius: 8px;">
+              <span style="font-size: 14px; color: #41584e;">Brake Parts</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">38</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 34px; padding: 0 9px; border-radius: 8px;">
+              <span style="font-size: 14px; color: #41584e;">Engine Oil</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">24</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 34px; padding: 0 9px; border-radius: 8px;">
+              <span style="font-size: 14px; color: #41584e;">Spark Plugs</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">19</span>
+            </div>
+          </div>
+
+          <div style="padding: 13px 11px 5px; display: flex; align-items: center;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #577568;">All categories</span>
+            <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8aa89b;">124</span>
+          </div>
+          <div style="display: flex; flex-direction: column; padding: 0 6px;">
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px;">
+              <span style="font-size: 14px; color: #41584e;">Air Filters</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">12</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px;">
+              <span style="font-size: 14px; color: #41584e;">Batteries</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">7</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px;">
+              <span style="font-size: 14px; color: #41584e;">Bearings</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">21</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px;">
+              <span style="font-size: 14px; color: #41584e;">Belts</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">11</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px;">
+              <span style="font-size: 14px; color: #41584e;">Chain &amp; Sprocket</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">15</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px;">
+              <span style="font-size: 14px; color: #41584e;">Coolant</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">6</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px;">
+              <span style="font-size: 14px; color: #41584e;">Gear Oil</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">9</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px; opacity: 0.55;">
+              <span style="font-size: 14px; color: #41584e;">Lights &amp; Bulbs</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">18</span>
+            </div>
+            <div style="display: flex; align-items: center; height: 32px; padding: 0 9px; opacity: 0.28;">
+              <span style="font-size: 14px; color: #41584e;">Wipers</span>
+              <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8aa89b;">8</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== RESULTS ===== -->
+      <div style="flex: 1; min-width: 0; background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 14px; display: flex; flex-direction: column; overflow: hidden;">
+
+        <div style="flex-shrink: 0; border-bottom: 1px solid #c4d4cd; padding: 9px 12px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 9px;">
+            <span style="font-size: 15px; font-weight: 600;">Filters</span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #577568;">42 products</span>
+            <span style="margin-left: auto; font-size: 12px; color: #577568;">In stock first</span>
+          </div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <div style="height: 30px; border-radius: 999px; background: #356464; color: #ffffff; display: flex; align-items: center; padding: 0 12px; font-size: 13px; font-weight: 500;">All brands</div>
+            <div style="height: 30px; border-radius: 999px; border: 1px solid #c4d4cd; color: #41584e; display: flex; align-items: center; padding: 0 12px; font-size: 13px;">Bosch <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8aa89b; margin-left: 5px;">14</span></div>
+            <div style="height: 30px; border-radius: 999px; border: 1px solid #c4d4cd; color: #41584e; display: flex; align-items: center; padding: 0 12px; font-size: 13px;">Denso <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8aa89b; margin-left: 5px;">9</span></div>
+            <div style="height: 30px; border-radius: 999px; border: 1px solid #c4d4cd; color: #41584e; display: flex; align-items: center; padding: 0 12px; font-size: 13px;">TVS <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8aa89b; margin-left: 5px;">11</span></div>
+            <div style="height: 30px; border-radius: 999px; border: 1px solid #c4d4cd; color: #41584e; display: flex; align-items: center; padding: 0 12px; font-size: 13px;">Other <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8aa89b; margin-left: 5px;">8</span></div>
+          </div>
+        </div>
+
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+
+          <div style="display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 12px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 15px; font-weight: 500; line-height: 1.25;">Oil Filter — Bosch F026</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">8901234500123 · stock 24</div>
+            </div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600;">৳ 450</div>
+            <div style="width: 40px; height: 40px; border-radius: 11px; background: #356464; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 12px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 15px; font-weight: 500; line-height: 1.25;">Air Filter — Denso 145</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">8907788990011 · stock 11</div>
+            </div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600;">৳ 380</div>
+            <div style="width: 40px; height: 40px; border-radius: 11px; background: #356464; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 12px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 15px; font-weight: 500; line-height: 1.25;">Fuel Filter — TVS</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">8905566771201 · stock 7</div>
+            </div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600;">৳ 620</div>
+            <div style="width: 40px; height: 40px; border-radius: 11px; background: #356464; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 12px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 15px; font-weight: 500; line-height: 1.25;">Cabin Filter — Bosch</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">8902211004567 · stock 15</div>
+            </div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600;">৳ 540</div>
+            <div style="width: 40px; height: 40px; border-radius: 11px; background: #356464; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 12px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 15px; font-weight: 500; line-height: 1.25;">Hydraulic Filter</div>
+              <div style="font-size: 12px; color: #be123c; font-family: 'IBM Plex Mono', monospace;">8903344556677 · stock 2 — low</div>
+            </div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600;">৳ 890</div>
+            <div style="width: 40px; height: 40px; border-radius: 11px; background: #356464; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 12px; border-bottom: 1px solid #e2e9e6; opacity: 0.5;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 15px; font-weight: 500; line-height: 1.25;">Transmission Filter</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">8909900112233 · out of stock</div>
+            </div>
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600;">৳ 1,150</div>
+            <div style="width: 40px; height: 40px; border-radius: 11px; border: 1px solid #c4d4cd; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" stroke="#8aa89b" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== CART RAIL ===== -->
+      <div style="width: 430px; flex-shrink: 0; background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 14px; display: flex; flex-direction: column; overflow: hidden;">
+
+        <div style="flex-shrink: 0; height: 46px; border-bottom: 1px solid #c4d4cd; background: #e2e9e6; display: flex; align-items: center; padding: 0 14px; gap: 9px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#283e32" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.6L21 7H6"/></svg>
+          <span style="font-size: 15px; font-weight: 600;">Current Bill</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #577568;">4 items · 8 units</span>
+          <span style="margin-left: auto; font-size: 13px; color: #be123c; font-weight: 500;">Clear</span>
+        </div>
+
+        <div style="flex-shrink: 0; height: 48px; border-bottom: 1px solid #c4d4cd; display: flex; align-items: center; padding: 0 14px; gap: 9px;">
+          <div style="width: 26px; height: 26px; border-radius: 999px; background: #deeded; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#356464" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+          </div>
+          <span style="font-size: 14px; font-weight: 500;">Karim Auto Workshop</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #b45309;">due ৳ 2,400</span>
+          <svg style="margin-left: auto;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8aa89b" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+          <div style="display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 14px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 14px; font-weight: 500; line-height: 1.2;">Brake Pad Set — Front</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">৳ 600</div>
+            </div>
+            <div style="display: flex; align-items: center; border: 1px solid #c4d4cd; border-radius: 9px; height: 34px; background: #e2e9e6;">
+              <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+              <div style="width: 26px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px;">2</div>
+              <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+            </div>
+            <div style="width: 82px; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 600;">৳ 1,200</div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 14px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 14px; font-weight: 500; line-height: 1.2;">Engine Oil 5W-30 — 4L</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">৳ 1,450</div>
+            </div>
+            <div style="display: flex; align-items: center; border: 1px solid #c4d4cd; border-radius: 9px; height: 34px; background: #e2e9e6;">
+              <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+              <div style="width: 26px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px;">1</div>
+              <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+            </div>
+            <div style="width: 82px; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 600;">৳ 1,450</div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 14px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 14px; font-weight: 500; line-height: 1.2;">Spark Plug NGK</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">৳ 200</div>
+            </div>
+            <div style="display: flex; align-items: center; border: 1px solid #c4d4cd; border-radius: 9px; height: 34px; background: #e2e9e6;">
+              <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+              <div style="width: 26px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px;">4</div>
+              <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+            </div>
+            <div style="width: 82px; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 600;">৳ 800</div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 14px; border-bottom: 1px solid #e2e9e6;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 14px; font-weight: 500; line-height: 1.2;">Air Filter — Denso 145</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'IBM Plex Mono', monospace;">৳ 380</div>
+            </div>
+            <div style="display: flex; align-items: center; border: 1px solid #c4d4cd; border-radius: 9px; height: 34px; background: #e2e9e6;">
+              <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+              <div style="width: 26px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px;">1</div>
+              <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+            </div>
+            <div style="width: 82px; text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 600;">৳ 380</div>
+          </div>
+        </div>
+
+        <div style="flex-shrink: 0; border-top: 1px solid #c4d4cd; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px;">
+          <div style="display: flex; align-items: center; font-size: 14px; color: #41584e;">
+            <span>Subtotal</span>
+            <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 15px;">৳ 3,830</span>
+          </div>
+          <div style="display: flex; align-items: center; font-size: 14px; color: #41584e;">
+            <span>Discount</span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; color: #577568; background: #e2e9e6; border: 1px solid #c4d4cd; border-radius: 6px; padding: 1px 6px; margin-left: 7px;">F3</span>
+            <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 15px; color: #b45309;">− ৳ 380</span>
+          </div>
+
+          <div style="background: #161d1a; border-radius: 12px; padding: 11px 14px; display: flex; align-items: center;">
+            <span style="font-size: 14px; color: #a7beb4;">Payable</span>
+            <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 29px; font-weight: 600; color: #ffffff; letter-spacing: -0.02em;">৳ 3,450</span>
+          </div>
+
+          <div style="display: flex; gap: 6px;">
+            <div style="flex: 1; height: 38px; border: 2px solid #3c5d4b; background: #f0f5f2; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3c5d4b" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; color: #283e32;">3,500</span>
+            </div>
+            <div style="width: 62px; height: 38px; border: 1px solid #c4d4cd; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 5px;">
+              <span style="width: 8px; height: 8px; border-radius: 999px; background: #D12053;"></span>
+              <span style="font-size: 12px; color: #577568;">bKash</span>
+            </div>
+            <div style="width: 62px; height: 38px; border: 1px solid #c4d4cd; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 5px;">
+              <span style="width: 8px; height: 8px; border-radius: 999px; background: #F7941D;"></span>
+              <span style="font-size: 12px; color: #577568;">Nagad</span>
+            </div>
+            <div style="width: 56px; height: 38px; border: 1px solid #c4d4cd; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 5px;">
+              <span style="width: 8px; height: 8px; border-radius: 999px; background: #2563eb;"></span>
+              <span style="font-size: 12px; color: #577568;">Card</span>
+            </div>
+          </div>
+
+          <div style="height: 54px; background: #3c5d4b; border-radius: 13px; display: flex; align-items: center; justify-content: center; gap: 10px; color: #ffffff;">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            <span style="font-size: 16px; font-weight: 600;">Complete Sale</span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.18); border-radius: 6px; padding: 3px 7px;">F8</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { open: true };
+  }
+  renderVals() {
+    var open = this.state && this.state.open !== false;
+    return {
+      nav: {
+        railWidth: open ? '216px' : '64px',
+        itemWidth: open ? '192px' : '40px',
+        labelOpacity: open ? '1' : '0'
+      },
+      toggle: () => this.setState({ open: !open })
+    };
+  }
+}
+</script>
+</body>
+</html>

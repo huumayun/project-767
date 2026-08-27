@@ -1,0 +1,258 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #356464; } a:hover { color: #234343; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; display: flex; background: #e2e9e6; font-family: 'Hind Siliguri', system-ui, sans-serif; color: #161d1a; font-size: 15px;">
+
+  <!-- ============ SIDEBAR (identical across all three directions) ============ -->
+  <div style="width: 216px; flex-shrink: 0; background: #f0f4f3; border-right: 1px solid #c4d4cd; display: flex; flex-direction: column;">
+    <div style="padding: 14px 14px 12px; border-bottom: 1px solid #c4d4cd; display: flex; align-items: center; gap: 10px;">
+      <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
+        <path d="M24 4L40 13.24V31.76L24 41L8 31.76V13.24L24 4Z" fill="#517b64" fill-opacity="0.12"/>
+        <path d="M24 6L38 14.08V30.92L24 39L10 30.92V14.08L24 6Z" stroke="#283e32" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M24 6V22.5M38 14.08L24 22.5M10 14.08L24 22.5" stroke="#283e32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="24" cy="22.5" r="3.5" fill="#283e32"/>
+      </svg>
+      <div style="min-width: 0;">
+        <div style="font-size: 14px; font-weight: 700; line-height: 1.2;">মেকানিক্যাল শপ</div>
+        <div style="font-size: 11px; color: #577568; font-family: 'JetBrains Mono', monospace;">v1.0</div>
+      </div>
+    </div>
+
+    <div style="flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 3px; font-size: 14px;">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 40px; border-radius: 12px; color: #41584e;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>ড্যাশবোর্ড</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 40px; border-radius: 12px; background: #283e32; color: #ffffff; font-weight: 600;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.6L21 7H6"/></svg>
+        <span>সিস্টেম (POS)</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 40px; border-radius: 12px; color: #41584e;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+        <span>গ্রাহক</span>
+        <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; border-radius: 999px; padding: 1px 7px;">7</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 40px; border-radius: 12px; color: #41584e;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/></svg>
+        <span>পণ্য</span>
+        <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; background: #ffe4e6; color: #be123c; border: 1px solid #fda4af; border-radius: 999px; padding: 1px 7px;">3</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 40px; border-radius: 12px; color: #41584e;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <span>রিপোর্ট</span>
+      </div>
+    </div>
+
+    <div style="padding: 8px; border-top: 1px solid #c4d4cd; display: flex; align-items: center; gap: 8px; height: 56px;">
+      <div style="width: 28px; height: 28px; border-radius: 999px; background: #e0ebe5; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#283e32" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+      </div>
+      <div style="font-size: 13px; font-weight: 600;">রফিক (STAFF)</div>
+      <span style="margin-left: auto; width: 7px; height: 7px; border-radius: 999px; background: #3c5d4b;"></span>
+    </div>
+  </div>
+
+  <!-- ============ POS AREA — DIRECTION A: PERSISTENT RAIL ============ -->
+  <div style="flex: 1; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+
+    <!-- Scan bar -->
+    <div style="height: 60px; flex-shrink: 0; display: flex; gap: 10px;">
+      <div style="flex: 1; display: flex; align-items: center; gap: 12px; background: #f0f4f3; border: 2px solid #356464; border-radius: 14px; padding: 0 16px; box-shadow: 0 0 0 4px rgba(53,100,100,0.10);">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#356464" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10.5 8v8M14 8v8M17 8v8"/></svg>
+        <span style="font-size: 17px; color: #41584e;">বারকোড স্ক্যান করুন বা পণ্যের নাম লিখুন…</span>
+        <span style="width: 2px; height: 22px; background: #356464;"></span>
+        <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #577568; background: #e2e9e6; border: 1px solid #c4d4cd; border-radius: 7px; padding: 3px 8px;">F2</span>
+      </div>
+      <div style="width: 132px; display: flex; align-items: center; justify-content: center; gap: 8px; background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 14px; font-size: 14px; font-weight: 600; color: #41584e;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>
+        <span>হোল্ড (2)</span>
+      </div>
+    </div>
+
+    <!-- Cart + Rail -->
+    <div style="flex: 1; min-height: 0; display: flex; gap: 14px;">
+
+      <!-- Cart -->
+      <div style="flex: 1; min-width: 0; background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 1fr 132px 116px 116px 44px; gap: 12px; padding: 0 16px; height: 42px; align-items: center; background: #e2e9e6; border-bottom: 1px solid #c4d4cd; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #577568;">
+          <span>পণ্য / Item</span>
+          <span style="text-align: center;">পরিমাণ</span>
+          <span style="text-align: right;">দর</span>
+          <span style="text-align: right;">মোট</span>
+          <span></span>
+        </div>
+
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+          <div style="display: grid; grid-template-columns: 1fr 132px 116px 116px 44px; gap: 12px; padding: 0 16px; height: 52px; align-items: center; border-bottom: 1px solid #e2e9e6;">
+            <div style="min-width: 0;">
+              <div style="font-size: 15px; font-weight: 600; line-height: 1.25;">ব্রেক প্যাড সেট — Front</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'JetBrains Mono', monospace;">8901234567890</div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 0; border: 1px solid #c4d4cd; border-radius: 10px; height: 40px; background: #e2e9e6;">
+              <div style="width: 40px; height: 38px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+              <div style="flex: 1; text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px;">2</div>
+              <div style="width: 40px; height: 38px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+            </div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #41584e;">৳ 600</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700;">৳ 1,200</div>
+            <div style="display: flex; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#be123c" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 132px 116px 116px 44px; gap: 12px; padding: 0 16px; height: 52px; align-items: center; border-bottom: 1px solid #e2e9e6;">
+            <div style="min-width: 0;">
+              <div style="font-size: 15px; font-weight: 600; line-height: 1.25;">Engine Oil 5W-30 — 4L</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'JetBrains Mono', monospace;">8905566771201</div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; border: 1px solid #c4d4cd; border-radius: 10px; height: 40px; background: #e2e9e6;">
+              <div style="width: 40px; height: 38px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+              <div style="flex: 1; text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px;">1</div>
+              <div style="width: 40px; height: 38px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+            </div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #41584e;">৳ 1,450</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700;">৳ 1,450</div>
+            <div style="display: flex; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#be123c" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 132px 116px 116px 44px; gap: 12px; padding: 0 16px; height: 52px; align-items: center; border-bottom: 1px solid #e2e9e6;">
+            <div style="min-width: 0;">
+              <div style="font-size: 15px; font-weight: 600; line-height: 1.25;">স্পার্ক প্লাগ NGK</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'JetBrains Mono', monospace;">8902211004567</div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; border: 1px solid #c4d4cd; border-radius: 10px; height: 40px; background: #e2e9e6;">
+              <div style="width: 40px; height: 38px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+              <div style="flex: 1; text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px;">4</div>
+              <div style="width: 40px; height: 38px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+            </div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #41584e;">৳ 200</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700;">৳ 800</div>
+            <div style="display: flex; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#be123c" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 132px 116px 116px 44px; gap: 12px; padding: 0 16px; height: 52px; align-items: center; border-bottom: 1px solid #e2e9e6;">
+            <div style="min-width: 0;">
+              <div style="font-size: 15px; font-weight: 600; line-height: 1.25;">এয়ার ফিল্টার</div>
+              <div style="font-size: 12px; color: #577568; font-family: 'JetBrains Mono', monospace;">8907788990011</div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; border: 1px solid #c4d4cd; border-radius: 10px; height: 40px; background: #e2e9e6;">
+              <div style="width: 40px; height: 38px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+              <div style="flex: 1; text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px;">1</div>
+              <div style="width: 40px; height: 38px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 24 24" stroke="#41584e" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+            </div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #41584e;">৳ 380</div>
+            <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700;">৳ 380</div>
+            <div style="display: flex; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#be123c" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></div>
+          </div>
+        </div>
+
+        <div style="height: 44px; flex-shrink: 0; border-top: 1px solid #c4d4cd; background: #e2e9e6; display: flex; align-items: center; padding: 0 16px; gap: 8px; font-size: 13px; color: #577568;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #161d1a;">4</span>
+          <span>টি পণ্য</span>
+          <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace;">8 ইউনিট</span>
+        </div>
+      </div>
+
+      <!-- Payment rail -->
+      <div style="width: 396px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px;">
+
+        <div style="background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 16px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; height: 56px;">
+          <div style="width: 32px; height: 32px; border-radius: 999px; background: #deeded; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#356464" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 14px; font-weight: 600;">করিম অটো ওয়ার্কশপ</div>
+            <div style="font-size: 12px; color: #577568; font-family: 'JetBrains Mono', monospace;">01712-345678 · বাকি ৳ 2,400</div>
+          </div>
+          <svg style="margin-left: auto;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8aa89b" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+
+        <div style="background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; font-size: 14px; color: #41584e;">
+            <span>সাবটোটাল</span>
+            <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 15px;">৳ 3,830</span>
+          </div>
+          <div style="display: flex; align-items: center; font-size: 14px; color: #41584e;">
+            <span>ছাড়</span>
+            <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #577568; background: #e2e9e6; border: 1px solid #c4d4cd; border-radius: 6px; padding: 2px 6px; margin-right: 8px;">F3</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #b45309;">− ৳ 380</span>
+          </div>
+          <div style="height: 1px; background: #c4d4cd;"></div>
+          <div style="background: #161d1a; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center;">
+            <span style="font-size: 14px; color: #a7beb4;">প্রদেয়</span>
+            <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 700; color: #ffffff; letter-spacing: -0.02em;">৳ 3,450</span>
+          </div>
+        </div>
+
+        <div style="background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #577568;">পেমেন্ট</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div style="height: 44px; border: 2px solid #3c5d4b; background: #f0f5f2; border-radius: 11px; display: flex; align-items: center; gap: 8px; padding: 0 10px;">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#3c5d4b" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: #283e32;">3,450</span>
+            </div>
+            <div style="height: 44px; border: 1px solid #c4d4cd; border-radius: 11px; display: flex; align-items: center; gap: 8px; padding: 0 10px;">
+              <span style="width: 9px; height: 9px; border-radius: 999px; background: #D12053; flex-shrink: 0;"></span>
+              <span style="font-size: 14px; color: #577568;">bKash</span>
+            </div>
+            <div style="height: 44px; border: 1px solid #c4d4cd; border-radius: 11px; display: flex; align-items: center; gap: 8px; padding: 0 10px;">
+              <span style="width: 9px; height: 9px; border-radius: 999px; background: #F7941D; flex-shrink: 0;"></span>
+              <span style="font-size: 14px; color: #577568;">Nagad</span>
+            </div>
+            <div style="height: 44px; border: 1px solid #c4d4cd; border-radius: 11px; display: flex; align-items: center; gap: 8px; padding: 0 10px;">
+              <span style="width: 9px; height: 9px; border-radius: 999px; background: #2563eb; flex-shrink: 0;"></span>
+              <span style="font-size: 14px; color: #577568;">কার্ড</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; padding-top: 4px; font-size: 14px;">
+            <span style="color: #41584e;">ফেরত</span>
+            <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700; color: #3c5d4b;">৳ 0</span>
+          </div>
+        </div>
+
+        <div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
+          <div style="height: 56px; background: #3c5d4b; border-radius: 14px; display: flex; align-items: center; justify-content: center; gap: 10px; color: #ffffff;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            <span style="font-size: 17px; font-weight: 700;">বিক্রয় সম্পন্ন করুন</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; background: rgba(255,255,255,0.18); border-radius: 6px; padding: 3px 7px;">F8</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div style="height: 40px; border: 1px solid #c4d4cd; border-radius: 11px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 14px; font-weight: 600; color: #41584e;">
+              <span>হোল্ড</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #577568;">F9</span>
+            </div>
+            <div style="height: 40px; border: 1px solid #fda4af; background: #fff1f2; border-radius: 11px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 14px; font-weight: 600; color: #be123c;">
+              <span>বাতিল</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">Esc</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Shortcut bar -->
+    <div style="height: 40px; flex-shrink: 0; background: #f0f4f3; border: 1px solid #c4d4cd; border-radius: 12px; display: flex; align-items: center; gap: 18px; padding: 0 16px; font-size: 13px; color: #577568;">
+      <span><span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #161d1a;">F2</span> স্ক্যান</span>
+      <span><span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #161d1a;">F3</span> ছাড়</span>
+      <span><span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #161d1a;">F4</span> দ্রুত ক্যাশ</span>
+      <span><span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #161d1a;">F8</span> চেকআউট</span>
+      <span><span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #161d1a;">F9</span> হোল্ড</span>
+      <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace;">অফলাইন · সিঙ্ক ঠিক আছে</span>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
