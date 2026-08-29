@@ -24,6 +24,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
   const toast = useToast();
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [search, setSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +39,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
     setLoading(true);
     setError(null);
     try {
-      const data = await window.api.sales.list(100);
+      const data = await window.api.sales.list(500); // Increased limit to find old sales
       setSales(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load sales.');
@@ -70,13 +71,22 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
   };
 
   const filteredSales = sales.filter((s) => {
-    if (!search.trim()) return true;
-    const q = search.trim().toLowerCase();
-    return (
-      s.invoice_no.toLowerCase().includes(q) ||
-      (s.customer_name && s.customer_name.toLowerCase().includes(q)) ||
-      (s.cashier_name && s.cashier_name.toLowerCase().includes(q))
-    );
+    let match = true;
+    if (dateFilter) {
+      const saleDate = new Date(s.created_at).toISOString().split('T')[0];
+      if (saleDate !== dateFilter) {
+        match = false;
+      }
+    }
+    
+    if (match && search.trim()) {
+      const q = search.trim().toLowerCase();
+      match = 
+        s.invoice_no.toLowerCase().includes(q) ||
+        (s.customer_name && s.customer_name.toLowerCase().includes(q)) ||
+        (s.cashier_name && s.cashier_name.toLowerCase().includes(q)) || false;
+    }
+    return match;
   });
 
   return (
@@ -121,6 +131,23 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
             className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-lg pl-9 pr-3 py-2 text-jungle-teal-900 text-xs font-sans focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
           />
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="w-[140px] bg-jungle-teal-50 border border-jungle-teal-300 rounded-lg px-3 py-2 text-jungle-teal-900 text-xs font-sans focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50 cursor-pointer"
+          />
+          {dateFilter && (
+            <button 
+              onClick={() => setDateFilter('')}
+              className="p-1.5 text-jungle-teal-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
+              title="Clear Date"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sales Table */}
@@ -148,7 +175,16 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
               ) : (
                 filteredSales.map((sale) => (
                   <tr key={sale.id} className="hover:bg-jungle-teal-50 transition-colors">
-                    <td className="p-3.5 font-bold text-azure-mist-800">{sale.invoice_no}</td>
+                    <td className="p-3.5 font-bold text-azure-mist-800">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenInvoice(sale)}
+                        className="hover:underline hover:text-azure-mist-600 text-left font-mono font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Click to view & print invoice"
+                      >
+                        <span>{sale.invoice_no}</span>
+                      </button>
+                    </td>
                     <td className="p-3.5 text-jungle-teal-600">
                       {new Date(sale.created_at).toLocaleDateString()} {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>

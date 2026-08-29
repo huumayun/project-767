@@ -33,6 +33,16 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
   const selectedGroup = selected ? splitCategoryName(selected.name).parent ?? splitCategoryName(selected.name).leaf : '';
 
   const [group, setGroup] = useState(selectedGroup);
+
+  // Sync group when value changes from props (e.g., when modal loads product data in useEffect)
+  React.useEffect(() => {
+    if (selectedGroup) {
+      setGroup(selectedGroup);
+    } else if (!value) {
+      setGroup('');
+    }
+  }, [value, selectedGroup]);
+
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -67,7 +77,7 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
   };
 
   const selectClass =
-    'w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 h-[40px] text-ui-sm text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-600 disabled:opacity-50';
+    'w-full bg-white border border-jungle-teal-200 rounded-xl px-3 h-[40px] text-sm font-medium text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 shadow-2xs transition-all disabled:opacity-50 disabled:bg-jungle-teal-50 cursor-pointer';
 
   return (
     <div>

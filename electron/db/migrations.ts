@@ -472,6 +472,142 @@ export const MIGRATIONS: Migration[] = [
         );
       }
     }
+  },
+  {
+    id: '005_pin_login_and_shifts',
+    name: 'Add user PIN codes, shifts and cash drawer transactions',
+    up: (db: Database.Database) => {
+      const hasColumn = (table: string, column: string) =>
+        (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+          (c) => c.name === column
+        );
+
+      // 1. Add pin_code column to users
+      if (!hasColumn('users', 'pin_code')) {
+        db.exec('ALTER TABLE users ADD COLUMN pin_code TEXT');
+        // Set default PIN for existing admin/owner user to '1234'
+        db.exec("UPDATE users SET pin_code = '1234' WHERE (pin_code IS NULL OR pin_code = '') AND role = 'owner'");
+      }
+
+      // 2. Shifts Table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS shifts (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          opened_at TEXT NOT NULL,
+          closed_at TEXT,
+          opening_cash_paisa INTEGER NOT NULL DEFAULT 0,
+          expected_cash_paisa INTEGER NOT NULL DEFAULT 0,
+          actual_cash_paisa INTEGER,
+          cash_difference_paisa INTEGER,
+          closing_cash_withdrawn_paisa INTEGER NOT NULL DEFAULT 0,
+          closing_float_left_paisa INTEGER NOT NULL DEFAULT 0,
+          total_sales_paisa INTEGER NOT NULL DEFAULT 0,
+          total_cash_sales_paisa INTEGER NOT NULL DEFAULT 0,
+          total_bkash_sales_paisa INTEGER NOT NULL DEFAULT 0,
+          total_nagad_sales_paisa INTEGER NOT NULL DEFAULT 0,
+          total_card_sales_paisa INTEGER NOT NULL DEFAULT 0,
+          total_cash_in_paisa INTEGER NOT NULL DEFAULT 0,
+          total_cash_out_paisa INTEGER NOT NULL DEFAULT 0,
+          note TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_shifts_user_status ON shifts(user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_shifts_device ON shifts(device_id);
+      `);
+
+      if (!hasColumn('shifts', 'closing_cash_withdrawn_paisa')) {
+        db.exec('ALTER TABLE shifts ADD COLUMN closing_cash_withdrawn_paisa INTEGER NOT NULL DEFAULT 0');
+      }
+      if (!hasColumn('shifts', 'closing_float_left_paisa')) {
+        db.exec('ALTER TABLE shifts ADD COLUMN closing_float_left_paisa INTEGER NOT NULL DEFAULT 0');
+      }
+
+      // 3. Shift Cash Transactions (Petty Cash In/Out)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS shift_cash_transactions (
+          id TEXT PRIMARY KEY,
+          shift_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          amount_paisa INTEGER NOT NULL,
+          reason TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_shift_cash_tx_shift ON shift_cash_transactions(shift_id);
+      `);
+    }
+  },
+  {
+    id: '016_inventory_batches',
+    name: 'Add inventory batches for FIFO valuation',
+    up: (db: Database.Database) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS inventory_batches (
+          id TEXT PRIMARY KEY,
+          product_id TEXT NOT NULL,
+          initial_qty INTEGER NOT NULL,
+          remaining_qty INTEGER NOT NULL,
+          cost_price_paisa INTEGER NOT NULL,
+          received_at TEXT NOT NULL,
+          ref_table TEXT,
+          ref_id TEXT,
+          FOREIGN KEY (product_id) REFERENCES products(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_inventory_batches_product_id ON inventory_batches(product_id);
+        CREATE INDEX IF NOT EXISTS idx_inventory_batches_remaining ON inventory_batches(remaining_qty);
+        CREATE INDEX IF NOT EXISTS idx_inventory_batches_received_at ON inventory_batches(received_at);
+
+        CREATE TABLE IF NOT EXISTS sale_item_batches (
+          id TEXT PRIMARY KEY,
+          sale_item_id TEXT NOT NULL,
+          batch_id TEXT NOT NULL,
+          qty_consumed INTEGER NOT NULL,
+          cost_price_paisa INTEGER NOT NULL,
+          FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
+          FOREIGN KEY (batch_id) REFERENCES inventory_batches(id)
+        );
+
+        INSERT OR IGNORE INTO settings (key, value, updated_at) 
+        VALUES ('inventory_valuation_method', 'wac', datetime('now'));
+      `);
+
+      const hasBatches = (db.prepare('SELECT COUNT(*) as c FROM inventory_batches').get() as any).c;
+      if (hasBatches === 0) {
+        db.exec(`
+          INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
+          SELECT 
+            lower(hex(randomblob(16))) as id,
+            id as product_id,
+            stock_qty as initial_qty,
+            stock_qty as remaining_qty,
+            cost_price_paisa,
+            created_at as received_at,
+            'migration' as ref_table,
+            '016' as ref_id
+          FROM products
+          WHERE stock_qty > 0 AND deleted_at IS NULL;
+        `);
+      }
+    }
+  },
+  {
+    id: '017_stock_transactions_cost',
+    name: 'Add unit_cost_paisa to stock_transactions',
+    up: (db: Database.Database) => {
+      const hasColumn = (table: string, column: string) => {
+        const info = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+        return info.some((col) => col.name === column);
+      };
+      if (!hasColumn('stock_transactions', 'unit_cost_paisa')) {
+        db.exec('ALTER TABLE stock_transactions ADD COLUMN unit_cost_paisa INTEGER;');
+      }
+    }
   }
 ];
 

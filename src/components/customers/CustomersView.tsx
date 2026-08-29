@@ -275,7 +275,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession }) 
                     <tr key={cust.id} className="h-[52px] hover:bg-azure-mist-50/40 transition-colors">
                       <td className="px-3 font-sans">
                         <div className="text-ui-sm font-semibold text-jungle-teal-900">{cust.name}</div>
-                        {cust.notes && <div className="text-ui-2xs text-jungle-teal-500 mt-0.5">{cust.notes}</div>}
+                        {cust.note && <div className="text-ui-2xs text-jungle-teal-500 mt-0.5">{cust.note}</div>}
                       </td>
                       <td className="px-3 text-jungle-teal-600">
                         {cust.phone ? (

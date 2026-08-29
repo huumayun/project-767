@@ -23,15 +23,17 @@ import {
   Keyboard,
   X,
   Cloud,
+  Barcode,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { ConfirmModal } from '../common/ConfirmModal';
 
 interface SettingsViewProps {
   currentSession: UserSession | null;
+  onSettingsChanged?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSettingsChanged }) => {
   const toast = useToast();
   // Keyboard shortcut editor state
   const [keys, setKeys] = useState(getShortcuts);
@@ -45,6 +47,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) =>
   const [deviceIdPrefix, setDeviceIdPrefix] = useState('');
   const [defaultInvoiceLayout, setDefaultInvoiceLayout] = useState<'80mm' | 'a5'>('80mm');
   const [idleLockMinutes, setIdleLockMinutes] = useState('15');
+  const [inventoryValuationMethod, setInventoryValuationMethod] = useState<'wac' | 'fifo'>('wac');
+  const [enableShifts, setEnableShifts] = useState(true);
+  const [barcodeScannerMode, setBarcodeScannerMode] = useState<'speed' | 'prefix'>('speed');
+  const [barcodeScannerPrefix, setBarcodeScannerPrefix] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -66,6 +72,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) =>
       setDeviceIdPrefix(s.device_id_prefix || 'REG01');
       setDefaultInvoiceLayout((s.default_invoice_layout as any) || '80mm');
       setIdleLockMinutes((s.idle_lock_minutes || 15).toString());
+      setInventoryValuationMethod((s.inventory_valuation_method as any) || 'wac');
+      setEnableShifts(s.enable_shifts ?? true);
+      setBarcodeScannerMode(s.barcode_scanner_mode || 'speed');
+      setBarcodeScannerPrefix(s.barcode_scanner_prefix || '');
     } catch (err: any) {
       setError(err.message || 'Failed to load settings.');
     } finally {
@@ -77,26 +87,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) =>
     fetchSettings();
   }, []);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveSection = async (sectionName: string, data: Record<string, any>) => {
     if (!window.api || !isOwner) return;
 
     setLoading(true);
     setError(null);
     setSavedSuccess(false);
     try {
-      await window.api.settings.update({
-        shop_name: shopName.trim(),
-        shop_address: shopAddress.trim(),
-        shop_phone: shopPhone.trim(),
-        invoice_footer: invoiceFooter.trim(),
-        device_id_prefix: deviceIdPrefix.trim() || 'REG01',
-        default_invoice_layout: defaultInvoiceLayout,
-        idle_lock_minutes: parseInt(idleLockMinutes, 10) || 15,
-      });
-      setSavedSuccess(true);
-      toast.success('Shop configuration saved successfully.');
-      setTimeout(() => setSavedSuccess(false), 3000);
+      if (data.enable_shifts === false) {
+        const hasOpen = await window.api.shifts.hasAnyOpen();
+        if (hasOpen) {
+          throw new Error('Please close the running shift before disabling Shift Management.');
+        } else {
+          toast.success("DEBUG: hasOpen is false");
+        }
+      }
+
+      await window.api.settings.update(data);
+      toast.success(`${sectionName} saved successfully.`);
+      if (onSettingsChanged) {
+        onSettingsChanged();
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to save settings.');
       toast.error(err.message || 'Failed to update settings.');
@@ -167,8 +178,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) =>
         </div>
       )}
 
-      <form onSubmit={handleSave} className="text-ui-sm">
-        <div className="grid grid-cols-1 min-[1150px]:grid-cols-2 gap-5 items-start">
+      <div className="text-ui-sm space-y-6">
+        <div className="grid grid-cols-1 min-[1150px]:grid-cols-2 gap-6 items-start">
         <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5">
           <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
             <Store className="w-4 h-4 text-azure-mist-700" />
@@ -220,6 +231,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) =>
               placeholder="ধন্যবাদ, আবার আসবেন! • Sold goods cannot be returned without receipt."
               className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600"
             />
+          </div>
+          <div className="flex justify-end pt-2 mt-4 border-t border-jungle-teal-200">
+            <button
+              type="button"
+              onClick={() => handleSaveSection('Store Profile', { shop_name: shopName.trim(), shop_address: shopAddress.trim(), shop_phone: shopPhone.trim(), invoice_footer: invoiceFooter.trim() })}
+              disabled={loading}
+              className="h-9 px-5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-semibold rounded-xl text-ui-xs flex items-center gap-2 shadow-sm transition-colors disabled:opacity-40 cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save Profile</span>
+            </button>
           </div>
         </div>
 
@@ -350,6 +372,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) =>
               </span>
             </div>
           </div>
+          <div className="flex justify-end pt-2 mt-4 border-t border-jungle-teal-200">
+            <button
+              type="button"
+              onClick={() => handleSaveSection('Printer & Device Config', { default_invoice_layout: defaultInvoiceLayout, device_id_prefix: deviceIdPrefix.trim() || 'REG01' })}
+              disabled={loading}
+              className="h-9 px-5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-semibold rounded-xl text-ui-xs flex items-center gap-2 shadow-sm transition-colors disabled:opacity-40 cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save Printer Config</span>
+            </button>
+          </div>
+        </div>
+        
+        {/* Barcode Scanner Config Card */}
+        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5">
+          <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
+            <Barcode className="w-4 h-4 text-azure-mist-700" />
+            <h3 className="font-semibold text-ui-base text-jungle-teal-900">Barcode Scanner Configuration</h3>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Scanner Detection Mode</label>
+              <select
+                value={barcodeScannerMode}
+                onChange={(e) => setBarcodeScannerMode(e.target.value as any)}
+                className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600 font-semibold"
+              >
+                <option value="speed">Typing Speed Analysis (Auto-detect, No config needed)</option>
+                <option value="prefix">Hardware Prefix Mode (100% Guaranteed, Requires Scanner Config)</option>
+              </select>
+            </div>
+
+            {barcodeScannerMode === 'prefix' && (
+              <div>
+                <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Hardware Prefix Key</label>
+                <input
+                  type="text"
+                  value={barcodeScannerPrefix}
+                  onChange={(e) => setBarcodeScannerPrefix(e.target.value)}
+                  placeholder="e.g. F12 or STX"
+                  className="w-full h-[40px] bg-white border border-azure-mist-300 rounded-xl px-3 text-ui-sm text-azure-mist-900 font-mono font-bold focus:outline-hidden focus:border-azure-mist-600 ring-2 ring-azure-mist-100"
+                />
+                <span className="text-ui-2xs text-jungle-teal-500 mt-1 block">
+                  Click inside and press your scanner's prefix key if it's a visible character, or type its name (like F12).
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end pt-2 mt-4 border-t border-jungle-teal-200">
+            <button
+              type="button"
+              onClick={() => handleSaveSection('Barcode Scanner Config', { barcode_scanner_mode: barcodeScannerMode, barcode_scanner_prefix: barcodeScannerPrefix })}
+              disabled={loading}
+              className="h-9 px-5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-semibold rounded-xl text-ui-xs flex items-center gap-2 shadow-sm transition-colors disabled:opacity-40 cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save Scanner Config</span>
+            </button>
+          </div>
         </div>
 
         {/* Security & Inactivity Lock Card */}
@@ -374,6 +456,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) =>
                 Automatically switches to locked state when idle.
               </span>
             </div>
+
+            <div>
+              <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Inventory Valuation Method</label>
+              <select
+                value={inventoryValuationMethod}
+                onChange={(e) => setInventoryValuationMethod(e.target.value as any)}
+                className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 font-semibold focus:outline-hidden focus:border-azure-mist-600"
+              >
+                <option value="wac">Weighted Average Cost (WAC)</option>
+                <option value="fifo">First-In, First-Out (FIFO)</option>
+              </select>
+              <span className="text-ui-2xs text-jungle-teal-500 mt-1 block">
+                Determines how cost of goods sold and profit are calculated.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <label htmlFor="enableShifts" className="text-ui-sm font-semibold text-jungle-teal-900 cursor-pointer select-none block">
+                  Enable Shift Management (Cash Drawer & Float)
+                  <span className="block text-ui-2xs text-jungle-teal-500 font-normal mt-0.5">
+                    Require staff to open a shift before selling and close it when done.
+                  </span>
+                </label>
+              </div>
+              <button
+                type="button"
+                id="enableShifts"
+                role="switch"
+                aria-checked={enableShifts}
+                onClick={() => setEnableShifts(!enableShifts)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-azure-mist-500 focus:ring-offset-2 ${enableShifts ? 'bg-azure-mist-600' : 'bg-gray-300'}`}
+              >
+                <span className="sr-only">Enable Shift Management</span>
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${enableShifts ? 'translate-x-5' : 'translate-x-0'}`}
+                />
+              </button>
+            </div>
+          </div>
+          <div className="flex justify-end pt-2 mt-4 border-t border-jungle-teal-200">
+            <button
+              type="button"
+              onClick={() => handleSaveSection('Security & Session Policies', { idle_lock_minutes: parseInt(idleLockMinutes, 10) || 15, inventory_valuation_method: inventoryValuationMethod, enable_shifts: enableShifts })}
+              disabled={loading}
+              className="h-9 px-5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-semibold rounded-xl text-ui-xs flex items-center gap-2 shadow-sm transition-colors disabled:opacity-40 cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save Policies</span>
+            </button>
           </div>
         </div>
 
@@ -416,18 +549,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession }) =>
         </div>
 
         </div>
-
-        <div className="sticky bottom-0 z-10 mt-5 flex items-center justify-end gap-3 py-3 border-t border-jungle-teal-200 bg-jungle-teal-100">
-          <button
-            type="submit"
-            disabled={loading}
-            className="h-11 px-6 bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-semibold rounded-xl text-ui-sm flex items-center gap-2 shadow-sm transition-colors disabled:opacity-40"
-          >
-            <Save className="w-4 h-4" />
-            <span>{loading ? 'Saving...' : 'Save Changes'}</span>
-          </button>
-        </div>
-      </form>
+      </div>
 
       {/* Database Reset Confirm Modal */}
       <ConfirmModal

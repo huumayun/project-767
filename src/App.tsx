@@ -20,11 +20,16 @@ import {
   Menu,
   ChevronDown,
   Layers3,
+  Lock,
+  Clock,
 } from 'lucide-react';
 
-import { UserSession, Product, Category } from './types/ipc';
+import { UserSession, Product, Category, ShiftSummaryData } from './types/ipc';
 import { AuthBanner } from './components/AuthBanner';
 import { LoginView } from './components/auth/LoginView';
+import { PinLoginScreen } from './components/auth/PinLoginScreen';
+import { ShiftModal } from './components/shifts/ShiftModal';
+import { ShiftsHistoryView } from './components/shifts/ShiftsHistoryView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { PosView } from './components/pos/PosView';
 import { SalesHistoryView } from './components/pos/SalesHistoryView';
@@ -55,7 +60,7 @@ export default function App() {
 function MainApp() {
   const [currentSession, setCurrentSession] = useState<UserSession | null>(null);
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'pos' | 'sales' | 'customers' | 'products' | 'categories' | 'suppliers' | 'reports' | 'users' | 'settings' | 'audit'
+    'dashboard' | 'pos' | 'sales' | 'customers' | 'products' | 'categories' | 'suppliers' | 'reports' | 'shifts' | 'users' | 'settings' | 'audit'
   >('dashboard');
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -66,9 +71,48 @@ function MainApp() {
   const [showWizardModal, setShowWizardModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [catalogOpen, setCatalogOpen] = useState(true); // Catalog group in the rail // presentational only — rail expanded/collapsed
-  const [lang, setLang] = useState<Language>('en'); // English UI; bilingual strings left intact
+  const [catalogOpen, setCatalogOpen] = useState(true);
+  const [lang, setLang] = useState<Language>('en');
 
+  // Shift & Quick Lock State
+  const [activeShift, setActiveShift] = useState<ShiftSummaryData | null>(null);
+  const [showShiftModal, setShowShiftModal] = useState(false);
+  const [shiftModalMode, setShiftModalMode] = useState<'view' | 'open' | 'close'>('view');
+  const [isLocked, setIsLocked] = useState(false);
+  const [authMode, setAuthMode] = useState<'pin' | 'password'>('password'); // Password login by default!
+  const [nowTicker, setNowTicker] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTicker(Date.now()), 15000);
+    
+    // Globally prevent number inputs from changing value on mouse wheel scroll
+    const handleWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        document.activeElement === target &&
+        target.tagName === 'INPUT' &&
+        (target as HTMLInputElement).type === 'number'
+      ) {
+        (target as HTMLInputElement).blur();
+      }
+    };
+    window.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
+
+  const formatShiftDuration = (openedAt?: string) => {
+    if (!openedAt) return '';
+    const diffMs = Math.max(0, nowTicker - new Date(openedAt).getTime());
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
+  };
 
   const isElectron = Boolean(window.api && window.api.ping);
 
@@ -95,6 +139,20 @@ function MainApp() {
     }
   };
 
+  const [enableShifts, setEnableShifts] = useState(true);
+
+  const fetchActiveShift = async () => {
+    if (!window.api || !window.api.shifts) return null;
+    try {
+      const curr = await window.api.shifts.getCurrent();
+      setActiveShift(curr);
+      return curr;
+    } catch (err) {
+      console.error('Failed to fetch active shift:', err);
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (window.api) {
       // Check first-run status
@@ -105,25 +163,62 @@ function MainApp() {
       });
 
       // Check current session WITHOUT auto-login
-      window.api.auth.getSession().then((sess) => {
+      window.api.auth.getSession().then(async (sess) => {
         if (sess) {
           setCurrentSession(sess);
           fetchCatalog();
+          let shiftsEnabled = true;
+          if (window.api.settings) {
+            const s = await window.api.settings.get();
+            shiftsEnabled = s.enable_shifts ?? true;
+            setEnableShifts(shiftsEnabled);
+          }
+          const currShift = await fetchActiveShift();
           if (sess.role === 'staff') {
             setActiveTab('pos');
+          }
+          if (!currShift && shiftsEnabled) {
+            setShiftModalMode('open');
+            setShowShiftModal(true);
           }
         }
       });
     }
   }, []);
 
-  const handleLoginSuccess = (sess: UserSession) => {
+  // Global F1 shortcut to Lock terminal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F1' && currentSession && !isLocked) {
+        e.preventDefault();
+        setAuthMode(currentSession.has_pin ? 'pin' : 'password');
+        setIsLocked(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentSession, isLocked]);
+
+  const handleLoginSuccess = async (sess: UserSession) => {
     setCurrentSession(sess);
+    setIsLocked(false);
     fetchCatalog();
+    let shiftsEnabled = enableShifts;
+    if (window.api && window.api.settings) {
+      const s = await window.api.settings.get();
+      shiftsEnabled = s.enable_shifts ?? true;
+      setEnableShifts(shiftsEnabled);
+    }
+    const currShift = await fetchActiveShift();
     if (sess.role === 'staff') {
       setActiveTab('pos');
     } else {
       setActiveTab('dashboard');
+    }
+    // If no shift is open, prompt for opening float
+    if (!currShift && shiftsEnabled) {
+      setShiftModalMode('open');
+      setShowShiftModal(true);
     }
   };
 
@@ -135,9 +230,19 @@ function MainApp() {
       console.error('Logout error:', err);
     }
     setCurrentSession(null);
+    setIsLocked(false);
+    setAuthMode('password'); // Strictly require Username & Password on next login after logout!
+    setActiveShift(null);
     setProducts([]);
     setCategories([]);
     setActiveTab('dashboard');
+  };
+
+  const handleSettingsChanged = async () => {
+    if (window.api && window.api.settings) {
+      const s = await window.api.settings.get();
+      setEnableShifts(s.enable_shifts ?? true);
+    }
   };
 
   const handleAddCategory = async (name: string): Promise<Category | null> => {
@@ -169,7 +274,6 @@ function MainApp() {
     try {
       await window.api.categories.remove(id);
       setCategories((prev) => prev.filter((c) => c.id !== id));
-      // Zero-stock products were detached from it, so reload the catalog.
       fetchCatalog();
       return true;
     } catch (err: any) {
@@ -182,14 +286,33 @@ function MainApp() {
     setLang((prev) => (prev === 'bn' ? 'en' : 'bn'));
   };
 
-  // If user is not authenticated, render Login Screen
-  if (!currentSession) {
+  // If user is not authenticated or counter is locked, render Lock / PIN Screen
+  if (!currentSession || isLocked) {
+    if (authMode === 'pin') {
+      return (
+        <>
+          <PinLoginScreen
+            onLoginSuccess={handleLoginSuccess}
+            onSwitchToPasswordLogin={() => setAuthMode('password')}
+          />
+          <FirstRunWizardModal
+            isOpen={showWizardModal}
+            onCompleted={() => {
+              setShowWizardModal(false);
+              fetchCatalog();
+            }}
+          />
+        </>
+      );
+    }
+
     return (
       <>
         <LoginView
           onLoginSuccess={handleLoginSuccess}
           lang={lang}
           onLanguageToggle={toggleLanguage}
+          onSwitchToPinLogin={() => setAuthMode('pin')}
         />
         <FirstRunWizardModal
           isOpen={showWizardModal}
@@ -263,19 +386,57 @@ function MainApp() {
         {/* Primary Tab Navigation */}
         <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 p-2 text-ui-sm font-medium">
 
-          {isOwner && (
+          {/* Shift Status & Drawer Button */}
+          {enableShifts && (
             <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-                activeTab === 'dashboard'
-                  ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                  : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
+              type="button"
+              onClick={() => {
+                if (activeShift) {
+                  setShiftModalMode('view');
+                } else {
+                  setShiftModalMode('open');
+                }
+                setShowShiftModal(true);
+              }}
+              className={`${sidebarOpen ? 'w-full' : 'w-10'} px-2.5 py-1.5 rounded-xl border flex items-center gap-2 transition-all text-left overflow-hidden whitespace-nowrap mb-1 ${
+                activeShift
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100'
+                  : 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
               }`}
+              title={activeShift ? `Shift Active: ৳ ${(activeShift.expected_cash_paisa / 100).toFixed(2)}` : 'Shift Closed - Click to Open'}
             >
-              <LayoutDashboard className="w-4 h-4 shrink-0" />
-              <span className="truncate">{t.navDashboard}</span>
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${activeShift ? 'bg-emerald-600 animate-pulse' : 'bg-amber-500'}`} />
+              {sidebarOpen && (
+                <div className="min-w-0 flex-1 flex flex-col">
+                  <div className="flex items-center justify-between gap-1 leading-none">
+                    <span className="text-[9.5px] uppercase font-bold tracking-wider text-jungle-teal-700">
+                      {activeShift ? 'Shift Active' : 'Shift Closed'}
+                    </span>
+                    {activeShift && (
+                      <span className="text-[9.5px] font-mono text-emerald-800 font-bold bg-emerald-100/90 px-1 py-0.2 rounded">
+                        {formatShiftDuration(activeShift.opened_at)}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs font-mono font-extrabold truncate mt-0.5">
+                    {activeShift ? `৳ ${(activeShift.expected_cash_paisa / 100).toLocaleString('en-US')}` : 'Start Shift'}
+                  </span>
+                </div>
+              )}
             </button>
           )}
+
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
+              activeTab === 'dashboard'
+                ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
+                : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4 shrink-0" />
+            <span className="truncate">{t.navDashboard}</span>
+          </button>
 
           <button
             onClick={() => setActiveTab('pos')}
@@ -411,6 +572,20 @@ function MainApp() {
             <span className="truncate">{lang === 'bn' ? 'বিক্রয় তালিকা' : 'Sales'}</span>
           </button>
 
+          {enableShifts && (
+            <button
+              onClick={() => setActiveTab('shifts')}
+              className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
+                activeTab === 'shifts'
+                  ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
+                  : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
+              }`}
+            >
+              <Clock className="w-4 h-4 shrink-0" />
+              <span className="truncate">{lang === 'bn' ? 'শিফট তালিকা' : 'Shifts History'}</span>
+            </button>
+          )}
+
           {isOwner && (
             <>
               <button
@@ -509,6 +684,16 @@ function MainApp() {
                 <button
                   onClick={() => {
                     setShowUserMenu(false);
+                    setIsLocked(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-jungle-teal-800 hover:bg-jungle-teal-100 rounded-xl transition-colors font-semibold text-left"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Lock Screen [F1]</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
                     handleLogout();
                   }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors font-semibold text-left"
@@ -525,7 +710,7 @@ function MainApp() {
 
       {/* Main Viewport */}
       <main className="flex-1 min-w-0 p-3 sm:p-4 max-w-[1600px] w-full overflow-hidden flex flex-col min-h-0">
-        {activeTab === 'dashboard' && isOwner && (
+        {activeTab === 'dashboard' && (
           <DashboardView
             currentSession={currentSession}
             products={products}
@@ -579,9 +764,19 @@ function MainApp() {
 
         {activeTab === 'reports' && <ReportsView currentSession={currentSession} />}
 
+        {activeTab === 'shifts' && (
+          <ShiftsHistoryView
+            currentSession={currentSession}
+            onOpenShiftModal={() => {
+              setShiftModalMode(activeShift ? 'view' : 'open');
+              setShowShiftModal(true);
+            }}
+          />
+        )}
+
         {activeTab === 'users' && isOwner && <UsersView currentSession={currentSession} />}
 
-        {activeTab === 'settings' && isOwner && <SettingsView currentSession={currentSession} />}
+        {activeTab === 'settings' && isOwner && <SettingsView currentSession={currentSession} onSettingsChanged={handleSettingsChanged} />}
 
         {activeTab === 'audit' && isOwner && <AuditLogView currentSession={currentSession} />}
       </main>
@@ -602,6 +797,14 @@ function MainApp() {
           setShowWizardModal(false);
           fetchCatalog();
         }}
+      />
+
+      {/* Shift & Cash Drawer Modal */}
+      <ShiftModal
+        isOpen={showShiftModal}
+        onClose={() => setShowShiftModal(false)}
+        mode={shiftModalMode}
+        onShiftUpdated={fetchActiveShift}
       />
     </div>
   );

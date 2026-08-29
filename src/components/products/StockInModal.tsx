@@ -16,6 +16,7 @@ export const StockInModal: React.FC<StockInModalProps> = ({
   product,
 }) => {
   const [addQty, setAddQty] = useState<string>('1');
+  const [unitCostTaka, setUnitCostTaka] = useState<string>('');
   const [reason, setReason] = useState('Stock delivery received');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +25,11 @@ export const StockInModal: React.FC<StockInModalProps> = ({
     setAddQty('1');
     setReason('Stock delivery received');
     setError(null);
+    if (product) {
+      setUnitCostTaka((product.cost_price_paisa / 100).toString());
+    } else {
+      setUnitCostTaka('');
+    }
   }, [product, isOpen]);
 
   if (!isOpen || !product) return null;
@@ -31,11 +37,16 @@ export const StockInModal: React.FC<StockInModalProps> = ({
   const currentQty = product.stock_qty || 0;
   const parsedAdd = parseInt(addQty, 10) || 0;
   const newTotal = currentQty + Math.max(0, parsedAdd);
+  const parsedCost = parseFloat(unitCostTaka);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (parsedAdd <= 0) {
       setError('Please enter a positive quantity to add.');
+      return;
+    }
+    if (isNaN(parsedCost) || parsedCost < 0) {
+      setError('Please enter a valid cost price.');
       return;
     }
 
@@ -46,6 +57,7 @@ export const StockInModal: React.FC<StockInModalProps> = ({
       await window.api.products.stockIn({
         product_id: product.id,
         qty: parsedAdd,
+        cost_price_paisa: Math.round(parsedCost * 100),
         reason: reason.trim() || 'Stock delivery received',
       });
       onSuccess();
@@ -112,19 +124,35 @@ export const StockInModal: React.FC<StockInModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="block text-jungle-teal-400 font-medium mb-1">
-              Quantity to Add <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="number"
-              min="1"
-              required
-              autoFocus
-              value={addQty}
-              onChange={(e) => setAddQty(e.target.value)}
-              className="w-full bg-jungle-teal-950 border border-jungle-teal-800 rounded-lg px-3 py-2 text-jungle-teal-100 text-sm font-mono focus:outline-hidden focus:border-muted-teal-600"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-jungle-teal-400 font-medium mb-1">
+                Quantity to Add <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                required
+                autoFocus
+                value={addQty}
+                onChange={(e) => setAddQty(e.target.value)}
+                className="w-full bg-jungle-teal-950 border border-jungle-teal-800 rounded-lg px-3 py-2 text-jungle-teal-100 text-sm font-mono focus:outline-hidden focus:border-muted-teal-600"
+              />
+            </div>
+            <div>
+              <label className="block text-jungle-teal-400 font-medium mb-1">
+                Unit Cost (৳) <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                required
+                value={unitCostTaka}
+                onChange={(e) => setUnitCostTaka(e.target.value)}
+                className="w-full bg-jungle-teal-950 border border-jungle-teal-800 rounded-lg px-3 py-2 text-jungle-teal-100 text-sm font-mono focus:outline-hidden focus:border-muted-teal-600"
+              />
+            </div>
           </div>
 
           <div>

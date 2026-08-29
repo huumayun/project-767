@@ -14,14 +14,18 @@ import {
   SlidersHorizontal,
   Barcode,
   Sparkles,
+  Clock,
+  Layers,
 } from 'lucide-react';
 import { ProductFormModal } from './ProductFormModal';
 import { BarcodeLabelModal } from './BarcodeLabelModal';
 import { CsvImportModal } from './CsvImportModal';
+import { StockHistoryModal } from './StockHistoryModal';
 
 import { useToast } from '../../context/ToastContext';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { playScanSuccess } from '../../utils/audio';
+import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
 
 interface ProductsViewProps {
   currentSession: UserSession | null;
@@ -56,11 +60,22 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [barcodeTargetProduct, setBarcodeTargetProduct] = useState<Product | null>(null);
   const [showCsvModal, setShowCsvModal] = useState(false);
+  const [historyTargetProduct, setHistoryTargetProduct] = useState<Product | null>(null);
 
   const [stockInProduct, setStockInProduct] = useState<Product | null>(null);
-  const [stockInQty, setStockInQty] = useState<number>(10);
+  const [stockInQty, setStockInQty] = useState<string>('10');
+  const [stockInCost, setStockInCost] = useState<string>('');
+  const [stockInSellPrice, setStockInSellPrice] = useState<string>('');
   const [stockInReason, setStockInReason] = useState<string>('Quick Stock-in');
   const [stockInLoading, setStockInLoading] = useState(false);
+
+  const openQuickStockIn = (product: Product) => {
+    setStockInProduct(product);
+    setStockInQty('10');
+    setStockInCost((product.cost_price_paisa / 100).toString());
+    setStockInSellPrice((product.sell_price_paisa / 100).toString());
+    setStockInReason('Quick Stock-in');
+  };
 
   // Delete Confirm Modal
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -92,20 +107,19 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     }
   };
 
-  const handleQuickScanSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const code = quickScanInput.trim();
+  const handleQuickScanSubmit = async (e?: React.FormEvent, codeOverride?: string) => {
+    if (e) e.preventDefault();
+    const code = (codeOverride || quickScanInput).trim();
     if (!code) return;
 
     if (!window.api) return;
+
     try {
-      const found = await window.api.products.getByBarcode(code);
-      if (found) {
+      const match = products.find((p) => p.barcode === code);
+      if (match) {
         playScanSuccess();
-        toast.info(`Product found: "${found.name}" — stock ${found.stock_qty}`);
-        setEditingProduct(found);
-        setInitialBarcode('');
-        setShowFormModal(true);
+        // User requested: if found, auto open Quick Stock Update
+        openQuickStockIn(match);
       } else {
         playScanSuccess();
         toast.success(`New barcode scanned: ${code}`);
@@ -119,18 +133,43 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     }
   };
 
+  useBarcodeScanner((code) => {
+    handleQuickScanSubmit(undefined, code);
+  });
+
   const handleStockInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!window.api || !stockInProduct || !isOwner) return;
+
+    const parsedQty = parseInt(stockInQty, 10);
+    if (isNaN(parsedQty) || parsedQty <= 0) {
+      toast.error('Please enter a positive quantity to add.');
+      return;
+    }
+
+    const parsedCost = parseFloat(stockInCost);
+    if (isNaN(parsedCost) || parsedCost < 0) {
+      toast.error('Please enter a valid cost price.');
+      return;
+    }
+
+    const parsedSellPrice = parseFloat(stockInSellPrice);
+    if (isNaN(parsedSellPrice) || parsedSellPrice < 0) {
+      toast.error('Please enter a valid sell price.');
+      return;
+    }
+
     setStockInLoading(true);
 
     try {
       await window.api.products.stockIn({
         product_id: stockInProduct.id,
-        qty: stockInQty,
+        qty: parsedQty,
+        cost_price_paisa: Math.round(parsedCost * 100),
+        sell_price_paisa: Math.round(parsedSellPrice * 100),
         reason: stockInReason,
       });
-      toast.success(`Added ${stockInQty} units to "${stockInProduct.name}".`);
+      toast.success(`Added ${parsedQty} units to "${stockInProduct.name}".`);
       setStockInProduct(null);
       onRefresh();
     } catch (err: any) {
@@ -319,7 +358,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                         <div className="flex items-center justify-center gap-1.5">
                           {isOwner && (
                             <button
-                              onClick={() => setStockInProduct(product)}
+                              onClick={() => openQuickStockIn(product)}
                               className="w-8 h-8 flex items-center justify-center bg-muted-teal-50 hover:bg-muted-teal-100 text-muted-teal-800 rounded-lg border border-muted-teal-200 transition-colors"
                               title="Quick Stock-In"
                             >
@@ -341,6 +380,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
                           {isOwner && (
                             <>
+                              <button
+                                onClick={() => setHistoryTargetProduct(product)}
+                                className="w-8 h-8 flex items-center justify-center bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-lg border border-jungle-teal-300 transition-colors"
+                                title="Stock Details"
+                              >
+                                <Layers className="w-3.5 h-3.5" />
+                              </button>
                               <button
                                 onClick={() => {
                                   setEditingProduct(product);
@@ -378,20 +424,87 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
           <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl max-w-sm w-full p-6 shadow-2xl text-jungle-teal-900 space-y-4">
             <h3 className="text-base font-bold text-jungle-teal-900">Quick Stock-In</h3>
-            <p className="text-xs text-jungle-teal-600 font-sans">
-              Add inventory for <strong className="text-azure-mist-800">{stockInProduct.name}</strong> (Current:{' '}
-              {stockInProduct.stock_qty} {stockInProduct.unit})
-            </p>
+            <div className="text-xs text-jungle-teal-600 font-sans">
+              <div className="mb-2">
+                Add inventory for <strong className="text-azure-mist-800 text-sm">{stockInProduct.name}</strong>
+              </div>
+              
+              {stockInProduct.batches && stockInProduct.batches.length > 0 ? (
+                <div className="bg-white border border-jungle-teal-200 rounded-lg p-2.5 space-y-1.5 shadow-2xs mb-1">
+                  <div className="text-[10px] font-bold text-jungle-teal-800 uppercase tracking-wider mb-1">Current Active Stock:</div>
+                  {stockInProduct.batches.map((b, i) => (
+                    <div key={i} className="flex justify-between items-center font-mono">
+                      <div>
+                        <span className="font-semibold text-jungle-teal-900">{b.remaining_qty} {stockInProduct.unit}</span>
+                        {b.received_at && (
+                          <span className="text-[9px] text-jungle-teal-500 ml-2 font-sans opacity-80" title={new Date(b.received_at).toLocaleString()}>
+                            {new Date(b.received_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-jungle-teal-700">@ ৳ {(b.cost_price_paisa / 100).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white border border-jungle-teal-200 rounded-lg p-2.5 shadow-2xs mb-1">
+                  <div className="text-[10px] font-bold text-jungle-teal-800 uppercase tracking-wider mb-1">Current Active Stock:</div>
+                  <div className="flex justify-between items-center font-mono">
+                    <span className="font-semibold text-jungle-teal-900">{stockInProduct.stock_qty} {stockInProduct.unit}</span>
+                    <span className="text-jungle-teal-700">@ ৳ {(stockInProduct.cost_price_paisa / 100).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <form onSubmit={handleStockInSubmit} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-jungle-teal-700 font-semibold mb-1">Quantity to Add</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={stockInQty}
+                    onChange={(e) => setStockInQty(e.target.value)}
+                    className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono font-bold focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-jungle-teal-700 font-semibold mb-1">Unit Cost (৳)</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="0.01"
+                    value={stockInCost}
+                    onChange={(e) => setStockInCost(e.target.value)}
+                    className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono font-bold focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
+                  />
+                  {(() => {
+                    const prevCost = stockInProduct.cost_price_paisa / 100;
+                    const curCost = parseFloat(stockInCost);
+                    if (isNaN(curCost) || stockInCost === '') return null;
+                    const diff = curCost - prevCost;
+                    if (diff > 0) {
+                      return <div className="text-[10px] text-rose-600 mt-1 font-semibold flex items-center gap-0.5"><span>▲</span> +৳{diff.toFixed(2)} (Higher)</div>;
+                    } else if (diff < 0) {
+                      return <div className="text-[10px] text-emerald-600 mt-1 font-semibold flex items-center gap-0.5"><span>▼</span> -৳{Math.abs(diff).toFixed(2)} (Lower)</div>;
+                    }
+                    return <div className="text-[10px] text-jungle-teal-500 mt-1 font-semibold flex items-center gap-0.5"><span>=</span> Same Price</div>;
+                  })()}
+                </div>
+              </div>
+
               <div>
-                <label className="block text-jungle-teal-700 font-semibold mb-1">Quantity to Add</label>
+                <label className="block text-jungle-teal-700 font-semibold mb-1">New Sell Price (৳)</label>
                 <input
                   type="number"
                   required
-                  min="1"
-                  value={stockInQty}
-                  onChange={(e) => setStockInQty(parseInt(e.target.value, 10) || 1)}
+                  min="0"
+                  step="0.01"
+                  value={stockInSellPrice}
+                  onChange={(e) => setStockInSellPrice(e.target.value)}
                   className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono font-bold focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
                 />
               </div>
@@ -476,6 +589,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
           }}
         />
       )}
+
+      {/* Stock History Modal */}
+      <StockHistoryModal
+        isOpen={Boolean(historyTargetProduct)}
+        onClose={() => setHistoryTargetProduct(null)}
+        product={historyTargetProduct}
+      />
 
       {/* Delete Confirmation Modal */}
       <ConfirmModal

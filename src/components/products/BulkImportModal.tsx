@@ -222,7 +222,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
               {dryRunResult.errors.length > 0 && (
                 <ul className="list-disc list-inside space-y-1 max-h-40 overflow-y-auto text-[11px] font-mono text-rose-300/90 pt-1 border-t border-rose-800/50">
-                  {dryRunResult.errors.map((err, i) => (
+                  {dryRunResult.errors.map((err: string, i: number) => (
                     <li key={i}>{err}</li>
                   ))}
                 </ul>

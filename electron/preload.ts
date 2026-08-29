@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   ping: () => ipcRenderer.invoke('api:ping'),
   auth: {
     login: (args: { username: string; password: string }) => ipcRenderer.invoke('api:auth:login', args),
+    pinLogin: (args: { pin: string }) => ipcRenderer.invoke('api:auth:pinLogin', args),
     logout: () => ipcRenderer.invoke('api:auth:logout'),
     getSession: () => ipcRenderer.invoke('api:auth:getSession'),
   },
@@ -29,6 +30,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('api:products:stockIn', data),
     stockAdjustment: (data: { product_id: string; qty_delta: number; reason: string }) =>
       ipcRenderer.invoke('api:products:stockAdjustment', data),
+    getStockHistory: (productId: string) => ipcRenderer.invoke('api:products:getStockHistory', productId),
     bulkImport: (payload: { mode: 'dry_run' | 'commit'; rows: any[] }) =>
       ipcRenderer.invoke('api:products:bulkImport', payload),
   },
@@ -97,14 +99,26 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('api:reports:getSalesReport', args),
     getProfitReport: (args: { startDate: string; endDate: string }) =>
       ipcRenderer.invoke('api:reports:getProfitReport', args),
-    getBestSelling: (limit?: number) => ipcRenderer.invoke('api:reports:getBestSelling', limit),
+    getBestSelling: (args?: number | { startDate?: string; endDate?: string; limit?: number }) =>
+      ipcRenderer.invoke('api:reports:getBestSelling', args),
     getStockValuation: () => ipcRenderer.invoke('api:reports:getStockValuation'),
   },
   users: {
-    list: () => ipcRenderer.invoke('api:users:list'),
+    list: (filters?: any) => ipcRenderer.invoke('api:users:list', filters),
     create: (data: any) => ipcRenderer.invoke('api:users:create', data),
     update: (data: any) => ipcRenderer.invoke('api:users:update', data),
+    updatePin: (data: any) => ipcRenderer.invoke('api:users:updatePin', data),
     changePassword: (data: any) => ipcRenderer.invoke('api:users:changePassword', data),
+  },
+  shifts: {
+    getCurrent: () => ipcRenderer.invoke('api:shifts:getCurrent'),
+    hasAnyOpen: () => ipcRenderer.invoke('api:shifts:hasAnyOpen'),
+    getLastClosedFloat: () => ipcRenderer.invoke('api:shifts:getLastClosedFloat'),
+    open: (payload: any) => ipcRenderer.invoke('api:shifts:open', payload),
+    addCashTx: (payload: any) => ipcRenderer.invoke('api:shifts:addCashTx', payload),
+    getSummary: (shiftId: string) => ipcRenderer.invoke('api:shifts:getSummary', shiftId),
+    close: (payload: any) => ipcRenderer.invoke('api:shifts:close', payload),
+    getHistory: (limit?: number) => ipcRenderer.invoke('api:shifts:getHistory', limit),
   },
   settings: {
     get: () => ipcRenderer.invoke('api:settings:get'),

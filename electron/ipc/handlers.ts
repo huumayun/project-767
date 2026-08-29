@@ -13,6 +13,7 @@ export interface MainSession {
   username: string;
   name: string;
   role: 'owner' | 'staff';
+  has_pin?: boolean;
   loginTime: number;
 }
 
@@ -51,10 +52,30 @@ function getDeviceId(db: any): string {
   return row?.value || 'MAIN';
 }
 
+function getLocalYYYYMMDD(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+}
+
+function getLocalDateRangeBounds(startDate: string, endDate: string): { startISO: string; endISO: string } {
+  const [sY, sM, sD] = startDate.split('-').map(Number);
+  const [eY, eM, eD] = endDate.split('-').map(Number);
+
+  const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+  const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
+
+  return {
+    startISO: isNaN(start.getTime()) ? `${startDate}T00:00:00.000Z` : start.toISOString(),
+    endISO: isNaN(end.getTime()) ? `${endDate}T23:59:59.999Z` : end.toISOString(),
+  };
+}
+
 function generateInvoiceNumber(db: any): string {
   const deviceId = getDeviceId(db);
   const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
+  const dateStr = getLocalYYYYMMDD(now); // Local date: YYYYMMDD
   const prefix = `INV-${deviceId}-${dateStr}-`;
 
   const lastSale = db.prepare(`
@@ -116,6 +137,7 @@ export function registerIpcHandlers() {
       username: user.username,
       name: user.name,
       role: user.role,
+      has_pin: !!user.pin_code,
       loginTime: now,
     };
 
@@ -128,6 +150,50 @@ export function registerIpcHandlers() {
         username: user.username,
         name: user.name,
         role: user.role,
+        has_pin: !!user.pin_code,
+      },
+    };
+  });
+
+  // Quick Auto PIN Login (matches PIN across active users and logs in immediately)
+  ipcMain.handle('api:auth:pinLogin', async (_event, rawArgs) => {
+    const schema = z.object({
+      pin: z.string().min(4).max(6),
+    });
+    const { pin } = schema.parse(rawArgs);
+
+    const now = Date.now();
+    const db = getDb();
+
+    // Check across all active users
+    const users = db.prepare('SELECT * FROM users WHERE pin_code = ? AND is_active = 1 AND deleted_at IS NULL').all(pin) as any[];
+
+    if (users.length === 0) {
+      logAudit('PIN_LOGIN_FAILED', 'users', undefined, { reason: 'Invalid PIN' });
+      return { success: false, error: 'Invalid PIN. Please try again.' };
+    }
+
+    const user = users[0];
+
+    activeSession = {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      has_pin: !!user.pin_code,
+      loginTime: now,
+    };
+
+    logAudit('PIN_LOGIN_SUCCESS', 'users', user.id, { username: user.username, name: user.name });
+
+    return {
+      success: true,
+      session: {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role,
+        has_pin: !!user.pin_code,
       },
     };
   });
@@ -147,6 +213,7 @@ export function registerIpcHandlers() {
       username: activeSession.username,
       name: activeSession.name,
       role: activeSession.role,
+      has_pin: activeSession.has_pin,
     };
   });
 
@@ -305,7 +372,11 @@ export function registerIpcHandlers() {
       });
     }
 
-    return products;
+    const batchesStmt = db.prepare('SELECT remaining_qty, cost_price_paisa, received_at FROM inventory_batches WHERE product_id = ? AND remaining_qty > 0 ORDER BY received_at ASC');
+    return products.map(p => {
+      const batches = batchesStmt.all(p.id);
+      return { ...p, batches };
+    });
   });
 
   ipcMain.handle('api:products:getByBarcode', async (_event, rawBarcode) => {
@@ -396,9 +467,9 @@ export function registerIpcHandlers() {
       if (data.stock_qty > 0) {
         db.prepare(`
           INSERT INTO stock_transactions (
-            id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at
-          ) VALUES (?, ?, 'initial', ?, 'products', ?, 'Initial stock setup', ?, ?, ?)
-        `).run(uuidv7(), id, data.stock_qty, id, activeSession?.id || 'system', now, now);
+            id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at, unit_cost_paisa
+          ) VALUES (?, ?, 'initial', ?, 'products', ?, 'Initial stock setup', ?, ?, ?, ?)
+        `).run(uuidv7(), id, data.stock_qty, id, activeSession?.id || 'system', now, now, data.cost_price_paisa);
       }
     })();
 
@@ -470,33 +541,79 @@ export function registerIpcHandlers() {
     return { success: true };
   });
 
+  function processStockIn(db: any, productId: string, addQty: number, unitCostPaisa: number | null, reason: string, userId: string, deviceId: string, refTable: string, refId: string) {
+    const now = new Date().toISOString();
+    const valSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('inventory_valuation_method') as any;
+    const valMethod = valSetting?.value || 'wac';
+
+    const product = db.prepare('SELECT stock_qty, cost_price_paisa FROM products WHERE id = ? AND deleted_at IS NULL').get(productId) as any;
+    if (!product) throw new Error('Product not found');
+    
+    const incomingCost = unitCostPaisa !== null ? unitCostPaisa : product.cost_price_paisa;
+    
+    let newCost = product.cost_price_paisa;
+    if (valMethod === 'wac') {
+       const currentTotalValue = product.stock_qty * product.cost_price_paisa;
+       const incomingValue = addQty * incomingCost;
+       const newTotalQty = product.stock_qty + addQty;
+       if (newTotalQty > 0) {
+         newCost = Math.round((currentTotalValue + incomingValue) / newTotalQty);
+       }
+    } else if (valMethod === 'fifo') {
+       newCost = incomingCost;
+       db.prepare(`
+         INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
+         VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?, ?)
+       `).run(productId, addQty, addQty, incomingCost, now, refTable, refId);
+    }
+
+    db.prepare('UPDATE products SET stock_qty = stock_qty + ?, cost_price_paisa = ?, updated_at = ? WHERE id = ?')
+      .run(addQty, newCost, now, productId);
+      
+    db.prepare(`
+      INSERT INTO stock_transactions (
+        id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, device_id, created_at, updated_at, unit_cost_paisa
+      ) VALUES (?, ?, 'purchase', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(uuidv7(), productId, addQty, refTable, refId, reason, userId, deviceId, now, now, incomingCost);
+    
+    return product.stock_qty + addQty;
+  }
+
   ipcMain.handle('api:products:stockIn', async (_event, rawData) => {
     requireRole(['owner']);
     const schema = z.object({
-
       product_id: z.string().min(1),
       qty: z.number().int().positive(),
+      cost_price_paisa: z.number().int().nonnegative().optional(),
+      sell_price_paisa: z.number().int().nonnegative().optional(),
       reason: z.string().optional(),
     });
 
     const data = schema.parse(rawData);
     const db = getDb();
-    const now = new Date().toISOString();
     const userId = activeSession?.id || 'system';
+    const deviceId = getDeviceId(db);
 
     let newStock = 0;
     db.transaction(() => {
-      const product = db.prepare('SELECT stock_qty, name FROM products WHERE id = ? AND deleted_at IS NULL').get(data.product_id) as any;
-      if (!product) throw new Error('Product not found');
+      newStock = processStockIn(
+        db,
+        data.product_id,
+        data.qty,
+        data.cost_price_paisa !== undefined ? data.cost_price_paisa : null,
+        data.reason || 'Quick stock-in',
+        userId,
+        deviceId,
+        'products',
+        data.product_id
+      );
 
-      newStock = product.stock_qty + data.qty;
-      db.prepare('UPDATE products SET stock_qty = stock_qty + ?, updated_at = ? WHERE id = ?').run(data.qty, now, data.product_id);
-
-      db.prepare(`
-        INSERT INTO stock_transactions (
-          id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at
-        ) VALUES (?, ?, 'purchase', ?, 'products', ?, ?, ?, ?, ?)
-      `).run(uuidv7(), data.product_id, data.qty, data.product_id, data.reason || 'Quick stock-in', userId, now, now);
+      if (data.sell_price_paisa !== undefined) {
+        db.prepare('UPDATE products SET sell_price_paisa = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+          data.sell_price_paisa,
+          data.product_id
+        );
+      }
     })();
 
     logAudit('STOCK_IN', 'products', data.product_id, { addedQty: data.qty, newStock });
@@ -537,6 +654,19 @@ export function registerIpcHandlers() {
 
     logAudit('STOCK_ADJUSTMENT', 'products', data.product_id, { qtyDelta: data.qty_delta, reason: data.reason, newStock });
     return { success: true, newStock };
+  });
+
+  ipcMain.handle('api:products:getStockHistory', async (_event, productId: string) => {
+    requireRole(['owner', 'staff']);
+    const db = getDb();
+    return db.prepare(`
+      SELECT st.*, u.name as user_name
+      FROM stock_transactions st
+      LEFT JOIN users u ON st.user_id = u.id
+      WHERE st.product_id = ?
+      ORDER BY st.created_at DESC
+      LIMIT 100
+    `).all(productId);
   });
 
   ipcMain.handle('api:products:bulkImport', async (_event, rawPayload) => {
@@ -653,9 +783,9 @@ export function registerIpcHandlers() {
         if ((row.stock_qty || 0) > 0) {
           db.prepare(`
             INSERT INTO stock_transactions (
-              id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at
-            ) VALUES (?, ?, 'initial', ?, 'products', ?, 'CSV Bulk Import', ?, ?, ?)
-          `).run(uuidv7(), productId, row.stock_qty, productId, userId, now, now);
+              id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at, unit_cost_paisa
+            ) VALUES (?, ?, 'initial', ?, 'products', ?, 'CSV Bulk Import', ?, ?, ?, ?)
+          `).run(uuidv7(), productId, row.stock_qty, productId, userId, now, now, row.cost_price_paisa);
         }
 
         importedCount++;
@@ -715,6 +845,14 @@ export function registerIpcHandlers() {
       customerInfo = db.prepare('SELECT name, phone FROM customers WHERE id = ?').get(payload.customer_id);
     }
 
+    const totalCollected = payload.payments.reduce((sum, p) => sum + (p.amount_paisa || 0), 0);
+    const netCollected = payload.change_paisa > 0 ? Math.max(0, totalCollected - payload.change_paisa) : totalCollected;
+    const remainingDue = Math.max(0, payload.total_paisa - netCollected);
+
+    if (remainingDue > 0 && !payload.customer_id) {
+      throw new Error('Walk-in (খুচরা) গ্রাহকের ক্ষেত্রে বাকি বিক্রি গ্রহণযোগ্য নয়। বাকি রাখতে হলে কাস্টমার নির্বাচন করুন।');
+    }
+
     const invoiceItems: any[] = [];
 
     db.transaction(() => {
@@ -747,6 +885,9 @@ export function registerIpcHandlers() {
         ) VALUES (?, ?, 'sale', ?, 'sales', ?, ?, ?, ?, ?, ?)
       `);
 
+      const valSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('inventory_valuation_method') as any;
+      const valMethod = valSetting?.value || 'wac';
+
       for (const item of payload.items) {
         const product = db.prepare('SELECT name, name_bn, stock_qty, cost_price_paisa FROM products WHERE id = ? AND deleted_at IS NULL').get(item.product_id) as any;
         if (!product) {
@@ -759,14 +900,49 @@ export function registerIpcHandlers() {
         }
 
         const saleItemId = uuidv7();
-        // Cost is frozen onto the line here. Reporting used to read the
-        // product's current cost, so a later purchase at a higher price
-        // rewrote the profit on sales that had already been completed.
+        
+        let blendedCostPaisa = product.cost_price_paisa ?? 0;
+        const batchesToInsert: any[] = [];
+        if (valMethod === 'fifo') {
+          const batches = db.prepare('SELECT id, remaining_qty, cost_price_paisa FROM inventory_batches WHERE product_id = ? AND remaining_qty > 0 ORDER BY received_at ASC').all(item.product_id) as any[];
+          
+          let qtyToFulfill = item.qty;
+          let totalCostForThisItem = 0;
+          
+          for (const batch of batches) {
+            if (qtyToFulfill <= 0) break;
+            
+            const takeQty = Math.min(batch.remaining_qty, qtyToFulfill);
+            qtyToFulfill -= takeQty;
+            totalCostForThisItem += (takeQty * batch.cost_price_paisa);
+            
+            db.prepare('UPDATE inventory_batches SET remaining_qty = remaining_qty - ? WHERE id = ?').run(takeQty, batch.id);
+            
+            batchesToInsert.push({
+              batch_id: batch.id,
+              takeQty,
+              cost_price_paisa: batch.cost_price_paisa
+            });
+          }
+          
+          if (qtyToFulfill > 0) {
+             totalCostForThisItem += (qtyToFulfill * (product.cost_price_paisa ?? 0));
+          }
+          
+          blendedCostPaisa = Math.round(totalCostForThisItem / item.qty);
+        }
+
         insertItemStmt.run(
           saleItemId, saleId, item.product_id, item.qty, item.unit_price_paisa,
           item.discount_paisa, item.serial_number_id || null,
-          product.cost_price_paisa ?? 0, deviceId, now, now
+          blendedCostPaisa, deviceId, now, now
         );
+
+        for (const b of batchesToInsert) {
+          db.prepare('INSERT INTO sale_item_batches (id, sale_item_id, batch_id, qty_consumed, cost_price_paisa) VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?)').run(
+            saleItemId, b.batch_id, b.takeQty, b.cost_price_paisa
+          );
+        }
 
         insertStockTxStmt.run(
           uuidv7(), item.product_id, -item.qty, saleId, `Sale ${invoiceNo}`, userId, deviceId, now, now
@@ -1385,13 +1561,27 @@ export function registerIpcHandlers() {
     const { startDate, endDate } = schema.parse(rawArgs);
     const db = getDb();
 
-    const startISO = `${startDate}T00:00:00.000Z`;
-    const endISO = `${endDate}T23:59:59.999Z`;
-
-    const sales = db.prepare(`
+    // Fetch active sales and filter by local date reliably
+    const rawSales = db.prepare(`
       SELECT * FROM sales
-      WHERE created_at >= ? AND created_at <= ? AND deleted_at IS NULL AND status != 'held'
-    `).all(startISO, endISO) as any[];
+      WHERE deleted_at IS NULL AND status != 'held'
+      ORDER BY created_at ASC
+    `).all() as any[];
+
+    const sales = rawSales.filter((s) => {
+      if (!s.created_at) return false;
+      const d = new Date(s.created_at);
+      let localDateKey = '';
+      if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        localDateKey = `${year}-${month}-${day}`;
+      } else {
+        localDateKey = String(s.created_at).slice(0, 10);
+      }
+      return localDateKey >= startDate && localDateKey <= endDate;
+    });
 
     let totalOrders = sales.length;
     let subtotalPaisa = 0;
@@ -1410,10 +1600,25 @@ export function registerIpcHandlers() {
     });
 
     // Payments in date range
-    const payments = db.prepare(`
-      SELECT method, direction, amount_paisa, type FROM payments
-      WHERE created_at >= ? AND created_at <= ? AND deleted_at IS NULL
-    `).all(startISO, endISO) as any[];
+    const rawPayments = db.prepare(`
+      SELECT method, direction, amount_paisa, type, created_at FROM payments
+      WHERE deleted_at IS NULL
+    `).all() as any[];
+
+    const payments = rawPayments.filter((p) => {
+      if (!p.created_at) return false;
+      const d = new Date(p.created_at);
+      let localDateKey = '';
+      if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        localDateKey = `${year}-${month}-${day}`;
+      } else {
+        localDateKey = String(p.created_at).slice(0, 10);
+      }
+      return localDateKey >= startDate && localDateKey <= endDate;
+    });
 
     let cashPaisa = 0;
     let bkashPaisa = 0;
@@ -1433,17 +1638,56 @@ export function registerIpcHandlers() {
 
     const netSalesPaisa = Math.max(0, grossSalesPaisa - totalRefundedPaisa);
 
-    // Daily trends
-    const dailyTrends = db.prepare(`
-      SELECT 
-        substr(created_at, 1, 10) as date,
-        COUNT(id) as orders_count,
-        SUM(total_paisa) as sales_paisa
-      FROM sales
-      WHERE created_at >= ? AND created_at <= ? AND deleted_at IS NULL AND status != 'held'
-      GROUP BY substr(created_at, 1, 10)
-      ORDER BY date ASC
-    `).all(startISO, endISO) as any[];
+    // Generate daily trends map with accurate local date grouping
+    const trendsMap: Record<string, { orders_count: number; sales_paisa: number }> = {};
+    sales.forEach(s => {
+      const d = new Date(s.created_at);
+      let localDateKey = '';
+      if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        localDateKey = `${year}-${month}-${day}`;
+      } else {
+        localDateKey = String(s.created_at).slice(0, 10);
+      }
+
+      if (!trendsMap[localDateKey]) {
+        trendsMap[localDateKey] = { orders_count: 0, sales_paisa: 0 };
+      }
+      trendsMap[localDateKey].orders_count += 1;
+      trendsMap[localDateKey].sales_paisa += s.total_paisa;
+    });
+
+    // Populate daily trends for all dates in range
+    const dailyTrends: Array<{ date: string; orders_count: number; sales_paisa: number }> = [];
+    const [sY, sM, sD] = startDate.split('-').map(Number);
+    const [eY, eM, eD] = endDate.split('-').map(Number);
+    const curr = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+    const last = new Date(eY, eM - 1, eD, 0, 0, 0, 0);
+
+    if (!isNaN(curr.getTime()) && !isNaN(last.getTime()) && curr <= last) {
+      while (curr <= last) {
+        const year = curr.getFullYear();
+        const month = String(curr.getMonth() + 1).padStart(2, '0');
+        const day = String(curr.getDate()).padStart(2, '0');
+        const key = `${year}-${month}-${day}`;
+        dailyTrends.push({
+          date: key,
+          orders_count: trendsMap[key]?.orders_count || 0,
+          sales_paisa: trendsMap[key]?.sales_paisa || 0,
+        });
+        curr.setDate(curr.getDate() + 1);
+      }
+    } else {
+      Object.keys(trendsMap).sort().forEach(key => {
+        dailyTrends.push({
+          date: key,
+          orders_count: trendsMap[key].orders_count,
+          sales_paisa: trendsMap[key].sales_paisa,
+        });
+      });
+    }
 
     return {
       start_date: startDate,
@@ -1461,17 +1705,13 @@ export function registerIpcHandlers() {
         nagad_paisa: nagadPaisa,
         card_paisa: cardPaisa,
       },
-      daily_trends: dailyTrends.map(t => ({
-        date: t.date,
-        orders_count: t.orders_count,
-        sales_paisa: t.sales_paisa || 0,
-      })),
+      daily_trends: dailyTrends,
     };
   });
 
-  // Profit Report (OWNER ONLY)
+  // Profit Report
   ipcMain.handle('api:reports:getProfitReport', async (_event, rawArgs) => {
-    requireRole(['owner']);
+    requireRole(['owner', 'staff']);
     const schema = z.object({
       startDate: z.string().min(1),
       endDate: z.string().min(1),
@@ -1479,52 +1719,71 @@ export function registerIpcHandlers() {
     const { startDate, endDate } = schema.parse(rawArgs);
     const db = getDb();
 
-    const startISO = `${startDate}T00:00:00.000Z`;
-    const endISO = `${endDate}T23:59:59.999Z`;
-
-    const productProfits = db.prepare(`
+    const rawProductProfits = db.prepare(`
       SELECT 
-        p.id as product_id,
-        p.name as product_name,
+        COALESCE(p.id, si.product_id) as product_id,
+        COALESCE(p.name, 'Deleted Product') as product_name,
         p.barcode,
-        p.cost_price_paisa,
-        SUM(si.qty) as qty_sold,
-        SUM(si.unit_price_paisa * si.qty - si.discount_paisa) as revenue_paisa,
-        -- Use the cost captured on the line. Rows written before the cost
-        -- snapshot existed have NULL, and fall back to the product's current
-        -- cost so old reports read exactly as they did before.
-        SUM(COALESCE(si.unit_cost_paisa, p.cost_price_paisa) * si.qty) as cost_paisa
+        COALESCE(p.cost_price_paisa, si.unit_cost_paisa, 0) as cost_price_paisa,
+        si.qty as qty_sold,
+        (si.unit_price_paisa * si.qty - si.discount_paisa) as revenue_paisa,
+        (COALESCE(si.unit_cost_paisa, p.cost_price_paisa, 0) * si.qty) as cost_paisa,
+        s.created_at
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
-      JOIN products p ON si.product_id = p.id
-      WHERE s.created_at >= ? AND s.created_at <= ? AND s.deleted_at IS NULL AND s.status = 'completed'
-      GROUP BY p.id
-      ORDER BY revenue_paisa DESC
-    `).all(startISO, endISO) as any[];
+      LEFT JOIN products p ON si.product_id = p.id
+      WHERE s.deleted_at IS NULL AND s.status != 'held'
+    `).all() as any[];
 
+    const matchingProfits = rawProductProfits.filter((it) => {
+      if (!it.created_at) return false;
+      const d = new Date(it.created_at);
+      let localDateKey = '';
+      if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        localDateKey = `${year}-${month}-${day}`;
+      } else {
+        localDateKey = String(it.created_at).slice(0, 10);
+      }
+      return localDateKey >= startDate && localDateKey <= endDate;
+    });
+
+    const profitByProduct: Record<string, any> = {};
     let totalRevenue = 0;
     let totalCogs = 0;
 
-    const list = productProfits.map(it => {
-      const revenue = it.revenue_paisa || 0;
-      const cost = it.cost_paisa || 0;
-      const profit = revenue - cost;
-      const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+    matchingProfits.forEach((it) => {
+      const pId = it.product_id;
+      if (!profitByProduct[pId]) {
+        profitByProduct[pId] = {
+          product_id: it.product_id,
+          product_name: it.product_name,
+          barcode: it.barcode,
+          qty_sold: 0,
+          revenue_paisa: 0,
+          cost_paisa: 0,
+          profit_paisa: 0,
+          margin_percent: 0,
+        };
+      }
+      profitByProduct[pId].qty_sold += it.qty_sold;
+      profitByProduct[pId].revenue_paisa += it.revenue_paisa;
+      profitByProduct[pId].cost_paisa += it.cost_paisa;
+      totalRevenue += it.revenue_paisa;
+      totalCogs += it.cost_paisa;
+    });
 
-      totalRevenue += revenue;
-      totalCogs += cost;
-
+    const list = Object.values(profitByProduct).map((item: any) => {
+      const profit = item.revenue_paisa - item.cost_paisa;
+      const margin = item.revenue_paisa > 0 ? Math.round((profit / item.revenue_paisa) * 100) : 0;
       return {
-        product_id: it.product_id,
-        product_name: it.product_name,
-        barcode: it.barcode,
-        qty_sold: it.qty_sold,
-        revenue_paisa: revenue,
-        cost_paisa: cost,
+        ...item,
         profit_paisa: profit,
         margin_percent: margin,
       };
-    });
+    }).sort((a, b) => b.revenue_paisa - a.revenue_paisa);
 
     const grossProfit = totalRevenue - totalCogs;
     const overallMargin = totalRevenue > 0 ? parseFloat(((grossProfit / totalRevenue) * 100).toFixed(1)) : 0;
@@ -1542,34 +1801,81 @@ export function registerIpcHandlers() {
     };
   });
 
-  // Best Selling Products
-  ipcMain.handle('api:reports:getBestSelling', async (_event, limitRaw) => {
+  // Best Selling Products (Supports optional date range and limit)
+  ipcMain.handle('api:reports:getBestSelling', async (_event, rawArgs) => {
     requireRole(['owner', 'staff']);
-    const limit = typeof limitRaw === 'number' ? limitRaw : 10;
+    let limit = 10;
+    let startDate: string | undefined;
+    let endDate: string | undefined;
+
+    if (typeof rawArgs === 'number') {
+      limit = rawArgs;
+    } else if (typeof rawArgs === 'object' && rawArgs !== null) {
+      limit = rawArgs.limit || 10;
+      startDate = rawArgs.startDate;
+      endDate = rawArgs.endDate;
+    }
+
     const db = getDb();
 
-    return db.prepare(`
+    const rawRows = db.prepare(`
       SELECT 
-        p.id as product_id,
-        p.name as product_name,
+        COALESCE(p.id, si.product_id) as product_id,
+        COALESCE(p.name, 'Deleted Product') as product_name,
         p.barcode,
         c.name as category_name,
-        SUM(si.qty) as qty_sold,
-        SUM(si.unit_price_paisa * si.qty - si.discount_paisa) as revenue_paisa
+        si.qty as qty_sold,
+        (si.unit_price_paisa * si.qty - si.discount_paisa) as revenue_paisa,
+        s.created_at
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
-      JOIN products p ON si.product_id = p.id
+      LEFT JOIN products p ON si.product_id = p.id
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE s.deleted_at IS NULL AND s.status = 'completed'
-      GROUP BY p.id
-      ORDER BY qty_sold DESC
-      LIMIT ?
-    `).all(limit);
+      WHERE s.deleted_at IS NULL AND s.status != 'held'
+    `).all() as any[];
+
+    const filtered = (startDate && endDate)
+      ? rawRows.filter((it) => {
+          if (!it.created_at) return false;
+          const d = new Date(it.created_at);
+          let localDateKey = '';
+          if (!isNaN(d.getTime())) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            localDateKey = `${year}-${month}-${day}`;
+          } else {
+            localDateKey = String(it.created_at).slice(0, 10);
+          }
+          return localDateKey >= startDate && localDateKey <= endDate;
+        })
+      : rawRows;
+
+    const grouped: Record<string, any> = {};
+    filtered.forEach((it) => {
+      const pId = it.product_id;
+      if (!grouped[pId]) {
+        grouped[pId] = {
+          product_id: it.product_id,
+          product_name: it.product_name,
+          barcode: it.barcode,
+          category_name: it.category_name,
+          qty_sold: 0,
+          revenue_paisa: 0,
+        };
+      }
+      grouped[pId].qty_sold += it.qty_sold;
+      grouped[pId].revenue_paisa += it.revenue_paisa;
+    });
+
+    return Object.values(grouped)
+      .sort((a: any, b: any) => b.qty_sold - a.qty_sold)
+      .slice(0, limit);
   });
 
   // Stock Valuation Report
   ipcMain.handle('api:reports:getStockValuation', async () => {
-    requireRole(['owner']);
+    requireRole(['owner', 'staff']);
     const db = getDb();
 
     const products = db.prepare(`
@@ -1594,7 +1900,6 @@ export function registerIpcHandlers() {
     const potentialMargin = totalRetailValuation > 0
       ? parseFloat(((potentialGrossProfit / totalRetailValuation) * 100).toFixed(1))
       : 0;
-
     return {
       total_products_count: totalItemsCount,
       total_stock_units: totalStockUnits,
@@ -1606,10 +1911,36 @@ export function registerIpcHandlers() {
   });
 
   // Users Management Handlers
-  ipcMain.handle('api:users:list', async () => {
+  ipcMain.handle('api:users:list', async (_event, filters?: { startDate?: string; endDate?: string }) => {
     requireRole(['owner']);
     const db = getDb();
-    return db.prepare('SELECT id, username, name, role, is_active, device_id, created_at, updated_at FROM users WHERE deleted_at IS NULL ORDER BY name ASC').all();
+    const users = db.prepare('SELECT id, username, name, role, is_active, pin_code, device_id, created_at, updated_at FROM users WHERE deleted_at IS NULL ORDER BY name ASC').all() as any[];
+
+    if (filters && (filters.startDate || filters.endDate)) {
+      let sql = `SELECT user_id, SUM(total_paisa) as total_sales_paisa FROM sales WHERE status = 'completed' AND deleted_at IS NULL`;
+      const params: any[] = [];
+      if (filters.startDate) {
+        sql += ` AND created_at >= ?`;
+        params.push(filters.startDate + 'T00:00:00.000Z');
+      }
+      if (filters.endDate) {
+        sql += ` AND created_at <= ?`;
+        params.push(filters.endDate + 'T23:59:59.999Z');
+      }
+      sql += ` GROUP BY user_id`;
+      const salesData = db.prepare(sql).all(...params) as any[];
+      const salesMap = new Map(salesData.map(s => [s.user_id, s.total_sales_paisa]));
+      
+      for (const u of users) {
+        u.total_sales_paisa = salesMap.get(u.id) || 0;
+      }
+    } else {
+      for (const u of users) {
+        u.total_sales_paisa = 0;
+      }
+    }
+
+    return users;
   });
 
   ipcMain.handle('api:users:create', async (_event, rawData) => {
@@ -1619,6 +1950,7 @@ export function registerIpcHandlers() {
       name: z.string().min(1),
       role: z.enum(['owner', 'staff']),
       password: z.string().min(4),
+      pin_code: z.string().min(4).max(6).optional(),
     });
     const data = schema.parse(rawData);
     const db = getDb();
@@ -1628,6 +1960,13 @@ export function registerIpcHandlers() {
       throw new Error(`Username "${data.username}" is already taken.`);
     }
 
+    if (data.pin_code) {
+      const existingPin = db.prepare('SELECT username FROM users WHERE pin_code = ? AND is_active = 1 AND deleted_at IS NULL').get(data.pin_code) as any;
+      if (existingPin) {
+        throw new Error(`PIN "${data.pin_code}" is already assigned to user "${existingPin.username}". Choose a unique PIN.`);
+      }
+    }
+
     const salt = bcrypt.genSaltSync(12);
     const passwordHash = bcrypt.hashSync(data.password, salt);
     const id = uuidv7();
@@ -1635,9 +1974,9 @@ export function registerIpcHandlers() {
     const deviceId = getDeviceId(db);
 
     db.prepare(`
-      INSERT INTO users (id, name, username, role, password_hash, is_active, device_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-    `).run(id, data.name.trim(), data.username.trim(), data.role, passwordHash, deviceId, now, now);
+      INSERT INTO users (id, name, username, role, password_hash, pin_code, is_active, device_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+    `).run(id, data.name.trim(), data.username.trim(), data.role, passwordHash, data.pin_code || null, deviceId, now, now);
 
     logAudit('CREATE_USER', 'users', id, { username: data.username, role: data.role });
     return {
@@ -1645,6 +1984,7 @@ export function registerIpcHandlers() {
       name: data.name.trim(),
       username: data.username.trim(),
       role: data.role,
+      pin_code: data.pin_code || null,
       is_active: 1,
       device_id: deviceId,
       created_at: now,
@@ -1659,18 +1999,68 @@ export function registerIpcHandlers() {
       name: z.string().min(1),
       role: z.enum(['owner', 'staff']),
       is_active: z.boolean(),
+      pin_code: z.string().min(4).max(6).optional(),
     });
     const data = schema.parse(rawData);
     const db = getDb();
     const now = new Date().toISOString();
 
+    if (data.pin_code) {
+      const existingPin = db.prepare('SELECT username FROM users WHERE pin_code = ? AND id != ? AND is_active = 1 AND deleted_at IS NULL').get(data.pin_code, data.id) as any;
+      if (existingPin) {
+        throw new Error(`PIN "${data.pin_code}" is already assigned to user "${existingPin.username}".`);
+      }
+    }
+
     db.prepare(`
-      UPDATE users SET name = ?, role = ?, is_active = ?, updated_at = ?
+      UPDATE users SET name = ?, role = ?, is_active = ?, pin_code = ?, updated_at = ?
       WHERE id = ? AND deleted_at IS NULL
-    `).run(data.name.trim(), data.role, data.is_active ? 1 : 0, now, data.id);
+    `).run(data.name.trim(), data.role, data.is_active ? 1 : 0, data.pin_code || null, now, data.id);
 
     logAudit('UPDATE_USER', 'users', data.id, { name: data.name, role: data.role, is_active: data.is_active });
     return { success: true };
+  });
+
+  ipcMain.handle('api:users:updatePin', async (_event, rawData) => {
+    const schema = z.object({
+      userId: z.string().min(1),
+      pin_code: z.string().min(4).max(6),
+    });
+    const { userId, pin_code } = schema.parse(rawData);
+
+    if (!activeSession) {
+      throw new Error('Unauthorized');
+    }
+    if (activeSession.role !== 'owner' && activeSession.id !== userId) {
+      throw new Error('Forbidden: You can only change your own PIN.');
+    }
+
+    const db = getDb();
+    const existingPin = db.prepare('SELECT username FROM users WHERE pin_code = ? AND id != ? AND is_active = 1 AND deleted_at IS NULL').get(pin_code, userId) as any;
+    if (existingPin) {
+      throw new Error(`PIN "${pin_code}" is already taken by ${existingPin.username}. Choose a unique PIN.`);
+    }
+
+    const now = new Date().toISOString();
+    db.prepare('UPDATE users SET pin_code = ?, updated_at = ? WHERE id = ?').run(pin_code, now, userId);
+    logAudit('UPDATE_PIN', 'users', userId);
+    return { success: true };
+  });
+
+  ipcMain.handle('api:users:pinLogin', async (_event, pin_code: string) => {
+    const db = getDb();
+    const user = db.prepare('SELECT * FROM users WHERE pin_code = ? AND is_active = 1 AND deleted_at IS NULL').get(pin_code) as any;
+    
+    if (!user) {
+      throw new Error('Invalid PIN');
+    }
+
+    return {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      role: user.role,
+    };
   });
 
   ipcMain.handle('api:users:changePassword', async (_event, rawData) => {
@@ -1694,6 +2084,300 @@ export function registerIpcHandlers() {
     return { success: true };
   });
 
+  // --- SHIFT & CASH DRAWER MANAGEMENT HANDLERS ---
+
+  function calculateShiftSummary(db: any, shift: any) {
+    const shiftStart = shift.opened_at;
+    const shiftEnd = shift.closed_at || new Date().toISOString();
+    const userId = shift.user_id;
+
+    // User details
+    const userRow = db.prepare('SELECT name, username FROM users WHERE id = ?').get(userId) as any;
+
+    // 1. Sales during shift
+    const sales = db.prepare(`
+      SELECT total_paisa, status FROM sales
+      WHERE created_at >= ? AND created_at <= ? AND deleted_at IS NULL AND status != 'held'
+    `).all(shiftStart, shiftEnd) as any[];
+
+    let totalSalesPaisa = 0;
+    sales.forEach((s) => {
+      totalSalesPaisa += s.total_paisa;
+    });
+
+    // 2. Payments breakdown during shift
+    const payments = db.prepare(`
+      SELECT method, direction, amount_paisa, type FROM payments
+      WHERE created_at >= ? AND created_at <= ? AND deleted_at IS NULL
+    `).all(shiftStart, shiftEnd) as any[];
+
+    let cashSalesPaisa = 0;
+    let bkashSalesPaisa = 0;
+    let nagadSalesPaisa = 0;
+    let cardSalesPaisa = 0;
+    let cashRefundPaisa = 0;
+
+    payments.forEach((p) => {
+      if (p.direction === 'in') {
+        if (p.method === 'cash') cashSalesPaisa += p.amount_paisa;
+        else if (p.method === 'bkash') bkashSalesPaisa += p.amount_paisa;
+        else if (p.method === 'nagad') nagadSalesPaisa += p.amount_paisa;
+        else if (p.method === 'card') cardSalesPaisa += p.amount_paisa;
+      } else if (p.direction === 'out' && p.type === 'refund' && p.method === 'cash') {
+        cashRefundPaisa += p.amount_paisa;
+      }
+    });
+
+    // 3. Shift Cash In / Out (Petty Cash)
+    const cashTxs = db.prepare(`
+      SELECT id, shift_id, type, amount_paisa, reason, user_id, device_id, created_at, updated_at
+      FROM shift_cash_transactions
+      WHERE shift_id = ?
+      ORDER BY created_at ASC
+    `).all(shift.id) as any[];
+
+    let totalCashInPaisa = 0;
+    let totalCashOutPaisa = 0;
+
+    cashTxs.forEach((tx) => {
+      if (tx.type === 'cash_in') totalCashInPaisa += tx.amount_paisa;
+      else if (tx.type === 'cash_out') totalCashOutPaisa += tx.amount_paisa;
+    });
+
+    const netCashSalesPaisa = Math.max(0, cashSalesPaisa - cashRefundPaisa);
+    const expectedCashPaisa = shift.opening_cash_paisa + netCashSalesPaisa + totalCashInPaisa - totalCashOutPaisa;
+
+    return {
+      shift_id: shift.id,
+      user_id: shift.user_id,
+      user_name: userRow?.name || userRow?.username || 'Cashier',
+      device_id: shift.device_id,
+      status: shift.status,
+      opened_at: shift.opened_at,
+      closed_at: shift.closed_at,
+      opening_cash_paisa: shift.opening_cash_paisa,
+      expected_cash_paisa: expectedCashPaisa,
+      actual_cash_paisa: shift.actual_cash_paisa ?? null,
+      cash_difference_paisa: shift.cash_difference_paisa ?? null,
+      closing_cash_withdrawn_paisa: shift.closing_cash_withdrawn_paisa ?? 0,
+      closing_float_left_paisa: shift.closing_float_left_paisa ?? 0,
+      total_sales_paisa: totalSalesPaisa,
+      total_cash_sales_paisa: cashSalesPaisa,
+      total_bkash_sales_paisa: bkashSalesPaisa,
+      total_nagad_sales_paisa: nagadSalesPaisa,
+      total_card_sales_paisa: cardSalesPaisa,
+      total_cash_refund_paisa: cashRefundPaisa,
+      total_cash_in_paisa: totalCashInPaisa,
+      total_cash_out_paisa: totalCashOutPaisa,
+      cash_transactions: cashTxs,
+      sales_count: sales.length,
+      note: shift.note,
+    };
+  }
+
+  // Get current active shift for logged-in user
+  ipcMain.handle('api:shifts:getCurrent', async () => {
+    requireRole(['owner', 'staff']);
+    const db = getDb();
+    const userId = activeSession!.id;
+
+    const openShift = db.prepare(`
+      SELECT * FROM shifts
+      WHERE status = 'open'
+      ORDER BY opened_at DESC LIMIT 1
+    `).get() as any;
+
+    if (!openShift) return null;
+
+    return calculateShiftSummary(db, openShift);
+  });
+
+  // Check if ANY shift is currently open
+  ipcMain.handle('api:shifts:hasAnyOpen', async () => {
+    requireRole(['owner']);
+    const db = getDb();
+    const openShift = db.prepare(`SELECT id FROM shifts WHERE status = 'open' LIMIT 1`).get();
+    return !!openShift;
+  });
+
+  // Get last closed shift leftover float
+  ipcMain.handle('api:shifts:getLastClosedFloat', async () => {
+    requireRole(['owner', 'staff']);
+    const db = getDb();
+    const lastClosed = db.prepare(`
+      SELECT closing_float_left_paisa, closed_at FROM shifts
+      WHERE status = 'closed'
+      ORDER BY closed_at DESC LIMIT 1
+    `).get() as any;
+
+    if (!lastClosed) return null;
+    return { float_paisa: lastClosed.closing_float_left_paisa ?? 0 };
+  });
+
+  // Open a new shift
+  ipcMain.handle('api:shifts:open', async (_event, rawArgs) => {
+    requireRole(['owner', 'staff']);
+    const schema = z.object({
+      opening_cash_paisa: z.number().min(0).default(0),
+      note: z.string().optional(),
+    });
+    const { opening_cash_paisa, note } = schema.parse(rawArgs || {});
+    const db = getDb();
+    const userId = activeSession!.id;
+    const deviceId = getDeviceId(db);
+
+    // Check if shift is already open
+    const existing = db.prepare(`
+      SELECT * FROM shifts
+      WHERE status = 'open'
+    `).get() as any;
+
+    if (existing) {
+      return calculateShiftSummary(db, existing);
+    }
+
+    const shiftId = uuidv7();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO shifts (
+        id, user_id, device_id, status, opened_at, opening_cash_paisa,
+        expected_cash_paisa, closing_cash_withdrawn_paisa, closing_float_left_paisa,
+        total_sales_paisa, total_cash_sales_paisa,
+        total_bkash_sales_paisa, total_nagad_sales_paisa, total_card_sales_paisa,
+        total_cash_in_paisa, total_cash_out_paisa, note, created_at, updated_at
+      ) VALUES (?, ?, ?, 'open', ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?)
+    `).run(shiftId, userId, deviceId, now, opening_cash_paisa, opening_cash_paisa, note || null, now, now);
+
+    logAudit('SHIFT_OPENED', 'shifts', shiftId, { opening_cash_paisa, user_id: userId });
+
+    const newShift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shiftId) as any;
+    return calculateShiftSummary(db, newShift);
+  });
+
+  // Add petty cash transaction (Cash In / Cash Out)
+  ipcMain.handle('api:shifts:addCashTx', async (_event, rawArgs) => {
+    requireRole(['owner', 'staff']);
+    const schema = z.object({
+      shift_id: z.string().min(1),
+      type: z.enum(['cash_in', 'cash_out']),
+      amount_paisa: z.number().positive(),
+      reason: z.string().min(1),
+    });
+    const { shift_id, type, amount_paisa, reason } = schema.parse(rawArgs);
+    const db = getDb();
+    const userId = activeSession!.id;
+    const deviceId = getDeviceId(db);
+    const now = new Date().toISOString();
+    const txId = uuidv7();
+
+    db.prepare(`
+      INSERT INTO shift_cash_transactions (
+        id, shift_id, type, amount_paisa, reason, user_id, device_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(txId, shift_id, type, amount_paisa, reason.trim(), userId, deviceId, now, now);
+
+    logAudit(type === 'cash_in' ? 'CASH_IN' : 'CASH_OUT', 'shifts', shift_id, { amount_paisa, reason });
+
+    return { success: true };
+  });
+
+  // Get summary of specific shift
+  ipcMain.handle('api:shifts:getSummary', async (_event, shiftId: string) => {
+    requireRole(['owner', 'staff']);
+    const db = getDb();
+    const shift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shiftId) as any;
+    if (!shift) {
+      throw new Error('Shift not found.');
+    }
+    return calculateShiftSummary(db, shift);
+  });
+
+  // Close shift and reconcile cash drawer
+  ipcMain.handle('api:shifts:close', async (_event, rawArgs) => {
+    requireRole(['owner', 'staff']);
+    const schema = z.object({
+      shift_id: z.string().min(1),
+      actual_cash_paisa: z.number().min(0),
+      cash_withdrawn_paisa: z.number().min(0).optional(),
+      float_left_paisa: z.number().min(0).optional(),
+      note: z.string().optional(),
+    });
+    const { shift_id, actual_cash_paisa, cash_withdrawn_paisa = 0, float_left_paisa, note } = schema.parse(rawArgs);
+    const db = getDb();
+    const shift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift_id) as any;
+
+    if (!shift) {
+      throw new Error('Shift not found.');
+    }
+
+    const summary = calculateShiftSummary(db, shift);
+    const now = new Date().toISOString();
+    const cashDiff = actual_cash_paisa - summary.expected_cash_paisa;
+    const calculatedFloatLeft = float_left_paisa !== undefined ? float_left_paisa : Math.max(0, actual_cash_paisa - cash_withdrawn_paisa);
+
+    db.prepare(`
+      UPDATE shifts SET
+        status = 'closed',
+        closed_at = ?,
+        expected_cash_paisa = ?,
+        actual_cash_paisa = ?,
+        cash_difference_paisa = ?,
+        closing_cash_withdrawn_paisa = ?,
+        closing_float_left_paisa = ?,
+        total_sales_paisa = ?,
+        total_cash_sales_paisa = ?,
+        total_bkash_sales_paisa = ?,
+        total_nagad_sales_paisa = ?,
+        total_card_sales_paisa = ?,
+        total_cash_in_paisa = ?,
+        total_cash_out_paisa = ?,
+        note = ?,
+        updated_at = ?
+      WHERE id = ?
+    `).run(
+      now,
+      summary.expected_cash_paisa,
+      actual_cash_paisa,
+      cashDiff,
+      cash_withdrawn_paisa,
+      calculatedFloatLeft,
+      summary.total_sales_paisa,
+      summary.total_cash_sales_paisa,
+      summary.total_bkash_sales_paisa,
+      summary.total_nagad_sales_paisa,
+      summary.total_card_sales_paisa,
+      summary.total_cash_in_paisa,
+      summary.total_cash_out_paisa,
+      note || shift.note || null,
+      now,
+      shift_id
+    );
+
+    logAudit('SHIFT_CLOSED', 'shifts', shift_id, {
+      expected_cash_paisa: summary.expected_cash_paisa,
+      actual_cash_paisa,
+      cash_difference_paisa: cashDiff,
+      closing_cash_withdrawn_paisa: cash_withdrawn_paisa,
+      closing_float_left_paisa: calculatedFloatLeft,
+    });
+
+    const updatedShift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift_id) as any;
+    return calculateShiftSummary(db, updatedShift);
+  });
+
+  // Get past shifts history (Owner or Staff)
+  ipcMain.handle('api:shifts:getHistory', async (_event, limitRaw) => {
+    requireRole(['owner', 'staff']);
+    const limit = typeof limitRaw === 'number' ? limitRaw : 50;
+    const db = getDb();
+
+    let rows: any[] = [];
+    rows = db.prepare('SELECT * FROM shifts ORDER BY opened_at DESC LIMIT ?').all(limit);
+
+    return rows.map((r) => calculateShiftSummary(db, r));
+  });
+
   // Settings Handlers
   ipcMain.handle('api:settings:get', async () => {
     requireRole(['owner', 'staff']);
@@ -1710,6 +2394,9 @@ export function registerIpcHandlers() {
       device_id: map['device_id'] || 'REG01',
       idle_lock_minutes: map['idle_lock_minutes'] || '15',
       default_invoice_layout: map['default_invoice_layout'] || '80mm',
+      enable_shifts: map['enable_shifts'] !== '0',
+      barcode_scanner_mode: map['barcode_scanner_mode'] || 'speed',
+      barcode_scanner_prefix: map['barcode_scanner_prefix'] || '',
       supabase_url: map['supabase_url'] || '',
       supabase_anon_key: map['supabase_anon_key'] ? '********' : '',
       supabase_shop_id: map['supabase_shop_id'] || '',
@@ -1718,7 +2405,8 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('api:settings:update', async (_event, rawData) => {
     requireRole(['owner']);
-    const schema = z.record(z.string());
+    // Accept any simple values, we'll convert them to string for storage
+    const schema = z.record(z.any());
     const data = schema.parse(rawData);
     const db = getDb();
     const now = new Date().toISOString();
@@ -1730,7 +2418,9 @@ export function registerIpcHandlers() {
 
     db.transaction(() => {
       for (const [k, v] of Object.entries(data)) {
-        insertOrUpdate.run(k, v, now);
+        // Convert true/false to '1'/'0', and other types to string
+        const strVal = typeof v === 'boolean' ? (v ? '1' : '0') : String(v);
+        insertOrUpdate.run(k, strVal, now);
       }
     })();
 
@@ -1929,8 +2619,8 @@ export function registerIpcHandlers() {
       const readProduct = db.prepare('SELECT stock_qty, cost_price_paisa FROM products WHERE id = ?');
       const updateProduct = db.prepare('UPDATE products SET stock_qty = stock_qty + ?, cost_price_paisa = ?, updated_at = ? WHERE id = ?');
       const insertStockTx = db.prepare(`
-        INSERT INTO stock_transactions (id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at)
-        VALUES (?, ?, 'purchase', ?, 'purchases', ?, ?, ?, ?, ?)
+        INSERT INTO stock_transactions (id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at, unit_cost_paisa)
+        VALUES (?, ?, 'purchase', ?, 'purchases', ?, ?, ?, ?, ?, ?)
       `);
 
       // Allocate transport across the lines up front so the parts add back up
@@ -1952,29 +2642,38 @@ export function registerIpcHandlers() {
         transportAlloc[biggest] += transportPaisa - allocated;
       }
 
+      const valSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('inventory_valuation_method') as any;
+      const valMethod = valSetting?.value || 'wac';
+
       for (const [itemIndex, item] of itemsPaisa.entries()) {
-        // Landed unit cost = the price paid, plus this line's share of transport.
         const lineGoodsPaisa = item.unit_cost_paisa * item.qty;
         const lineTransportPaisa = transportAlloc[itemIndex];
         const landedUnitCostPaisa =
           item.qty > 0 ? Math.round((lineGoodsPaisa + lineTransportPaisa) / item.qty) : item.unit_cost_paisa;
 
-        // Weighted average against stock already on the shelf. Overwriting the
-        // cost priced older stock at the newest rate, which is simply untrue.
         const existing = readProduct.get(item.product_id) as
           | { stock_qty: number; cost_price_paisa: number }
           | undefined;
         const oldQty = Math.max(0, existing?.stock_qty ?? 0);
         const oldCost = existing?.cost_price_paisa ?? landedUnitCostPaisa;
         const newQty = oldQty + item.qty;
-        const averagedCostPaisa =
-          newQty > 0
+        
+        let newCostPaisa = oldCost;
+        if (valMethod === 'wac') {
+          newCostPaisa = newQty > 0
             ? Math.round((oldQty * oldCost + item.qty * landedUnitCostPaisa) / newQty)
             : landedUnitCostPaisa;
+        } else if (valMethod === 'fifo') {
+          newCostPaisa = landedUnitCostPaisa;
+          db.prepare(`
+            INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
+            VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, 'purchases', ?)
+          `).run(item.product_id, item.qty, item.qty, landedUnitCostPaisa, now, purchaseId);
+        }
 
         insertItem.run(uuidv7(), purchaseId, item.product_id, item.qty, item.unit_cost_paisa, now, now);
-        updateProduct.run(item.qty, averagedCostPaisa, now, item.product_id);
-        insertStockTx.run(uuidv7(), item.product_id, item.qty, purchaseId, `Purchase invoice ${data.invoice_ref || purchaseId.slice(0, 8)}`, userId, now, now);
+        updateProduct.run(item.qty, newCostPaisa, now, item.product_id);
+        insertStockTx.run(uuidv7(), item.product_id, item.qty, purchaseId, `Purchase invoice ${data.invoice_ref || purchaseId.slice(0, 8)}`, userId, now, now, landedUnitCostPaisa);
       }
 
       const duePaisa = vendorInvoicePaisa - paidPaisa;

@@ -3,6 +3,7 @@ export interface UserSession {
   username: string;
   name: string;
   role: 'owner' | 'staff';
+  has_pin?: boolean;
 }
 
 export interface UserRecord {
@@ -11,9 +12,75 @@ export interface UserRecord {
   name: string;
   role: 'owner' | 'staff';
   is_active: number | boolean;
+  pin_code?: string | null;
   device_id?: string | null;
+  total_sales_paisa?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ShiftCashTransaction {
+  id: string;
+  shift_id: string;
+  type: 'cash_in' | 'cash_out';
+  amount_paisa: number;
+  reason: string;
+  user_id: string;
+  device_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftRecord {
+  id: string;
+  user_id: string;
+  device_id: string;
+  status: 'open' | 'closed';
+  opened_at: string;
+  closed_at?: string | null;
+  opening_cash_paisa: number;
+  expected_cash_paisa: number;
+  actual_cash_paisa?: number | null;
+  cash_difference_paisa?: number | null;
+  closing_cash_withdrawn_paisa?: number | null;
+  closing_float_left_paisa?: number | null;
+  total_sales_paisa: number;
+  total_cash_sales_paisa: number;
+  total_bkash_sales_paisa: number;
+  total_nagad_sales_paisa: number;
+  total_card_sales_paisa: number;
+  total_cash_in_paisa: number;
+  total_cash_out_paisa: number;
+  note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftSummaryData {
+  shift_id: string;
+  user_id: string;
+  user_name?: string;
+  device_id: string;
+  status: 'open' | 'closed';
+  opened_at: string;
+  closed_at?: string | null;
+  opening_cash_paisa: number;
+  expected_cash_paisa: number;
+  actual_cash_paisa?: number | null;
+  cash_difference_paisa?: number | null;
+  closing_cash_withdrawn_paisa?: number | null;
+  closing_float_left_paisa?: number | null;
+  total_sales_paisa: number;
+  total_cash_sales_paisa: number;
+  total_bkash_sales_paisa: number;
+  total_nagad_sales_paisa: number;
+  total_card_sales_paisa: number;
+  total_cash_refund_paisa: number;
+  total_cash_in_paisa: number;
+  total_cash_out_paisa: number;
+  cash_transactions: ShiftCashTransaction[];
+  sales_count: number;
+  note?: string | null;
 }
 
 export interface Category {
@@ -39,6 +106,7 @@ export interface Product {
   is_serial_tracked: boolean | number;
   created_at?: string;
   updated_at?: string;
+  batches?: { remaining_qty: number; cost_price_paisa: number; received_at?: string }[];
 }
 
 export interface Supplier {
@@ -112,6 +180,7 @@ export interface CartItem {
 export interface PaymentItem {
   method: 'cash' | 'bkash' | 'nagad' | 'card';
   amount_paisa: number;
+  trx_id?: string;
 }
 
 export interface SalePayload {
@@ -293,12 +362,18 @@ export interface ShopSettings {
   shop_address: string;
   shop_phone: string;
   invoice_footer: string;
-  device_id: string;
-  idle_lock_minutes: string;
+  device_id?: string;
+  device_id_prefix?: string;
+  idle_lock_minutes: string | number;
   default_invoice_layout: string;
+  inventory_valuation_method?: 'wac' | 'fifo';
+  enable_shifts?: boolean;
+  barcode_scanner_mode?: 'speed' | 'prefix';
+  barcode_scanner_prefix?: string;
   supabase_url?: string;
   supabase_anon_key?: string;
   supabase_shop_id?: string;
+  shop_id?: string;
 }
 
 export type SyncStatusType = 'synced' | 'syncing' | 'pending' | 'offline' | 'error';
@@ -323,6 +398,7 @@ export interface IElectronApi {
   ping: () => Promise<{ status: string; timestamp: string }>;
   auth: {
     login: (args: { username: string; password: string }) => Promise<{ success: boolean; session?: UserSession; error?: string }>;
+    pinLogin: (args: { pin: string }) => Promise<{ success: boolean; session?: UserSession; error?: string }>;
     logout: () => Promise<boolean>;
     getSession: () => Promise<UserSession | null>;
   };
@@ -342,8 +418,9 @@ export interface IElectronApi {
     create: (data: any) => Promise<Product>;
     update: (data: any) => Promise<{ success: boolean }>;
     delete: (id: string) => Promise<{ success: boolean }>;
-    stockIn: (data: { product_id: string; qty: number; reason?: string }) => Promise<{ success: boolean; newStock: number }>;
+    stockIn: (data: { product_id: string; qty: number; cost_price_paisa?: number; reason?: string }) => Promise<{ success: boolean; newStock: number }>;
     stockAdjustment: (data: { product_id: string; qty_delta: number; reason: string }) => Promise<{ success: boolean; newStock: number }>;
+    getStockHistory: (productId: string) => Promise<any[]>;
     bulkImport: (payload: { mode: 'dry_run' | 'commit'; rows: any[] }) => Promise<{ success: boolean; totalRows?: number; validRowsCount?: number; imported?: number; errors: string[] }>;
   };
   suppliers: {
@@ -389,14 +466,25 @@ export interface IElectronApi {
   reports: {
     getSalesReport: (args: { startDate: string; endDate: string }) => Promise<SalesReportData>;
     getProfitReport: (args: { startDate: string; endDate: string }) => Promise<ProfitReportData>;
-    getBestSelling: (limit?: number) => Promise<BestSellingProduct[]>;
+    getBestSelling: (args?: number | { startDate?: string; endDate?: string; limit?: number }) => Promise<BestSellingProduct[]>;
     getStockValuation: () => Promise<StockValuationData>;
   };
   users: {
-    list: () => Promise<UserRecord[]>;
-    create: (data: { username: string; name: string; role: 'owner' | 'staff'; password: string }) => Promise<UserRecord>;
-    update: (data: { id: string; name: string; role: 'owner' | 'staff'; is_active: boolean }) => Promise<{ success: boolean }>;
+    list: (filters?: { startDate?: string; endDate?: string }) => Promise<UserRecord[]>;
+    create: (data: { username: string; name: string; role: 'owner' | 'staff'; password: string; pin_code?: string }) => Promise<UserRecord>;
+    update: (data: { id: string; name: string; role: 'owner' | 'staff'; is_active: boolean; pin_code?: string }) => Promise<{ success: boolean }>;
+    updatePin: (data: { userId: string; pin_code: string }) => Promise<{ success: boolean }>;
     changePassword: (data: { userId: string; newPassword: string }) => Promise<{ success: boolean }>;
+  };
+  shifts: {
+    getCurrent: () => Promise<ShiftSummaryData | null>;
+    hasAnyOpen: () => Promise<boolean>;
+    getLastClosedFloat: () => Promise<{ float_paisa: number } | null>;
+    open: (payload: { opening_cash_paisa: number; note?: string }) => Promise<ShiftSummaryData>;
+    addCashTx: (payload: { shift_id: string; type: 'cash_in' | 'cash_out'; amount_paisa: number; reason: string }) => Promise<{ success: boolean }>;
+    getSummary: (shiftId: string) => Promise<ShiftSummaryData>;
+    close: (payload: { shift_id: string; actual_cash_paisa: number; cash_withdrawn_paisa?: number; float_left_paisa?: number; note?: string }) => Promise<ShiftSummaryData>;
+    getHistory: (limit?: number) => Promise<ShiftSummaryData[]>;
   };
   settings: {
     get: () => Promise<ShopSettings>;
@@ -432,9 +520,16 @@ export interface IElectronApi {
   };
 }
 
+export interface BulkImportResult {
+  success: boolean;
+  validRowsCount?: number;
+  errors: string[];
+}
+
+export type AppSettings = ShopSettings;
 
 declare global {
   interface Window {
-    api?: IElectronApi;
+    api: IElectronApi;
   }
 }

@@ -38,6 +38,15 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   React.useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (duePaisa > 0 && !customer) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }
+        return;
+      }
+
       if (e.key === 'Enter' || e.key === 'F8') {
         e.preventDefault();
         e.stopPropagation();
@@ -54,9 +63,11 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isOpen, onConfirmSale, onClose]);
+  }, [isOpen, onConfirmSale, onClose, duePaisa, customer]);
 
   if (!isOpen) return null;
+
+  const isDueForbidden = duePaisa > 0 && !customer;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/60 backdrop-blur-xs p-4 animate-in fade-in">
@@ -97,6 +108,14 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* Warning Banner when Walk-in Customer has Due */}
+          {isDueForbidden && (
+            <div className="p-3 bg-amber-100 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-center gap-2 font-sans">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>খুচরা (Walk-in) কাস্টমারের জন্য বাকি বিক্রি সম্ভব নয়। বাকি রাখতে কাস্টমার সিলেক্ট করুন অথবা সম্পূর্ণ টাকা পরিশোধ করুন।</span>
+            </div>
+          )}
 
           {/* Items Summary Table */}
           <div className="border border-jungle-teal-200 rounded-xl overflow-hidden">
@@ -160,10 +179,14 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
         <div className="border-t border-jungle-teal-200 pt-4 flex flex-col sm:flex-row items-center gap-2.5 shrink-0">
           <button
             type="button"
-            disabled={loading}
+            disabled={loading || isDueForbidden}
             onClick={() => onConfirmSale(false)}
-            className="w-full sm:flex-1 py-3 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 font-bold rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5 border border-jungle-teal-300 active:scale-[0.98]"
-            title="Complete the sale without printing (F7)"
+            className={`w-full sm:flex-1 py-3 font-bold rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5 border ${
+              isDueForbidden
+                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                : 'bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 border-jungle-teal-300 active:scale-[0.98]'
+            }`}
+            title={isDueForbidden ? 'Cannot confirm due sale for Walk-in customer' : 'Complete the sale without printing (F7)'}
           >
             <Check className="w-4 h-4 text-jungle-teal-600" />
             <span>Complete without printing (F7)</span>
@@ -171,13 +194,23 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
 
           <button
             type="button"
-            disabled={loading}
+            disabled={loading || isDueForbidden}
             onClick={() => onConfirmSale(true)}
-            className="w-full sm:flex-1 py-3 bg-[#283e32] hover:bg-[#141f19] text-white font-black rounded-2xl text-xs transition-all shadow-md shadow-muted-teal-900/20 flex items-center justify-center gap-1.5 active:scale-[0.98]"
-            title="Complete the sale and print the receipt (Enter / F8)"
+            className={`w-full sm:flex-1 py-3 font-black rounded-2xl text-xs transition-all shadow-md flex items-center justify-center gap-1.5 ${
+              isDueForbidden
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed opacity-60'
+                : 'bg-[#283e32] hover:bg-[#141f19] text-white shadow-muted-teal-900/20 active:scale-[0.98]'
+            }`}
+            title={isDueForbidden ? 'Cannot confirm due sale for Walk-in customer' : 'Complete the sale and print the receipt (Enter / F8)'}
           >
             <Printer className="w-4 h-4" />
-            <span>{loading ? 'Processing…' : 'Complete and print (F8 / Enter)'}</span>
+            <span>
+              {loading
+                ? 'Processing…'
+                : isDueForbidden
+                ? 'Customer Required for Due'
+                : 'Complete and print (F8 / Enter)'}
+            </span>
           </button>
         </div>
       </div>

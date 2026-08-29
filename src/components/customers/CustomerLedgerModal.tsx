@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Customer, CustomerHistoryItem } from '../../types/ipc';
 import { FileText, X, Printer, RefreshCw, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { InvoiceModal } from '../pos/InvoiceModal';
 
 interface CustomerLedgerModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
 }) => {
   const [history, setHistory] = useState<CustomerHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedInvoiceNo, setSelectedInvoiceNo] = useState<string | null>(null);
 
   const fetchLedger = async () => {
     if (!window.api || !customer) return;
@@ -115,7 +117,20 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
                     <td className="p-3 text-jungle-teal-600">
                       {new Date(tx.date).toLocaleDateString()} {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td className="p-3 text-azure-mist-800 font-bold">{tx.ref_no}</td>
+                    <td className="p-3 text-azure-mist-800 font-bold">
+                      {tx.ref_no?.startsWith('INV') ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInvoiceNo(tx.ref_no)}
+                          className="hover:underline hover:text-azure-mist-600 text-left font-mono font-bold cursor-pointer transition-colors"
+                          title="Click to view & print invoice"
+                        >
+                          {tx.ref_no}
+                        </button>
+                      ) : (
+                        <span>{tx.ref_no}</span>
+                      )}
+                    </td>
                     <td className="p-3 font-sans text-jungle-teal-800">{tx.description}</td>
                     <td className="p-3 text-right text-jungle-teal-900 font-bold">
                       {tx.debit_paisa > 0 ? `৳ ${(tx.debit_paisa / 100).toFixed(2)}` : '-'}
@@ -143,6 +158,15 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Invoice Modal */}
+      {selectedInvoiceNo && (
+        <InvoiceModal
+          isOpen={Boolean(selectedInvoiceNo)}
+          onClose={() => setSelectedInvoiceNo(null)}
+          invoiceNo={selectedInvoiceNo}
+        />
+      )}
     </div>
   );
 };

@@ -88,9 +88,9 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
     setError(null);
     try {
       await window.api.sync.configure({
-        supabase_url: supabaseUrl.trim(),
-        supabase_anon_key: supabaseAnonKey.trim(),
-        shop_id: shopId.trim(),
+        supabaseUrl: supabaseUrl.trim(),
+        supabaseAnonKey: supabaseAnonKey.trim(),
+        shopId: shopId.trim(),
       });
       toast.success('Cloud credentials and Sync configuration updated!');
       setSuccessMsg('Cloud credentials encrypted and saved successfully.');
@@ -109,9 +109,9 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
     setSyncing(true);
     setError(null);
     try {
-      const res = await window.api.sync.triggerSync();
-      toast.success(`Sync completed! ${res.uploaded} uploaded, ${res.downloaded} downloaded.`);
-      setSuccessMsg(`Sync complete! Uploaded ${res.uploaded}, Downloaded ${res.downloaded} records.`);
+      const res = await window.api.sync.triggerNow();
+      toast.success('Sync completed successfully!');
+      setSuccessMsg(`Sync complete! Last cloud sync: ${res.lastSyncedAt ? new Date(res.lastSyncedAt).toLocaleTimeString() : 'Just now'}`);
       setTimeout(() => setSuccessMsg(null), 4000);
       loadData();
     } catch (err: any) {
@@ -124,24 +124,32 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
 
   const handleCreateBackup = async () => {
     if (!window.api || !isOwner) return;
+    setLoading(true);
+    setError(null);
     try {
       const backup = await window.api.backup.createManual();
-      toast.success(`Database backup created: ${backup.fileName}`);
-      setSuccessMsg(`Database backup created: ${backup.fileName}`);
+      toast.success(`Backup saved: ${backup.fileName}`);
+      setSuccessMsg(`Backup saved: ${backup.fileName} (${(backup.sizeBytes / 1024).toFixed(1)} KB)`);
       setTimeout(() => setSuccessMsg(null), 3000);
       loadData();
     } catch (err: any) {
       toast.error(err.message || 'Failed to create backup.');
       setError(err.message || 'Failed to create backup.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const confirmRestoreBackup = async () => {
-    if (!restoreTargetFile || !window.api || !isOwner) return;
+  const handleRestoreClick = (backup: BackupFileInfo) => {
+    setRestoreTargetFile(backup);
+  };
 
+  const confirmRestoreBackup = async () => {
+    if (!window.api || !restoreTargetFile) return;
+    setRestoreTargetFile(null);
     try {
       await window.api.backup.restore(restoreTargetFile.filePath);
-      toast.success('Database restored successfully! Refreshing terminal...');
+      toast.success('Database restored successfully! Reloading...');
       setTimeout(() => window.location.reload(), 1000);
     } catch (err: any) {
       toast.error(`Restore failed: ${err.message}`);
@@ -152,7 +160,7 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/50 backdrop-blur-xs p-4 overflow-y-auto">
       <ConfirmModal
         isOpen={!!restoreTargetFile}
-        onClose={() => setRestoreTargetFile(null)}
+        onCancel={() => setRestoreTargetFile(null)}
         onConfirm={confirmRestoreBackup}
         title="Restore Database"
         message={`Are you sure you want to restore from ${restoreTargetFile?.fileName}? Current data will be replaced.`}
@@ -170,35 +178,11 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
             </div>
           </div>
 
-          <button onClick={onClose} className="text-jungle-teal-400 hover:text-jungle-teal-700 font-bold">
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-jungle-teal-400 hover:text-jungle-teal-700 hover:bg-jungle-teal-100 transition-colors"
+          >
             <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Tab Selection */}
-        <div className="flex items-center gap-2 bg-jungle-teal-100 p-1 rounded-xl border border-jungle-teal-200 text-xs font-semibold">
-          <button
-            onClick={() => setActiveTab('sync')}
-            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${
-              activeTab === 'sync'
-                ? 'bg-azure-mist-700 text-white font-bold shadow-xs'
-                : 'text-jungle-teal-600 hover:text-jungle-teal-900 hover:bg-jungle-teal-50'
-            }`}
-          >
-            <Cloud className="w-4 h-4" />
-            Supabase Cloud Sync
-          </button>
-
-          <button
-            onClick={() => setActiveTab('backup')}
-            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${
-              activeTab === 'backup'
-                ? 'bg-muted-teal-700 text-white font-bold shadow-xs'
-                : 'text-jungle-teal-600 hover:text-jungle-teal-900 hover:bg-jungle-teal-50'
-            }`}
-          >
-            <HardDrive className="w-4 h-4" />
-            Local Database Backups
           </button>
         </div>
 
@@ -210,38 +194,68 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
         )}
 
         {successMsg && (
-          <div className="p-3 bg-muted-teal-50 border border-muted-teal-200 rounded-xl text-muted-teal-900 text-xs flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <div className="p-3 bg-muted-teal-50 border border-muted-teal-200 rounded-xl text-muted-teal-800 text-xs flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-muted-teal-700 shrink-0" />
             <span>{successMsg}</span>
           </div>
         )}
 
-        {/* 1. CLOUD SYNC TAB */}
+        {/* Tab Navigation */}
+        <div className="flex border-b border-jungle-teal-200 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setActiveTab('sync')}
+            className={`pb-2.5 px-4 flex items-center gap-1.5 transition-colors border-b-2 ${
+              activeTab === 'sync'
+                ? 'border-azure-mist-700 text-azure-mist-800 font-bold'
+                : 'border-transparent text-jungle-teal-500 hover:text-jungle-teal-800'
+            }`}
+          >
+            <Cloud className="w-4 h-4" />
+            <span>Cloud Sync Engine</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('backup')}
+            className={`pb-2.5 px-4 flex items-center gap-1.5 transition-colors border-b-2 ${
+              activeTab === 'backup'
+                ? 'border-azure-mist-700 text-azure-mist-800 font-bold'
+                : 'border-transparent text-jungle-teal-500 hover:text-jungle-teal-800'
+            }`}
+          >
+            <HardDrive className="w-4 h-4" />
+            <span>Local Database Backups</span>
+          </button>
+        </div>
+
+        {/* Sync Tab */}
         {activeTab === 'sync' && (
           <div className="space-y-4 text-xs">
-            {/* Live Sync Status Card */}
-            <div className="bg-jungle-teal-50 border border-jungle-teal-200 p-4 rounded-xl space-y-3 font-mono">
+            {/* Status Card */}
+            <div className="bg-jungle-teal-100/60 p-4 rounded-xl border border-jungle-teal-200 space-y-3 font-mono">
               <div className="flex items-center justify-between">
-                <span className="text-jungle-teal-600 font-sans font-semibold">Current Sync Engine Status:</span>
+                <span className="text-jungle-teal-600 font-sans font-semibold">Sync Status:</span>
                 <span
-                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase ${
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                     syncInfo?.status === 'synced'
                       ? 'bg-muted-teal-100 text-muted-teal-900 border border-muted-teal-300'
+                      : syncInfo?.status === 'syncing'
+                      ? 'bg-azure-mist-100 text-azure-mist-900 border border-azure-mist-300 animate-pulse'
                       : syncInfo?.status === 'pending'
                       ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                      : syncInfo?.status === 'syncing'
-                      ? 'bg-azure-mist-100 text-azure-mist-900 border border-azure-mist-300'
-                      : 'bg-jungle-teal-200 text-jungle-teal-700'
+                      : 'bg-rose-100 text-rose-800 border border-rose-300'
                   }`}
                 >
-                  {syncInfo?.status}
+                  {syncInfo?.status || 'Unknown'}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-[11px] text-jungle-teal-700">
+              <div className="grid grid-cols-2 gap-3 text-[11px]">
                 <div>
-                  <span className="text-jungle-teal-500 block">Pending Local Changes:</span>
-                  <span className="text-sm font-bold text-azure-mist-800">{syncInfo?.pendingCount || 0} records</span>
+                  <span className="text-jungle-teal-500 block">Pending Local Uploads:</span>
+                  <span className="text-jungle-teal-900 font-bold text-sm">
+                    {syncInfo?.pendingCount ?? 0} records
+                  </span>
                 </div>
                 <div>
                   <span className="text-jungle-teal-500 block">Last Cloud Sync:</span>
@@ -255,7 +269,7 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                 <button
                   type="button"
                   disabled={syncing || !syncInfo?.cloudConfigured}
-                  onClick={handleTriggerSync}
+                  onClick={handleManualSync}
                   className="px-4 py-2 bg-azure-mist-700 hover:bg-azure-mist-600 text-white font-bold rounded-xl flex items-center gap-1.5 transition-colors disabled:opacity-50 font-sans shadow-xs"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />

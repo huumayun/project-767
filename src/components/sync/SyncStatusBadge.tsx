@@ -82,11 +82,13 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ onOpenSyncModa
         >
           <Cloud className="w-3.5 h-3.5 text-azure-mist-700" />
           <span>Pending ({syncInfo.pendingCount})</span>
-          <RefreshCw
+          <span
             onClick={handleManualSync}
-            className="w-3 h-3 text-azure-mist-700 hover:text-azure-mist-950 ml-0.5 cursor-pointer"
+            className="text-azure-mist-700 hover:text-azure-mist-950 ml-0.5 cursor-pointer"
             title="Trigger Sync Now"
-          />
+          >
+            <RefreshCw className="w-3 h-3" />
+          </span>
         </button>
       );
     }

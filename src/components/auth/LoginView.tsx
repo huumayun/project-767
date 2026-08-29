@@ -7,9 +7,10 @@ interface LoginViewProps {
   onLoginSuccess: (session: UserSession) => void;
   lang: Language;
   onLanguageToggle: () => void;
+  onSwitchToPinLogin?: () => void;
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, lang, onLanguageToggle }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, lang, onLanguageToggle, onSwitchToPinLogin }) => {
   const [username, setUsername] = useState('owner');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -145,6 +146,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, lang, onLa
             >
               {loading ? (lang === 'bn' ? 'যাচাই করা হচ্ছে...' : 'Verifying...') : t.loginButton}
             </button>
+
+            {onSwitchToPinLogin && (
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={onSwitchToPinLogin}
+                  className="text-xs text-azure-mist-400 hover:text-white font-semibold transition-colors py-1 px-3 rounded-lg hover:bg-jungle-teal-800"
+                >
+                  ⚡ ৪-ডিজিট পিন দিয়ে দ্রুত লগইন (Quick PIN Login)
+                </button>
+              </div>
+            )}
           </form>
 
           {/* Quick Credential Hints for Convenience */}

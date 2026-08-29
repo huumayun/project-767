@@ -38,11 +38,12 @@ import { InvoiceModal } from './InvoiceModal';
 import { HeldSalesModal } from './HeldSalesModal';
 import { CustomerFormModal } from '../customers/CustomerFormModal';
 import { ReceiptPreviewModal } from './ReceiptPreviewModal';
+import { SaleSuccessModal } from './SaleSuccessModal';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { ProductFormModal } from '../products/ProductFormModal';
 import { ReturnRefundModal } from './ReturnRefundModal';
 import { useToast } from '../../context/ToastContext';
-import { audio } from '../../utils/audio';
+import { audio, soundFx } from '../../utils/audio';
 import { BkashIcon, NagadIcon, CashIcon, CardBankIcon } from './PosIcons';
 import {
   getShortcuts,
@@ -50,6 +51,73 @@ import {
   bindingLabel,
   SHORTCUTS_CHANGED_EVENT,
 } from '../../utils/shortcuts';
+import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
+
+interface CartPriceInputProps {
+  unitPricePaisa: number;
+  onPriceChange: (newPaisa: number) => void;
+}
+
+const CartPriceInput: React.FC<CartPriceInputProps> = ({
+  unitPricePaisa,
+  onPriceChange,
+}) => {
+  const [localVal, setLocalVal] = useState<string>((unitPricePaisa / 100).toString());
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setLocalVal((unitPricePaisa / 100).toString());
+    }
+  }, [unitPricePaisa]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setLocalVal(raw);
+    const parsed = parseFloat(raw);
+    if (!isNaN(parsed) && parsed >= 0) {
+      onPriceChange(Math.round(parsed * 100));
+    } else if (raw === '') {
+      onPriceChange(0);
+    }
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    const parsed = parseFloat(localVal);
+    if (isNaN(parsed) || parsed < 0) {
+      const reset = (unitPricePaisa / 100).toString();
+      setLocalVal(reset);
+      onPriceChange(unitPricePaisa);
+    } else {
+      setLocalVal(parsed.toString());
+    }
+  };
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    isFocusedRef.current = true;
+    e.target.select();
+  };
+
+  return (
+    <div className="relative flex items-center">
+      <span className="absolute left-1.5 text-ui-2xs text-jungle-teal-600 font-bold font-mono pointer-events-none">৳</span>
+      <input
+        type="number"
+        step="any"
+        min="0"
+        value={localVal}
+        onChange={handleChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onWheel={(e) => e.currentTarget.blur()}
+        placeholder="0.00"
+        className="w-20 h-6 pl-4 pr-1 text-ui-xs font-mono font-semibold text-jungle-teal-900 bg-jungle-teal-50/80 hover:bg-white focus:bg-white border border-jungle-teal-200 focus:border-muted-teal-600 rounded-md focus:outline-hidden transition-colors shadow-2xs"
+        title="Edit sell price per unit (৳)"
+      />
+    </div>
+  );
+};
 
 interface PosViewProps {
 
@@ -98,6 +166,17 @@ export const PosView: React.FC<PosViewProps> = ({
   // Modals
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successSaleMeta, setSuccessSaleMeta] = useState<{
+    invoiceNo: string;
+    totalPaisa: number;
+    paidPaisa: number;
+    changePaisa: number;
+    duePaisa: number;
+    paymentMethodSummary: string;
+    customer: Customer | null;
+    autoPrint: boolean;
+  } | null>(null);
   const [invoicePdfBase64, setInvoicePdfBase64] = useState('');
   const [lastInvoiceNo, setLastInvoiceNo] = useState('');
   const [showHeldModal, setShowHeldModal] = useState(false);
@@ -239,27 +318,15 @@ export const PosView: React.FC<PosViewProps> = ({
         return;
       }
 
-
-      const now = Date.now();
-      if (e.key === 'Enter' && scanBuffer.length > 2) {
-        handleBarcodeScanned(scanBuffer.trim());
-        scanBuffer = '';
-        return;
-      }
-
-      if (now - lastKeyTime > 150) {
-        scanBuffer = '';
-      }
-      if (e.key.length === 1) {
-        scanBuffer += e.key;
-      }
-      lastKeyTime = now;
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [cart, products]);
 
+  useBarcodeScanner((code) => {
+    handleBarcodeScanned(code);
+  });
 
   const triggerScanFlash = (status: 'success' | 'error') => {
     setScanStatus(status);
@@ -388,6 +455,17 @@ export const PosView: React.FC<PosViewProps> = ({
             return item;
           }
           return { ...item, qty: newQty };
+        }
+        return item;
+      })
+    );
+  };
+
+  const updateCartUnitPrice = (productId: string, newUnitPricePaisa: number) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.product_id === productId) {
+          return { ...item, unit_price_paisa: Math.max(0, newUnitPricePaisa) };
         }
         return item;
       })
@@ -549,6 +627,12 @@ export const PosView: React.FC<PosViewProps> = ({
       return;
     }
 
+    // Strict Validation: If there is remaining due on a walk-in customer, block checkout!
+    if (duePaisa > 0 && !selectedCustomerId) {
+      toast.error('খুচরা / Walk-in কাস্টমারের কাছে বাকি বিক্রি গ্রহণযোগ্য নয়। বাকি রাখতে হলে উপরে কাস্টমার নির্বাচন করুন অথবা পূর্ণ টাকা পরিশোধ করুন।');
+      return;
+    }
+
     // If payment amount was ALREADY entered by user, directly open preview without prompt!
     setShowPreviewModal(true);
   };
@@ -559,6 +643,10 @@ export const PosView: React.FC<PosViewProps> = ({
   handleClearCartRef.current = handleClearCart;
 
   const executeFinalCheckout = async (shouldPrint: boolean) => {
+    if (effectiveDuePaisa > 0 && !selectedCustomerId) {
+      toast.error('খুচরা / Walk-in কাস্টমারের কাছে বাকি বিক্রি গ্রহণযোগ্য নয়। অনুগ্রহ করে কাস্টমার নির্বাচন করুন।');
+      return;
+    }
 
     if (!window.api) return;
     setLoading(true);
@@ -599,9 +687,18 @@ export const PosView: React.FC<PosViewProps> = ({
         setInvoicePdfBase64(res.pdfBase64 || '');
         setShowPreviewModal(false);
 
-        if (shouldPrint) {
-          setShowInvoiceModal(true);
-        }
+        const currentCustomer = customers.find((c) => c.id === selectedCustomerId) || null;
+        setSuccessSaleMeta({
+          invoiceNo: res.invoice_no,
+          totalPaisa: totalPaisa,
+          paidPaisa: effectivePaidPaisa,
+          changePaisa: effectiveChangePaisa,
+          duePaisa: effectiveDuePaisa,
+          paymentMethodSummary: paymentSummaryStr,
+          customer: currentCustomer,
+          autoPrint: shouldPrint,
+        });
+        setShowSuccessModal(true);
 
         handleClearCart();
         // Back to walk-in, so the next person at the counter cannot be billed
@@ -1271,14 +1368,20 @@ export const PosView: React.FC<PosViewProps> = ({
                 <div
                   key={item.product_id}
                   title={item.name}
-                  className="group h-[46px] px-3 flex items-center gap-2 hover:bg-muted-teal-50/40 transition-colors"
+                  className="group min-h-[50px] py-1.5 px-3 flex items-center gap-2 hover:bg-muted-teal-50/40 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-ui-sm font-medium text-jungle-teal-900 truncate leading-tight">
+                    <div className="text-ui-sm font-medium text-jungle-teal-900 truncate leading-tight mb-1">
                       {item.name}
                     </div>
-                    <div className="text-ui-2xs font-mono text-jungle-teal-600 leading-tight">
-                      ৳ {(item.unit_price_paisa / 100).toFixed(2)}
+                    <div className="flex items-center gap-1.5">
+                      <CartPriceInput
+                        unitPricePaisa={item.unit_price_paisa}
+                        onPriceChange={(newPaisa) => updateCartUnitPrice(item.product_id, newPaisa)}
+                      />
+                      <span className="text-ui-2xs text-jungle-teal-500 font-sans">
+                        / {item.unit || 'pcs'}
+                      </span>
                     </div>
                   </div>
             
@@ -1291,9 +1394,20 @@ export const PosView: React.FC<PosViewProps> = ({
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-                    <span className="w-7 text-center font-mono text-ui-sm font-semibold text-jungle-teal-900">
-                      {item.qty}
-                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.qty}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) {
+                          updateCartQty(item.product_id, val);
+                        }
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      className="w-8 h-full text-center font-mono text-ui-sm font-semibold text-jungle-teal-900 bg-transparent focus:outline-hidden focus:bg-white"
+                      title="Quantity"
+                    />
                     <button
                       type="button"
                       onClick={() => updateCartQty(item.product_id, item.qty + 1)}
@@ -1304,7 +1418,7 @@ export const PosView: React.FC<PosViewProps> = ({
                     </button>
                   </div>
             
-                  <div className="w-[92px] text-right font-mono text-ui-sm font-semibold text-jungle-teal-900 shrink-0 whitespace-nowrap">
+                  <div className="w-[88px] text-right font-mono text-ui-sm font-semibold text-jungle-teal-900 shrink-0 whitespace-nowrap">
                     ৳ {((item.unit_price_paisa * item.qty) / 100).toFixed(2)}
                   </div>
             
@@ -1499,21 +1613,38 @@ export const PosView: React.FC<PosViewProps> = ({
       
           <div className="shrink-0 border-t border-jungle-teal-100 px-3 py-2.5">
           {/* Checkout */}
-          <button
-            type="button"
-            onClick={() => handleStartCheckout()}
-            disabled={cart.length === 0 || loading}
-            className="w-full h-12 bg-muted-teal-700 hover:bg-muted-teal-800 text-white font-semibold text-ui-lg rounded-2xl shadow-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 active:scale-[0.99]"
-            title="Complete the sale and print the receipt (F8)"
-          >
-            <Check className="w-4 h-4" />
-            <span>Complete Sale</span>
-            {showShortcuts && (
-              <span className="font-mono text-ui-2xs font-semibold bg-white/20 rounded px-1.5 py-0.5">
-                {bindingLabel(keys.checkout)}
-              </span>
-            )}
-          </button>
+          {(() => {
+            const isWalkInPartialDue = !selectedCustomerId && totalPaidPaisa > 0 && duePaisa > 0;
+            return (
+              <button
+                type="button"
+                onClick={() => handleStartCheckout()}
+                disabled={cart.length === 0 || loading || isWalkInPartialDue}
+                className={`w-full h-12 font-semibold text-ui-lg rounded-2xl shadow-sm flex items-center justify-center gap-2 transition-all ${
+                  isWalkInPartialDue
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300 cursor-not-allowed opacity-90'
+                    : 'bg-muted-teal-700 hover:bg-muted-teal-800 text-white disabled:opacity-50 active:scale-[0.99]'
+                }`}
+                title={
+                  isWalkInPartialDue
+                    ? 'Walk-in customer cannot have remaining due. Select a customer or pay in full.'
+                    : 'Complete the sale and print the receipt (F8)'
+                }
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  {isWalkInPartialDue
+                    ? 'Select Customer for Due'
+                    : 'Complete Sale'}
+                </span>
+                {showShortcuts && (
+                  <span className="font-mono text-ui-2xs font-semibold bg-white/20 rounded px-1.5 py-0.5">
+                    {bindingLabel(keys.checkout)}
+                  </span>
+                )}
+              </button>
+            );
+          })()}
           </div>
         </div>
       
@@ -1538,6 +1669,34 @@ export const PosView: React.FC<PosViewProps> = ({
         loading={loading}
       />
 
+
+      {/* Sale Success & Print Feedback Modal */}
+      {successSaleMeta && (
+        <SaleSuccessModal
+          isOpen={showSuccessModal}
+          onClose={() => {
+            setShowSuccessModal(false);
+            setSuccessSaleMeta(null);
+          }}
+          onNewSale={() => {
+            setShowSuccessModal(false);
+            setSuccessSaleMeta(null);
+            barcodeInputRef.current?.focus();
+          }}
+          invoiceNo={successSaleMeta.invoiceNo}
+          totalPaisa={successSaleMeta.totalPaisa}
+          paidPaisa={successSaleMeta.paidPaisa}
+          changePaisa={successSaleMeta.changePaisa}
+          duePaisa={successSaleMeta.duePaisa}
+          paymentMethodSummary={successSaleMeta.paymentMethodSummary}
+          customer={successSaleMeta.customer}
+          autoPrint={successSaleMeta.autoPrint}
+          onViewInvoice={() => {
+            setShowSuccessModal(false);
+            setShowInvoiceModal(true);
+          }}
+        />
+      )}
 
       {/* Final Printed Invoice Modal */}
       <InvoiceModal
