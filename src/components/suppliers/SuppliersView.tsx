@@ -41,6 +41,9 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const [dateFilter, setDateFilter] = useState<'7' | '15' | '30' | 'all'>('all');
+  const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null);
 
   // Modals
   const [showSupplierModal, setShowSupplierModal] = useState(false);
@@ -59,6 +62,8 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
   const [purchaseItems, setPurchaseItems] = useState<
     Array<{ product_id: string; qty: number; unit_cost_taka: number }>
   >([]);
+
+  const [salesSummary, setSalesSummary] = useState<{ soldQty: number, salesTaka: number, profitTaka: number } | null>(null);
 
   const isOwner = userRole === 'owner';
 
@@ -83,6 +88,32 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
   useEffect(() => {
     fetchSuppliers();
   }, []);
+
+  useEffect(() => {
+    if (!window.api) return;
+    
+    const end = new Date();
+    const start = new Date();
+    if (dateFilter !== 'all') {
+      start.setDate(end.getDate() - parseInt(dateFilter, 10));
+    } else {
+      start.setFullYear(2000);
+    }
+    
+    const startStr = start.toISOString().slice(0, 10);
+    const endStr = end.toISOString().slice(0, 10);
+
+    window.api.reports.getProfitReport({ startDate: startStr, endDate: endStr })
+      .then(report => {
+        const soldQty = report.products.reduce((acc: number, p: any) => acc + (p.qty_sold || 0), 0);
+        setSalesSummary({
+          soldQty,
+          salesTaka: (report.total_revenue_paisa || 0) / 100,
+          profitTaka: (report.total_gross_profit_paisa || 0) / 100
+        });
+      })
+      .catch(console.error);
+  }, [dateFilter]);
 
   const handleSupplierSubmit = async (values: SupplierFormValues) => {
     if (!window.api) return;
@@ -197,6 +228,13 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
     return s.name.toLowerCase().includes(q) || (s.phone && s.phone.includes(q));
   });
 
+  const now = new Date();
+  const filteredPurchases = purchases.filter((p) => {
+    if (dateFilter === 'all') return true;
+    const diffDays = (now.getTime() - new Date(p.created_at).getTime()) / (1000 * 3600 * 24);
+    return diffDays <= parseInt(dateFilter, 10);
+  });
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-6 text-jungle-teal-900 pb-2">
       {/* Header */}
@@ -298,61 +336,125 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                 </p>
               )}
               {supplier.address && <p className="text-ui-xs text-jungle-teal-600 mt-1">{supplier.address}</p>}
-              {supplier.payment_terms_days ? (
-                <span className="inline-flex items-center gap-1 mt-2 px-1.5 py-0.5 rounded border border-azure-mist-200 bg-azure-mist-50 text-azure-mist-800 text-ui-2xs font-medium">
-                  <Clock className="w-3 h-3" />
-                  {supplier.payment_terms_days}-day terms
-                </span>
-              ) : null}
             </div>
 
-            <div className="pt-2 border-t border-jungle-teal-100 flex items-center justify-between font-mono">
-              <span className="text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 font-sans">Total Payable</span>
-              <span
-                className={`font-mono text-ui-base font-semibold ${
-                  supplier.total_payable_paisa > 0 ? 'text-amber-700' : 'text-muted-teal-800'
-                }`}
-              >
-                ৳ {(supplier.total_payable_paisa / 100).toFixed(2)}
-              </span>
-            </div>
+            <div className="pt-3 border-t border-jungle-teal-200/50 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase font-bold text-jungle-teal-500 tracking-wider">Total Payable</p>
+                <p className="font-mono text-ui-base font-extrabold text-rose-700">
+                  ৳ {(supplier.total_payable_paisa / 100).toFixed(2)}
+                </p>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setLedgerTarget(supplier)}
-                title="Open payable ledger"
-                className="h-[40px] px-3 shrink-0 rounded-xl border border-jungle-teal-300 text-jungle-teal-700 text-ui-sm font-medium flex items-center gap-1.5 hover:bg-jungle-teal-100 transition-colors"
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Ledger</span>
-              </button>
-
-              {supplier.total_payable_paisa > 0 ? (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setPayTarget(supplier)}
-                  className="flex-1 min-w-0 h-[40px] bg-muted-teal-700 hover:bg-muted-teal-800 text-white font-medium rounded-xl text-ui-sm flex items-center justify-center gap-1.5 transition-colors"
+                  onClick={() => setLedgerTarget(supplier)}
+                  className="h-[40px] px-3 rounded-xl border border-jungle-teal-300 text-jungle-teal-700 text-ui-sm font-medium flex items-center gap-1.5 hover:bg-jungle-teal-100 transition-colors"
                 >
-                  <Wallet className="w-3.5 h-3.5" />
-                  <span>Pay Supplier</span>
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Ledger</span>
                 </button>
-              ) : (
-                <div className="flex-1 min-w-0 h-[40px] rounded-xl border border-dashed border-jungle-teal-200 text-jungle-teal-500 text-ui-xs flex items-center justify-center gap-1.5">
-                  <Wallet className="w-3.5 h-3.5" />
-                  <span>Nothing outstanding</span>
-                </div>
-              )}
+                {supplier.total_payable_paisa > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setPayTarget(supplier)}
+                    className="h-[40px] px-4 bg-muted-teal-700 hover:bg-muted-teal-800 text-white font-medium rounded-xl text-ui-sm flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>Pay</span>
+                  </button>
+                ) : (
+                  <div className="flex-1 min-w-0 h-[40px] px-3 rounded-xl border border-dashed border-jungle-teal-200 text-jungle-teal-500 text-ui-xs flex items-center justify-center gap-1.5">
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>0 due</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ))}
       </div>
 
+      {/* Mini Dashboard */}
+      {(() => {
+        const totalBoughtQty = filteredPurchases.reduce((acc, p) => acc + (p.items?.reduce((s: number, i: any) => s + i.qty, 0) || 0), 0);
+        const totalBoughtTaka = filteredPurchases.reduce((acc, p) => acc + p.total_paisa, 0) / 100;
+        
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-azure-mist-50/50 border border-azure-mist-200 rounded-2xl p-4 shadow-xs">
+              <h3 className="text-xs font-bold text-azure-mist-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Truck className="w-4 h-4" /> Period Purchases ({dateFilter === 'all' ? 'All Time' : `Last ${dateFilter} Days`})
+              </h3>
+              <div className="flex justify-between items-end">
+                <div>
+                  <p className="text-ui-xs text-azure-mist-600 mb-0.5">Total Value</p>
+                  <p className="font-mono text-xl font-bold text-azure-mist-900">৳ {totalBoughtTaka.toFixed(2)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-ui-xs text-azure-mist-600 mb-0.5">Items Bought</p>
+                  <p className="font-mono text-xl font-bold text-azure-mist-900">{totalBoughtQty} pcs</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-4 shadow-xs">
+              <h3 className="text-xs font-bold text-emerald-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <DollarSign className="w-4 h-4" /> Period Sales & Profit ({dateFilter === 'all' ? 'All Time' : `Last ${dateFilter} Days`})
+              </h3>
+              <div className="flex justify-between items-end">
+                <div>
+                  <p className="text-ui-xs text-emerald-600 mb-0.5">Gross Sales</p>
+                  <p className="font-mono text-xl font-bold text-emerald-900">৳ {(salesSummary?.salesTaka || 0).toFixed(2)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-ui-xs text-emerald-600 mb-0.5">Items Sold</p>
+                  <p className="font-mono text-xl font-bold text-emerald-900">{salesSummary?.soldQty || 0} pcs</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-ui-xs text-emerald-600 mb-0.5">Profit Made</p>
+                  <p className="font-mono text-xl font-bold text-emerald-700">৳ {(salesSummary?.profitTaka || 0).toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Recent Purchases List */}
       <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl overflow-hidden shadow-xs">
-        <div className="px-3.5 py-2.5 border-b border-jungle-teal-200 bg-jungle-teal-50 flex justify-between items-center text-ui-sm">
-          <span className="font-bold text-jungle-teal-800">Purchase Invoices History</span>
-          <span className="font-mono text-jungle-teal-500">{purchases.length} invoices recorded</span>
+        <div className="px-3.5 py-2.5 border-b border-jungle-teal-200 bg-jungle-teal-50 flex justify-between items-center flex-wrap gap-3 text-ui-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-jungle-teal-800">Purchase Invoices History</span>
+            <span className="font-mono text-jungle-teal-500 bg-jungle-teal-100 px-1.5 py-0.5 rounded text-xs">{filteredPurchases.length} invoices</span>
+          </div>
+          <div className="flex items-center bg-white border border-jungle-teal-200 rounded-lg p-0.5 shadow-2xs">
+            <button
+              onClick={() => setDateFilter('7')}
+              className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${dateFilter === '7' ? 'bg-azure-mist-600 text-white shadow-sm' : 'text-jungle-teal-600 hover:bg-jungle-teal-50'}`}
+            >
+              7 Days
+            </button>
+            <button
+              onClick={() => setDateFilter('15')}
+              className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${dateFilter === '15' ? 'bg-azure-mist-600 text-white shadow-sm' : 'text-jungle-teal-600 hover:bg-jungle-teal-50'}`}
+            >
+              15 Days
+            </button>
+            <button
+              onClick={() => setDateFilter('30')}
+              className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${dateFilter === '30' ? 'bg-azure-mist-600 text-white shadow-sm' : 'text-jungle-teal-600 hover:bg-jungle-teal-50'}`}
+            >
+              30 Days
+            </button>
+            <button
+              onClick={() => setDateFilter('all')}
+              className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${dateFilter === 'all' ? 'bg-azure-mist-600 text-white shadow-sm' : 'text-jungle-teal-600 hover:bg-jungle-teal-50'}`}
+            >
+              All Time
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -370,33 +472,69 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-jungle-teal-100">
-              {purchases.length === 0 ? (
+              {filteredPurchases.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-8 text-center text-jungle-teal-500 font-sans">
-                    No purchase history found.
+                    No purchase history found for the selected period.
                   </td>
                 </tr>
               ) : (
-                purchases.map((p) => (
-                  <tr key={p.id} className="h-[46px] hover:bg-azure-mist-50/40 transition-colors">
-                    <td className="px-3 text-jungle-teal-600">{new Date(p.created_at).toLocaleDateString()}</td>
-                    <td className="px-3 font-sans text-jungle-teal-900 font-bold">{p.supplier_name || 'Generic Vendor'}</td>
-                    <td className="px-3 text-azure-mist-800 font-bold">{p.invoice_ref || '-'}</td>
-                    <td className="px-3 text-right font-mono text-ui-sm whitespace-nowrap text-amber-700">
-                      {p.transport_paisa ? `৳ ${(p.transport_paisa / 100).toFixed(2)}` : '—'}
-                    </td>
-                    <td className="px-3 text-right font-mono text-ui-sm font-semibold text-jungle-teal-900 whitespace-nowrap">৳ {(p.total_paisa / 100).toFixed(2)}</td>
-                    <td className="px-3 text-right font-mono text-ui-sm font-semibold text-muted-teal-800 whitespace-nowrap">৳ {(p.paid_paisa / 100).toFixed(2)}</td>
-                    <td
-                      className={`px-3 text-right font-mono text-ui-sm font-semibold whitespace-nowrap ${
-                        p.total_paisa - p.paid_paisa > 0 ? 'text-rose-700' : 'text-jungle-teal-400'
-                      }`}
-                    >
-                      ৳ {Math.max(0, (p.total_paisa - p.paid_paisa) / 100).toFixed(2)}
-                    </td>
-                    <td className="px-3 font-sans text-jungle-teal-500">{p.note || '-'}</td>
-                  </tr>
-                ))
+                filteredPurchases.map((p) => {
+                  const isExpanded = expandedPurchaseId === p.id;
+                  return (
+                    <React.Fragment key={p.id}>
+                      <tr 
+                        onClick={() => setExpandedPurchaseId(isExpanded ? null : p.id)}
+                        className={`h-[46px] hover:bg-azure-mist-50/40 transition-colors cursor-pointer ${isExpanded ? 'bg-azure-mist-50/50' : ''}`}
+                      >
+                        <td className="px-3 text-jungle-teal-600">{new Date(p.created_at).toLocaleDateString()}</td>
+                        <td className="px-3 font-sans text-jungle-teal-900 font-bold">{p.supplier_name || 'Generic Vendor'}</td>
+                        <td className="px-3 text-azure-mist-800 font-bold">{p.invoice_ref || '-'}</td>
+                        <td className="px-3 text-right font-mono text-ui-sm whitespace-nowrap text-amber-700">
+                          {p.transport_paisa ? `৳ ${(p.transport_paisa / 100).toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3 text-right font-mono text-ui-sm font-semibold text-jungle-teal-900 whitespace-nowrap">৳ {(p.total_paisa / 100).toFixed(2)}</td>
+                        <td className="px-3 text-right font-mono text-ui-sm font-semibold text-muted-teal-800 whitespace-nowrap">৳ {(p.paid_paisa / 100).toFixed(2)}</td>
+                        <td
+                          className={`px-3 text-right font-mono text-ui-sm font-semibold whitespace-nowrap ${
+                            p.total_paisa - p.paid_paisa > 0 ? 'text-rose-700' : 'text-jungle-teal-400'
+                          }`}
+                        >
+                          ৳ {Math.max(0, (p.total_paisa - p.paid_paisa) / 100).toFixed(2)}
+                        </td>
+                        <td className="px-3 font-sans text-jungle-teal-500">{p.note || '-'}</td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={8} className="p-0 border-b border-jungle-teal-200">
+                            <div className="bg-azure-mist-50/30 p-3 inset-shadow-sm border-t border-jungle-teal-100">
+                              <h4 className="text-[11px] font-bold text-jungle-teal-800 mb-2 flex items-center gap-1 uppercase tracking-wider">
+                                <ShoppingCart className="w-3.5 h-3.5" /> Items Purchased
+                              </h4>
+                              {p.items && p.items.length > 0 ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                  {p.items.map((item: any, idx: number) => (
+                                    <div key={idx} className="bg-white border border-jungle-teal-200 rounded-lg p-2 flex flex-col gap-1 shadow-2xs">
+                                      <div className="font-bold text-jungle-teal-900 text-xs truncate">
+                                        {item.product_name}
+                                      </div>
+                                      <div className="flex justify-between items-center text-[10px] font-mono">
+                                        <span className="text-jungle-teal-600">Qty: {item.qty}</span>
+                                        <span className="text-emerald-700 font-bold">৳ {(item.unit_cost_paisa / 100).toFixed(2)}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-jungle-teal-500 italic py-1">No items details available for this invoice.</div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -1,0 +1,65 @@
+import { listBackups, createDatabaseBackup, restoreDatabase } from '../../services/backupManager';
+
+import { ipcMain, dialog, app } from 'electron';
+import { v7 as uuidv7 } from 'uuid';
+import { getDb } from '../../db';
+import { z } from 'zod';
+// cart calculations not needed
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit } from '../shared';
+
+
+export function registerBackupHandlers() {
+  ipcMain.handle('api:backup:list', async () => {
+      requireRole(['owner']);
+      return listBackups();
+    });
+
+  ipcMain.handle('api:backup:createManual', async (_event, rawTargetPath) => {
+      requireRole(['owner']);
+      const targetPath = typeof rawTargetPath === 'string' && rawTargetPath.trim() ? rawTargetPath.trim() : undefined;
+      return createDatabaseBackup(targetPath, false);
+    });
+
+  ipcMain.handle('api:backup:restore', async (_event, rawBackupFilePath) => {
+      requireRole(['owner']);
+      const backupFilePath = z.string().min(1).parse(rawBackupFilePath);
+      restoreDatabase(backupFilePath);
+      app.relaunch();
+      app.exit(0);
+      return { success: true };
+    });
+
+  ipcMain.handle('api:backup:selectFolder', async () => {
+    requireRole(['owner']);
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select Backup Folder'
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
+  });
+
+  ipcMain.handle('api:backup:selectFile', async () => {
+    // Allowed during first run (no requireRole check)
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: 'Select Backup File',
+      filters: [{ name: 'SQLite Database', extensions: ['db', 'sqlite3'] }]
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
+  });
+
+  ipcMain.handle('api:backup:restoreLocalFile', async (_event, filePath: string) => {
+    // Allowed during first run (no requireRole check)
+    restoreDatabase(filePath);
+    app.relaunch();
+    app.exit(0);
+    return { success: true };
+  });
+
+}

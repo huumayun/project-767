@@ -132,7 +132,17 @@ contextBridge.exposeInMainWorld('api', {
     triggerNow: () => ipcRenderer.invoke('api:sync:triggerNow'),
     configure: (config: any) => ipcRenderer.invoke('api:sync:configure', config),
   },
+  gdrive: {
+    status: () => ipcRenderer.invoke('api:gdrive:status'),
+    getAuthUrl: () => ipcRenderer.invoke('api:gdrive:getAuthUrl'),
+    authorize: (code: string) => ipcRenderer.invoke('api:gdrive:authorize', code),
+    disconnect: () => ipcRenderer.invoke('api:gdrive:disconnect'),
+    restoreLatest: () => ipcRenderer.invoke('api:gdrive:restoreLatest'),
+  },
   backup: {
+    selectFolder: () => ipcRenderer.invoke('api:backup:selectFolder'),
+    selectFile: () => ipcRenderer.invoke('api:backup:selectFile'),
+    restoreLocalFile: (filePath: string) => ipcRenderer.invoke('api:backup:restoreLocalFile', filePath),
     list: () => ipcRenderer.invoke('api:backup:list'),
     createManual: (targetPath?: string) => ipcRenderer.invoke('api:backup:createManual', targetPath),
     restore: (backupFilePath: string) => ipcRenderer.invoke('api:backup:restore', backupFilePath),

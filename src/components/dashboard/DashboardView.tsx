@@ -233,7 +233,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         trendsMap[key].sales_paisa += (s.total_paisa || 0);
       });
 
-      if (reportRes && reportRes.total_orders > 0) {
+      if (reportRes) {
         setSalesReport(reportRes);
       } else if (filteredSales.length > 0) {
         const dailyTrends: Array<{ date: string; orders_count: number; sales_paisa: number }> = [];
@@ -279,7 +279,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         setSalesReport(reportRes || null);
       }
 
-      if (profitRes && profitRes.total_revenue_paisa > 0) {
+      if (profitRes) {
         setProfitReport(profitRes);
       } else if (filteredSales.length > 0) {
         const estRevenue = grossSalesPaisa;
@@ -296,7 +296,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           product_profits: [],
         });
       } else {
-        setProfitReport(profitRes || null);
+        setProfitReport(null);
       }
 
       if (valuationRes) setStockValuation(valuationRes);

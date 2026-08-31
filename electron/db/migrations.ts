@@ -9,7 +9,7 @@ export interface Migration {
 export const MIGRATIONS: Migration[] = [
   {
     id: '001_initial_schema',
-    name: 'Initial Schema Migration for Mechanical Shop POS',
+    name: 'Initial Schema Migration for Mechanical Shop POS (Squashed)',
     up: (db: Database.Database) => {
       // System Migrations Table
       db.exec(`
@@ -26,6 +26,8 @@ export const MIGRATIONS: Migration[] = [
           value TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
+        INSERT OR IGNORE INTO settings (key, value, updated_at) 
+        VALUES ('inventory_valuation_method', 'fifo', datetime('now'));
       `);
 
       // 2. Users Table
@@ -36,6 +38,7 @@ export const MIGRATIONS: Migration[] = [
           username TEXT UNIQUE NOT NULL,
           role TEXT NOT NULL CHECK(role IN ('owner', 'staff')),
           password_hash TEXT NOT NULL,
+          pin_code TEXT,
           is_active INTEGER NOT NULL DEFAULT 1,
           device_id TEXT,
           created_at TEXT NOT NULL,
@@ -88,6 +91,10 @@ export const MIGRATIONS: Migration[] = [
           name TEXT NOT NULL,
           phone TEXT,
           address TEXT,
+          contact_person TEXT,
+          opening_balance_paisa INTEGER NOT NULL DEFAULT 0,
+          payment_terms_days INTEGER,
+          note TEXT,
           total_payable_paisa INTEGER NOT NULL DEFAULT 0,
           device_id TEXT,
           created_at TEXT NOT NULL,
@@ -104,6 +111,8 @@ export const MIGRATIONS: Migration[] = [
           invoice_ref TEXT,
           total_paisa INTEGER NOT NULL DEFAULT 0,
           paid_paisa INTEGER NOT NULL DEFAULT 0,
+          transport_paisa INTEGER NOT NULL DEFAULT 0,
+          transport_on_invoice INTEGER NOT NULL DEFAULT 1,
           note TEXT,
           device_id TEXT,
           created_at TEXT NOT NULL,
@@ -127,7 +136,7 @@ export const MIGRATIONS: Migration[] = [
         );
       `);
 
-      // 7. Customers Table (NO STORED total_due)
+      // 7. Customers Table
       db.exec(`
         CREATE TABLE IF NOT EXISTS customers (
           id TEXT PRIMARY KEY,
@@ -170,6 +179,7 @@ export const MIGRATIONS: Migration[] = [
           product_id TEXT NOT NULL,
           qty INTEGER NOT NULL,
           unit_price_paisa INTEGER NOT NULL,
+          unit_cost_paisa INTEGER,
           discount_paisa INTEGER NOT NULL DEFAULT 0,
           serial_number_id TEXT,
           device_id TEXT,
@@ -187,6 +197,7 @@ export const MIGRATIONS: Migration[] = [
           id TEXT PRIMARY KEY,
           sale_id TEXT,
           customer_id TEXT,
+          supplier_id TEXT,
           direction TEXT NOT NULL CHECK(direction IN ('in', 'out')),
           method TEXT NOT NULL CHECK(method IN ('cash', 'bkash', 'nagad', 'card')),
           amount_paisa INTEGER NOT NULL,
@@ -202,6 +213,7 @@ export const MIGRATIONS: Migration[] = [
         );
         CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
         CREATE INDEX IF NOT EXISTS idx_payments_sale ON payments(sale_id);
+        CREATE INDEX IF NOT EXISTS idx_payments_supplier ON payments(supplier_id, direction, type);
       `);
 
       // 10. Stock Transactions Ledger
@@ -211,6 +223,7 @@ export const MIGRATIONS: Migration[] = [
           product_id TEXT NOT NULL,
           type TEXT NOT NULL CHECK(type IN ('purchase', 'sale', 'return_in', 'return_out', 'adjustment', 'initial')),
           qty_delta INTEGER NOT NULL,
+          unit_cost_paisa INTEGER,
           ref_table TEXT,
           ref_id TEXT,
           reason TEXT,
@@ -295,201 +308,7 @@ export const MIGRATIONS: Migration[] = [
         );
       `);
 
-      // VIEWS
-      // v_customer_due: derived total sales minus total payments in
-      db.exec(`
-        CREATE VIEW IF NOT EXISTS v_customer_due AS
-        SELECT 
-          c.id AS customer_id,
-          c.name,
-          c.phone,
-          COALESCE(sales_total.sum_sales, 0) AS total_sales_paisa,
-          COALESCE(payments_total.sum_payments, 0) AS total_paid_paisa,
-          (COALESCE(sales_total.sum_sales, 0) - COALESCE(payments_total.sum_payments, 0)) AS due_paisa
-        FROM customers c
-        LEFT JOIN (
-          SELECT customer_id, SUM(total_paisa) AS sum_sales 
-          FROM sales 
-          WHERE deleted_at IS NULL AND customer_id IS NOT NULL AND status != 'held'
-          GROUP BY customer_id
-        ) sales_total ON c.id = sales_total.customer_id
-        LEFT JOIN (
-          SELECT customer_id, SUM(amount_paisa) AS sum_payments 
-          FROM payments 
-          WHERE deleted_at IS NULL AND customer_id IS NOT NULL AND direction = 'in'
-          GROUP BY customer_id
-        ) payments_total ON c.id = payments_total.customer_id
-        WHERE c.deleted_at IS NULL;
-      `);
-
-      // v_daily_sales: daily aggregated metrics
-      db.exec(`
-        CREATE VIEW IF NOT EXISTS v_daily_sales AS
-        SELECT 
-          date(created_at) AS sale_date,
-          COUNT(id) AS total_orders,
-          SUM(subtotal_paisa) AS subtotal_paisa,
-          SUM(discount_paisa) AS discount_paisa,
-          SUM(total_paisa) AS total_sales_paisa
-        FROM sales
-        WHERE deleted_at IS NULL AND status = 'completed'
-        GROUP BY date(created_at);
-      `);
-
-      // v_product_profit: calculate profit per product
-      db.exec(`
-        CREATE VIEW IF NOT EXISTS v_product_profit AS
-        SELECT 
-          p.id AS product_id,
-          p.name AS product_name,
-          p.cost_price_paisa,
-          p.sell_price_paisa,
-          COALESCE(SUM(si.qty), 0) AS total_qty_sold,
-          COALESCE(SUM(si.unit_price_paisa * si.qty - si.discount_paisa), 0) AS revenue_paisa,
-          COALESCE(SUM(p.cost_price_paisa * si.qty), 0) AS total_cost_paisa,
-          COALESCE(SUM(si.unit_price_paisa * si.qty - si.discount_paisa) - SUM(p.cost_price_paisa * si.qty), 0) AS profit_paisa
-        FROM products p
-        LEFT JOIN sale_items si ON p.id = si.product_id AND si.deleted_at IS NULL
-        LEFT JOIN sales s ON si.sale_id = s.id AND s.status = 'completed' AND s.deleted_at IS NULL
-        WHERE p.deleted_at IS NULL
-        GROUP BY p.id;
-      `);
-
-      // v_stock_valuation: stock quantity and total asset value
-      db.exec(`
-        CREATE VIEW IF NOT EXISTS v_stock_valuation AS
-        SELECT 
-          p.id AS product_id,
-          p.name AS product_name,
-          p.stock_qty,
-          p.cost_price_paisa,
-          p.sell_price_paisa,
-          (p.stock_qty * p.cost_price_paisa) AS total_cost_value_paisa,
-          (p.stock_qty * p.sell_price_paisa) AS total_sell_value_paisa
-        FROM products p
-        WHERE p.deleted_at IS NULL;
-      `);
-    }
-  },
-  {
-    id: '002_fix_overtender_cash_change',
-    name: 'Adjust overtendered cash payment rows to net cash received',
-    up: (db: Database.Database) => {
-      // Find all completed sales where sum of 'in' payments exceeds sale total_paisa
-      const overpaidSales = db.prepare(`
-        SELECT s.id, s.total_paisa, SUM(p.amount_paisa) as total_in
-        FROM sales s
-        JOIN payments p ON p.sale_id = s.id AND p.direction = 'in' AND p.deleted_at IS NULL
-        WHERE s.deleted_at IS NULL
-        GROUP BY s.id
-        HAVING total_in > s.total_paisa
-      `).all() as { id: string; total_paisa: number; total_in: number }[];
-
-      for (const sale of overpaidSales) {
-        const excessPaisa = sale.total_in - sale.total_paisa;
-        const cashPayment = db.prepare(`
-          SELECT id, amount_paisa FROM payments
-          WHERE sale_id = ? AND direction = 'in' AND method = 'cash' AND deleted_at IS NULL
-          ORDER BY created_at DESC
-          LIMIT 1
-        `).get(sale.id) as { id: string; amount_paisa: number } | undefined;
-
-        if (cashPayment) {
-          const newAmount = Math.max(0, cashPayment.amount_paisa - excessPaisa);
-          db.prepare('UPDATE payments SET amount_paisa = ? WHERE id = ?').run(newAmount, cashPayment.id);
-        }
-      }
-    }
-  },
-  {
-    id: '003_vendor_accounting',
-    name: 'Cost snapshot on sale items, landed cost on purchases, supplier detail fields',
-    up: (db: Database.Database) => {
-      const hasColumn = (table: string, column: string) =>
-        (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
-          (c) => c.name === column
-        );
-
-      // Profit was read from products.cost_price_paisa, which every purchase
-      // overwrites — so a price rise silently rewrote the profit on sales that
-      // had already happened. Cost is now snapshotted on the line at sale time.
-      // Left nullable on purpose: rows written before this migration have no
-      // truthful value, and inventing one would fake the history. Reporting
-      // falls back to the product's current cost when it is NULL.
-      if (!hasColumn('sale_items', 'unit_cost_paisa')) {
-        db.exec('ALTER TABLE sale_items ADD COLUMN unit_cost_paisa INTEGER');
-      }
-
-      // Delivery/transport charged on a purchase invoice. Kept as its own
-      // column so it can be reported on, and apportioned across the items so
-      // stock carries its true landed cost.
-      if (!hasColumn('purchases', 'transport_paisa')) {
-        db.exec('ALTER TABLE purchases ADD COLUMN transport_paisa INTEGER NOT NULL DEFAULT 0');
-      }
-
-      if (!hasColumn('suppliers', 'contact_person')) {
-        db.exec('ALTER TABLE suppliers ADD COLUMN contact_person TEXT');
-      }
-      if (!hasColumn('suppliers', 'opening_balance_paisa')) {
-        db.exec('ALTER TABLE suppliers ADD COLUMN opening_balance_paisa INTEGER NOT NULL DEFAULT 0');
-      }
-      if (!hasColumn('suppliers', 'payment_terms_days')) {
-        db.exec('ALTER TABLE suppliers ADD COLUMN payment_terms_days INTEGER');
-      }
-      if (!hasColumn('suppliers', 'note')) {
-        db.exec('ALTER TABLE suppliers ADD COLUMN note TEXT');
-      }
-
-      // payments only had customer_id; a supplier payment has nowhere truthful
-      // to live without its own column (customer_id carries an FK to customers).
-      if (!hasColumn('payments', 'supplier_id')) {
-        db.exec('ALTER TABLE payments ADD COLUMN supplier_id TEXT');
-      }
-
-      db.exec(
-        'CREATE INDEX IF NOT EXISTS idx_payments_supplier ON payments(supplier_id, direction, type)'
-      );
-    }
-  },
-  {
-    id: '004_transport_payee',
-    name: 'Record whether a purchase transport charge was billed by the vendor',
-    up: (db: Database.Database) => {
-      const hasColumn = (table: string, column: string) =>
-        (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
-          (c) => c.name === column
-        );
-
-      // Transport is always part of the landed cost of the goods, but it is
-      // not always owed to the vendor: a delivery charge printed on their
-      // challan is, a pickup van the shop hires itself is not. Treating the
-      // second kind as vendor money inflates the payable and leaves the
-      // ledger short by exactly the fare. Default 1 keeps the rows written
-      // before this migration reading the way they were entered.
-      if (!hasColumn('purchases', 'transport_on_invoice')) {
-        db.exec(
-          'ALTER TABLE purchases ADD COLUMN transport_on_invoice INTEGER NOT NULL DEFAULT 1'
-        );
-      }
-    }
-  },
-  {
-    id: '005_pin_login_and_shifts',
-    name: 'Add user PIN codes, shifts and cash drawer transactions',
-    up: (db: Database.Database) => {
-      const hasColumn = (table: string, column: string) =>
-        (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
-          (c) => c.name === column
-        );
-
-      // 1. Add pin_code column to users
-      if (!hasColumn('users', 'pin_code')) {
-        db.exec('ALTER TABLE users ADD COLUMN pin_code TEXT');
-        // Set default PIN for existing admin/owner user to '1234'
-        db.exec("UPDATE users SET pin_code = '1234' WHERE (pin_code IS NULL OR pin_code = '') AND role = 'owner'");
-      }
-
-      // 2. Shifts Table
+      // 15. Shifts and Shift Transactions
       db.exec(`
         CREATE TABLE IF NOT EXISTS shifts (
           id TEXT PRIMARY KEY,
@@ -517,17 +336,7 @@ export const MIGRATIONS: Migration[] = [
         );
         CREATE INDEX IF NOT EXISTS idx_shifts_user_status ON shifts(user_id, status);
         CREATE INDEX IF NOT EXISTS idx_shifts_device ON shifts(device_id);
-      `);
 
-      if (!hasColumn('shifts', 'closing_cash_withdrawn_paisa')) {
-        db.exec('ALTER TABLE shifts ADD COLUMN closing_cash_withdrawn_paisa INTEGER NOT NULL DEFAULT 0');
-      }
-      if (!hasColumn('shifts', 'closing_float_left_paisa')) {
-        db.exec('ALTER TABLE shifts ADD COLUMN closing_float_left_paisa INTEGER NOT NULL DEFAULT 0');
-      }
-
-      // 3. Shift Cash Transactions (Petty Cash In/Out)
-      db.exec(`
         CREATE TABLE IF NOT EXISTS shift_cash_transactions (
           id TEXT PRIMARY KEY,
           shift_id TEXT NOT NULL,
@@ -541,12 +350,8 @@ export const MIGRATIONS: Migration[] = [
         );
         CREATE INDEX IF NOT EXISTS idx_shift_cash_tx_shift ON shift_cash_transactions(shift_id);
       `);
-    }
-  },
-  {
-    id: '016_inventory_batches',
-    name: 'Add inventory batches for FIFO valuation',
-    up: (db: Database.Database) => {
+
+      // 16. Inventory Batches
       db.exec(`
         CREATE TABLE IF NOT EXISTS inventory_batches (
           id TEXT PRIMARY KEY,
@@ -572,41 +377,141 @@ export const MIGRATIONS: Migration[] = [
           FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
           FOREIGN KEY (batch_id) REFERENCES inventory_batches(id)
         );
-
-        INSERT OR IGNORE INTO settings (key, value, updated_at) 
-        VALUES ('inventory_valuation_method', 'wac', datetime('now'));
       `);
 
-      const hasBatches = (db.prepare('SELECT COUNT(*) as c FROM inventory_batches').get() as any).c;
-      if (hasBatches === 0) {
-        db.exec(`
-          INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
-          SELECT 
-            lower(hex(randomblob(16))) as id,
-            id as product_id,
-            stock_qty as initial_qty,
-            stock_qty as remaining_qty,
-            cost_price_paisa,
-            created_at as received_at,
-            'migration' as ref_table,
-            '016' as ref_id
-          FROM products
-          WHERE stock_qty > 0 AND deleted_at IS NULL;
-        `);
-      }
+      // VIEWS
+      db.exec(`
+        CREATE VIEW IF NOT EXISTS v_customer_due AS
+        SELECT 
+          c.id AS customer_id,
+          c.name,
+          c.phone,
+          COALESCE(sales_total.sum_sales, 0) AS total_sales_paisa,
+          COALESCE(payments_total.sum_payments, 0) AS total_paid_paisa,
+          (COALESCE(sales_total.sum_sales, 0) - COALESCE(payments_total.sum_payments, 0)) AS due_paisa
+        FROM customers c
+        LEFT JOIN (
+          SELECT customer_id, SUM(total_paisa) AS sum_sales 
+          FROM sales 
+          WHERE deleted_at IS NULL AND customer_id IS NOT NULL AND status != 'held'
+          GROUP BY customer_id
+        ) sales_total ON c.id = sales_total.customer_id
+        LEFT JOIN (
+          SELECT customer_id, SUM(amount_paisa) AS sum_payments 
+          FROM payments 
+          WHERE deleted_at IS NULL AND customer_id IS NOT NULL AND direction = 'in'
+          GROUP BY customer_id
+        ) payments_total ON c.id = payments_total.customer_id
+        WHERE c.deleted_at IS NULL;
+      `);
+
+      db.exec(`
+        CREATE VIEW IF NOT EXISTS v_daily_sales AS
+        SELECT 
+          date(created_at) AS sale_date,
+          COUNT(id) AS total_orders,
+          SUM(subtotal_paisa) AS subtotal_paisa,
+          SUM(discount_paisa) AS discount_paisa,
+          SUM(total_paisa) AS total_sales_paisa
+        FROM sales
+        WHERE deleted_at IS NULL AND status = 'completed'
+        GROUP BY date(created_at);
+      `);
+
+      db.exec(`
+        CREATE VIEW IF NOT EXISTS v_product_profit AS
+        SELECT 
+          p.id AS product_id,
+          p.name AS product_name,
+          p.cost_price_paisa,
+          p.sell_price_paisa,
+          COALESCE(SUM(si.qty), 0) AS total_qty_sold,
+          COALESCE(SUM(si.unit_price_paisa * si.qty - si.discount_paisa), 0) AS revenue_paisa,
+          COALESCE(SUM(p.cost_price_paisa * si.qty), 0) AS total_cost_paisa,
+          COALESCE(SUM(si.unit_price_paisa * si.qty - si.discount_paisa) - SUM(p.cost_price_paisa * si.qty), 0) AS profit_paisa
+        FROM products p
+        LEFT JOIN sale_items si ON p.id = si.product_id AND si.deleted_at IS NULL
+        LEFT JOIN sales s ON si.sale_id = s.id AND s.status = 'completed' AND s.deleted_at IS NULL
+        WHERE p.deleted_at IS NULL
+        GROUP BY p.id;
+      `);
+
+      db.exec(`
+        CREATE VIEW IF NOT EXISTS v_stock_valuation AS
+        SELECT 
+          p.id AS product_id,
+          p.name AS product_name,
+          p.stock_qty,
+          p.cost_price_paisa,
+          p.sell_price_paisa,
+          (p.stock_qty * p.cost_price_paisa) AS total_cost_value_paisa,
+          (p.stock_qty * p.sell_price_paisa) AS total_sell_value_paisa
+        FROM products p
+        WHERE p.deleted_at IS NULL;
+      `);
     }
   },
   {
-    id: '017_stock_transactions_cost',
-    name: 'Add unit_cost_paisa to stock_transactions',
+    id: '002_fix_v_customer_due',
+    name: 'Fix v_customer_due to account for refunds and returns',
     up: (db: Database.Database) => {
-      const hasColumn = (table: string, column: string) => {
-        const info = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
-        return info.some((col) => col.name === column);
-      };
-      if (!hasColumn('stock_transactions', 'unit_cost_paisa')) {
-        db.exec('ALTER TABLE stock_transactions ADD COLUMN unit_cost_paisa INTEGER;');
-      }
+      db.exec(`
+        DROP VIEW IF EXISTS v_customer_due;
+        CREATE VIEW v_customer_due AS
+        SELECT 
+          c.id AS customer_id,
+          c.name,
+          c.phone,
+          COALESCE(sales_total.sum_sales, 0) AS total_sales_paisa,
+          COALESCE(payments_total.sum_payments, 0) AS total_paid_paisa,
+          (COALESCE(sales_total.sum_sales, 0) - COALESCE(payments_total.sum_payments, 0)) AS due_paisa
+        FROM customers c
+        LEFT JOIN (
+          SELECT s.customer_id, 
+                 SUM(s.total_paisa - COALESCE((
+                   SELECT SUM(ri.amount_paisa) 
+                   FROM returns r 
+                   JOIN return_items ri ON r.id = ri.return_id 
+                   WHERE r.sale_id = s.id
+                 ), 0)) AS sum_sales 
+          FROM sales s
+          WHERE s.deleted_at IS NULL AND s.customer_id IS NOT NULL AND s.status != 'held'
+          GROUP BY s.customer_id
+        ) sales_total ON c.id = sales_total.customer_id
+        LEFT JOIN (
+          SELECT p.customer_id, 
+                 SUM(CASE WHEN p.direction = 'in' THEN p.amount_paisa ELSE -p.amount_paisa END) AS sum_payments 
+          FROM payments p
+          WHERE p.deleted_at IS NULL AND p.customer_id IS NOT NULL
+          GROUP BY p.customer_id
+        ) payments_total ON c.id = payments_total.customer_id
+        WHERE c.deleted_at IS NULL;
+      `);
+    }
+  },
+  {
+    id: '003_create_missing_fifo_batches',
+    name: 'Create missing FIFO batches for initial or unbatched stock',
+    up: (db: Database.Database) => {
+      db.exec(`
+        INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
+        SELECT 
+          lower(hex(randomblob(16))),
+          p.id,
+          (p.stock_qty - COALESCE(b.batched_qty, 0)),
+          (p.stock_qty - COALESCE(b.batched_qty, 0)),
+          p.cost_price_paisa,
+          p.created_at,
+          'products',
+          p.id
+        FROM products p
+        LEFT JOIN (
+          SELECT product_id, SUM(remaining_qty) as batched_qty 
+          FROM inventory_batches 
+          GROUP BY product_id
+        ) b ON p.id = b.product_id
+        WHERE p.deleted_at IS NULL AND (p.stock_qty - COALESCE(b.batched_qty, 0)) > 0;
+      `);
     }
   }
 ];

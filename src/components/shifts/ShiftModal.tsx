@@ -410,6 +410,18 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 )}
               </div>
 
+              {closedSummary?.user_breakdown && closedSummary.user_breakdown.length > 0 && (
+                <div className="space-y-1 text-[11px] pb-2 border-b border-dashed border-slate-300">
+                  <div className="font-bold text-slate-800 pb-1">User Breakdown:</div>
+                  {closedSummary.user_breakdown.map((u, i) => (
+                    <div key={i} className="flex justify-between text-slate-600">
+                      <span>{u.user_name} ({u.sales_count} sales)</span>
+                      <span>৳ {(u.total_sales_paisa / 100).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="space-y-1 text-xs pt-1">
                 <div className="flex justify-between font-bold text-slate-800">
                   <span>Expected Cash:</span>
@@ -808,6 +820,28 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 <span>- Cash Out (খরচ / ড্রপ)</span>
               </button>
             </div>
+
+            {/* User Breakdown */}
+            {shiftData?.user_breakdown && shiftData.user_breakdown.length > 0 && (
+              <div className="bg-white rounded-2xl p-3 border border-jungle-teal-200 shadow-xs space-y-2">
+                <span className="text-[11px] font-bold text-jungle-teal-800 uppercase tracking-wider block font-sans">
+                  User Sales Breakdown:
+                </span>
+                <div className="divide-y divide-slate-100 max-h-32 overflow-y-auto text-xs font-mono">
+                  {shiftData.user_breakdown.map((u, i) => (
+                    <div key={i} className="py-1 flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-slate-800 font-sans">{u.user_name}</span>
+                        <span className="text-[10px] text-slate-400 block ml-1">{u.sales_count} sales</span>
+                      </div>
+                      <span className="font-bold text-jungle-teal-700">
+                        ৳ {(u.total_sales_paisa / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Recent Cash Transactions List */}
             {shiftData?.cash_transactions && shiftData.cash_transactions.length > 0 && (

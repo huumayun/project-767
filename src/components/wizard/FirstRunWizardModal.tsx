@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   ArrowRight,
   Check,
+  Cloud,
+  Database,
 } from 'lucide-react';
 
 interface FirstRunWizardModalProps {
@@ -19,7 +21,7 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
   isOpen,
   onCompleted,
 }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<0 | 1 | 2 | 3 | 'restore'>(0);
 
   // Form State
   const [shopName, setShopName] = useState('My Mechanical Workshop');
@@ -33,6 +35,10 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Restore State
+  const [authCode, setAuthCode] = useState('');
+  const [restoreStep, setRestoreStep] = useState<1 | 2>(1);
+
   if (!isOpen) return null;
 
   const handleFinishWizard = async () => {
@@ -45,7 +51,12 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      // 1. Complete wizard
+      // 1. Optionally seed demo mechanical parts first, so it doesn't get blocked by auth
+      if (seedDemoData) {
+        await window.api.demo.seed();
+      }
+
+      // 2. Complete wizard (this locks the system and requires auth for future calls)
       await window.api.wizard.completeFirstRun({
         shop_name: shopName.trim(),
         shop_address: shopAddress.trim(),
@@ -55,15 +66,36 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
         owner_password: ownerPassword.trim() || 'owner123',
       });
 
-      // 2. Optionally seed demo mechanical parts
-      if (seedDemoData) {
-        await window.api.demo.seed();
-      }
-
       onCompleted();
     } catch (err: any) {
       setError(err.message || 'Setup failed.');
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartRestore = async () => {
+    if (!window.api?.gdrive) return;
+    await window.api.gdrive.getAuthUrl();
+    setRestoreStep(2);
+  };
+
+  const handleVerifyAndRestore = async () => {
+    if (!window.api?.gdrive || !authCode.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      // 1. Authorize with code
+      const authRes = await window.api.gdrive.authorize(authCode);
+      if (!authRes.success) {
+        throw new Error('Authorization failed. Invalid code.');
+      }
+
+      // 2. Download and restore latest backup
+      // This IPC handler will relaunch the app upon success
+      await window.api.gdrive.restoreLatest();
+    } catch (err: any) {
+      setError('Failed to restore from Drive: ' + err.message);
       setLoading(false);
     }
   };
@@ -85,27 +117,157 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
         </div>
 
         {/* Step Indicator */}
-        <div className="flex items-center justify-center gap-2">
-          <div
-            className={`w-8 h-2 rounded-full transition-all ${
-              step >= 1 ? 'bg-azure-mist-700' : 'bg-jungle-teal-200'
-            }`}
-          />
-          <div
-            className={`w-8 h-2 rounded-full transition-all ${
-              step >= 2 ? 'bg-azure-mist-700' : 'bg-jungle-teal-200'
-            }`}
-          />
-          <div
-            className={`w-8 h-2 rounded-full transition-all ${
-              step >= 3 ? 'bg-azure-mist-700' : 'bg-jungle-teal-200'
-            }`}
-          />
-        </div>
+        {typeof step === 'number' && step > 0 && (
+          <div className="flex items-center justify-center gap-2">
+            <div
+              className={`w-8 h-2 rounded-full transition-all ${
+                step >= 1 ? 'bg-azure-mist-700' : 'bg-jungle-teal-200'
+              }`}
+            />
+            <div
+              className={`w-8 h-2 rounded-full transition-all ${
+                step >= 2 ? 'bg-azure-mist-700' : 'bg-jungle-teal-200'
+              }`}
+            />
+            <div
+              className={`w-8 h-2 rounded-full transition-all ${
+                step >= 3 ? 'bg-azure-mist-700' : 'bg-jungle-teal-200'
+              }`}
+            />
+          </div>
+        )}
 
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs">
             {error}
+          </div>
+        )}
+
+        {/* STEP 0: Choose Path */}
+        {step === 0 && (
+          <div className="space-y-4 pt-4">
+            <button
+              onClick={() => setStep(1)}
+              className="w-full p-4 bg-white border border-jungle-teal-200 hover:border-azure-mist-500 rounded-2xl flex items-center gap-4 transition-all hover:shadow-md"
+            >
+              <div className="p-3 bg-green-50 text-green-600 rounded-xl">
+                <Store className="w-6 h-6" />
+              </div>
+              <div className="text-left flex-1">
+                <h3 className="font-bold text-jungle-teal-900">Start a New Shop</h3>
+                <p className="text-xs text-jungle-teal-500 mt-1">Set up a brand new workspace with fresh data</p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-jungle-teal-300" />
+            </button>
+
+            <button
+              onClick={() => setStep('restore')}
+              className="w-full p-4 bg-white border border-jungle-teal-200 hover:border-azure-mist-500 rounded-2xl flex items-center gap-4 transition-all hover:shadow-md"
+            >
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                <Cloud className="w-6 h-6" />
+              </div>
+              <div className="text-left flex-1">
+                <h3 className="font-bold text-jungle-teal-900">Restore from Google Drive</h3>
+                <p className="text-xs text-jungle-teal-500 mt-1">Recover your previous data and settings from the cloud</p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-jungle-teal-300" />
+            </button>
+
+            <button
+              onClick={async () => {
+                if (!window.api) return;
+                try {
+                  const file = await window.api.backup.selectFile();
+                  if (file) {
+                    setLoading(true);
+                    await window.api.backup.restoreLocalFile(file);
+                    // App will automatically restart after this
+                  }
+                } catch(err: any) {
+                  setError('Failed to restore: ' + err.message);
+                  setLoading(false);
+                }
+              }}
+              className="w-full p-4 bg-white border border-jungle-teal-200 hover:border-azure-mist-500 rounded-2xl flex items-center gap-4 transition-all hover:shadow-md"
+            >
+              <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
+                <Database className="w-6 h-6" />
+              </div>
+              <div className="text-left flex-1">
+                <h3 className="font-bold text-jungle-teal-900">Restore from Local File</h3>
+                <p className="text-xs text-jungle-teal-500 mt-1">Select a backup file (.db) from your computer</p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-jungle-teal-300" />
+            </button>
+          </div>
+        )}
+
+        {/* RESTORE STEP */}
+        {step === 'restore' && (
+          <div className="space-y-4">
+            <div className="bg-jungle-teal-50 border border-jungle-teal-200 p-6 rounded-2xl space-y-4 text-center">
+              <Sparkles className="w-10 h-10 text-azure-mist-600 mx-auto" />
+              <h3 className="font-bold text-lg text-jungle-teal-900">Google Drive Smart Recovery</h3>
+              
+              {restoreStep === 1 ? (
+                <>
+                  <p className="text-sm text-jungle-teal-600">
+                    Connect your Google Drive account. We'll find your latest backup and restore your entire POS system exactly as you left it.
+                  </p>
+                  <button
+                    onClick={handleStartRestore}
+                    className="w-full px-6 py-3 mt-2 bg-azure-mist-700 hover:bg-azure-mist-600 text-white font-bold rounded-xl shadow-md transition-colors"
+                  >
+                    Connect Google Drive
+                  </button>
+                </>
+              ) : (
+                <div className="text-left space-y-4 pt-2">
+                  <div className="bg-white p-4 rounded-xl border border-jungle-teal-200">
+                    <p className="text-xs text-jungle-teal-700 font-medium space-y-2">
+                      <span className="block">1. A browser window opened. Sign in and grant permission.</span>
+                      <span className="block">2. Copy the entire URL from the address bar of that page.</span>
+                      <span className="block">3. Paste it here to verify and start downloading your backup.</span>
+                    </p>
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={authCode}
+                      onChange={(e) => setAuthCode(e.target.value)}
+                      placeholder="Paste full link (http://localhost/?code=...) here"
+                      className="w-full bg-white border border-jungle-teal-300 rounded-xl px-4 py-3 text-xs focus:border-azure-mist-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <button
+                    onClick={handleVerifyAndRestore}
+                    disabled={loading || !authCode}
+                    className="w-full px-6 py-3 bg-jungle-teal-700 hover:bg-jungle-teal-800 text-white font-bold rounded-xl shadow-md transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <span className="animate-pulse">Restoring... Please wait...</span>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-5 h-5" />
+                        <span>Verify & Restore Now</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setStep(0)}
+                disabled={loading}
+                className="text-xs text-jungle-teal-500 hover:text-jungle-teal-800 font-semibold"
+              >
+                Cancel and go back
+              </button>
+            </div>
           </div>
         )}
 

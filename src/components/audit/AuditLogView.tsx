@@ -112,7 +112,15 @@ const formatDetails = (detailJson?: string | null) => {
     const obj = JSON.parse(detailJson);
     if (Object.keys(obj).length === 0) return '-';
     return Object.entries(obj)
-      .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
+      .map(([k, v]) => {
+        let label = k.replace(/_/g, ' ');
+        let value = v;
+        if (k.toLowerCase().includes('paisa') && typeof v === 'number') {
+          label = label.replace(/paisa/i, '(Tk)');
+          value = (v / 100).toFixed(2);
+        }
+        return `${label}: ${value}`;
+      })
       .join(', ');
   } catch {
     return detailJson;

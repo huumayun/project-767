@@ -7,6 +7,18 @@ import { registerIpcHandlers } from './ipc/handlers';
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
+  // Configure auto-start on boot (Task Manager Startup)
+  if (app.isPackaged) {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: app.getPath('exe'),
+      args: [
+        '--processStart', `"${app.getName()}"`,
+        '--process-start-args', `"--hidden"`
+      ]
+    });
+  }
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -14,6 +26,7 @@ function createWindow() {
     minHeight: 700,
     title: 'Mechanical Shop POS',
     backgroundColor: '#0b0f19',
+    icon: path.join(__dirname, '../build/icon.ico'), // App Icon
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

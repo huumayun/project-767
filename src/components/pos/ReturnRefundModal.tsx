@@ -47,6 +47,13 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
 
   const totalRefundPaisa = returnPayloadItems.reduce((s, i) => s + i.amount_paisa, 0);
 
+  const isFullyReturned = items.every((it) => {
+    const alreadyReturned = (sale.returns || [])
+      .filter((r: any) => r.sale_item_id === it.id)
+      .reduce((sum: number, r: any) => sum + (r.returned_qty || 0), 0);
+    return it.qty - alreadyReturned === 0;
+  });
+
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (returnPayloadItems.length === 0) {
@@ -102,31 +109,49 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
         )}
 
         <form onSubmit={handleSubmitReturn} className="space-y-4">
+          {isFullyReturned && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm font-bold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              This invoice has already been fully refunded and returned.
+            </div>
+          )}
+
           <div className="space-y-2">
             <label className="text-xs font-bold text-jungle-teal-700 block">Select Items & Quantities to Return:</label>
             <div className="divide-y divide-jungle-teal-100 border border-jungle-teal-200 rounded-xl bg-jungle-teal-50 p-2 max-h-48 overflow-y-auto">
-              {items.map((it) => (
-                <div key={it.id} className="py-2 flex items-center justify-between gap-3 text-xs">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-jungle-teal-900 truncate">{it.product_name}</div>
-                    <div className="text-[11px] text-jungle-teal-500 font-mono">
-                      Sold: {it.qty} · Unit: ৳{(it.unit_price_paisa / 100).toFixed(2)}
+              {items.map((it) => {
+                const alreadyReturned = (sale.returns || [])
+                  .filter((r: any) => r.sale_item_id === it.id)
+                  .reduce((sum: number, r: any) => sum + (r.returned_qty || 0), 0);
+                const maxReturnable = it.qty - alreadyReturned;
+
+                return (
+                  <div key={it.id} className={`py-2 flex items-center justify-between gap-3 text-xs ${maxReturnable === 0 ? 'opacity-50 grayscale' : ''}`}>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-jungle-teal-900 truncate">
+                        {it.product_name}
+                        {maxReturnable === 0 && <span className="ml-2 text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded uppercase font-bold">Fully Returned</span>}
+                      </div>
+                      <div className="text-[11px] text-jungle-teal-500 font-mono mt-0.5">
+                        Sold: {it.qty} {alreadyReturned > 0 && <span className="text-rose-600 font-bold ml-1">(Returned: {alreadyReturned})</span>} · Unit: ৳{(it.unit_price_paisa / 100).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-jungle-teal-500">Return Qty:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={maxReturnable}
+                        disabled={maxReturnable === 0}
+                        value={returnQtys[it.id] || 0}
+                        onChange={(e) => handleQtyChange(it.id, maxReturnable, parseInt(e.target.value, 10) || 0)}
+                        className="w-16 bg-jungle-teal-50 border border-jungle-teal-300 rounded-sm px-2 py-1 text-center font-bold text-xs focus:outline-hidden focus:border-azure-mist-600 font-mono disabled:bg-jungle-teal-100 disabled:text-jungle-teal-400"
+                      />
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-jungle-teal-500">Return Qty:</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max={it.qty}
-                      value={returnQtys[it.id] || 0}
-                      onChange={(e) => handleQtyChange(it.id, it.qty, parseInt(e.target.value, 10) || 0)}
-                      className="w-16 bg-jungle-teal-50 border border-jungle-teal-300 rounded-sm px-2 py-1 text-center font-bold text-xs focus:outline-hidden focus:border-azure-mist-600 font-mono"
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -168,16 +193,17 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-xl text-xs font-semibold"
+              className="px-4 py-2 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-xl font-bold text-xs"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={loading || totalRefundPaisa === 0}
-              className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md shadow-rose-600/20 disabled:opacity-50 transition-all"
+              disabled={loading || totalRefundPaisa === 0 || isFullyReturned}
+              className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md transition-colors text-xs flex items-center gap-1.5 disabled:opacity-50"
             >
-              {loading ? 'Processing...' : 'Confirm Refund & Restock'}
+              <RotateCcw className="w-3.5 h-3.5" />
+              {loading ? 'Processing...' : 'Confirm Return'}
             </button>
           </div>
         </form>

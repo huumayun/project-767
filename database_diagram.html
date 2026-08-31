@@ -1,0 +1,159 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Architecture</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            margin: 30px 0;
+        }
+        .instructions {
+            background: #eef2f5;
+            padding: 20px;
+            border-left: 5px solid #0056b3;
+            border-radius: 4px;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #0056b3;
+        }
+        @media print {
+            body { background: white; margin: 0; }
+            .container { box-shadow: none; max-width: 100%; padding: 0; }
+            button { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Database Architecture (ER Diagram)</h1>
+        
+        <div style="text-align: right; margin-bottom: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #0056b3; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px;">
+                🖨️ Print to PDF
+            </button>
+        </div>
+
+        <div class="mermaid">
+erDiagram
+    USERS ||--o{ SALES : "creates"
+    USERS ||--o{ SHIFTS : "manages"
+    USERS ||--o{ PAYMENTS : "receives/makes"
+
+    CATEGORIES ||--o{ PRODUCTS : "contains"
+    PRODUCTS ||--o{ INVENTORY_BATCHES : "tracked in"
+    PRODUCTS ||--o{ SERIAL_NUMBERS : "has"
+    PRODUCTS ||--o{ STOCK_TRANSACTIONS : "logs"
+
+    CUSTOMERS ||--o{ SALES : "makes"
+    CUSTOMERS ||--o{ PAYMENTS : "pays"
+    SALES ||--|{ SALE_ITEMS : "contains"
+    SALE_ITEMS }|--|| PRODUCTS : "refers to"
+    SALE_ITEMS ||--o{ SALE_ITEM_BATCHES : "deducts from"
+    SALE_ITEMS ||--o{ SERIAL_NUMBERS : "assigns"
+
+    SUPPLIERS ||--o{ PURCHASES : "supplies"
+    SUPPLIERS ||--o{ PAYMENTS : "receives"
+    PURCHASES ||--|{ PURCHASE_ITEMS : "contains"
+    PURCHASE_ITEMS }|--|| PRODUCTS : "refers to"
+
+    SALES ||--o{ RETURNS : "has"
+    RETURNS ||--|{ RETURN_ITEMS : "contains"
+    RETURN_ITEMS }|--|| SALE_ITEMS : "refunds"
+
+    SHIFTS ||--o{ SHIFT_CASH_TRANSACTIONS : "logs petty cash"
+
+    USERS {
+        string id PK
+        string role "owner / staff"
+        string name
+        string pin_code
+    }
+    
+    PRODUCTS {
+        string id PK
+        string barcode
+        string name
+        int stock_qty
+        int cost_price
+        int sell_price
+    }
+
+    CUSTOMERS {
+        string id PK
+        string name
+        string phone
+    }
+
+    SUPPLIERS {
+        string id PK
+        string name
+        int total_payable
+    }
+
+    SALES {
+        string id PK
+        string invoice_no
+        string status "completed / held"
+        int total_amount
+    }
+
+    PURCHASES {
+        string id PK
+        string invoice_ref
+        int total_amount
+    }
+
+    SHIFTS {
+        string id PK
+        string status "open / closed"
+        int expected_cash
+        int actual_cash
+    }
+
+    PAYMENTS {
+        string id PK
+        string method "cash/bkash/card"
+        string direction "in/out"
+        int amount
+    }
+        </div>
+
+        <div class="instructions">
+            <h3>সহজ ভাষায় ক্লায়েন্টকে যেভাবে বোঝাবেন:</h3>
+            <ol>
+                <li><b>Users & Shifts:</b> ইউজাররা সিস্টেমে লগ-ইন করে একটি শিফট (ক্যাশ ড্রয়ার) ওপেন করে। ওই শিফটের আন্ডারে হওয়া সব ক্যাশ লেনদেন একসাথে হিসাব হয়ে দিনশেষে Z-Report তৈরি হয়।</li>
+                <li><b>Customers & Sales:</b> কাস্টমাররা কেনাকাটা করে, যা SALES টেবিলে জমা হয়। তাদের পেমেন্ট PAYMENTS টেবিলে ট্র্যাক করা হয়।</li>
+                <li><b>Products & Inventory:</b> প্রতিটি কেনা লট INVENTORY_BATCHES (FIFO) এ সেভ হয়। আর সিরিয়াল নাম্বারের প্রোডাক্ট হলে SERIAL_NUMBERS টেবিলে তা ট্র্যাক করা হয়।</li>
+                <li><b>Suppliers & Purchases:</b> সাপ্লায়ারদের কাছ থেকে মাল কেনার ইনভয়েসগুলো PURCHASES এ থাকে এবং তাদের পাওনা টাকা PAYMENTS এর মাধ্যমে ক্লিয়ার করা হয়।</li>
+                <li><b>Stock Ledger:</b> প্রোডাক্টের পরিমাণের যেকোনো পরিবর্তন STOCK_TRANSACTIONS টেবিলে হিস্ট্রি হিসেবে চিরকাল সেভ থাকে।</li>
+            </ol>
+        </div>
+    </div>
+
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    </script>
+</body>
+</html>

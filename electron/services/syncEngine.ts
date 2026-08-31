@@ -1,6 +1,6 @@
 import { getDb } from '../db';
 import { decryptSecret } from './safeStore';
-import { logAudit } from '../ipc/handlers';
+import { logAudit } from '../ipc/shared';
 
 export type SyncStatusType = 'synced' | 'syncing' | 'pending' | 'offline' | 'error';
 

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import { getDb } from '../db';
-import { logAudit } from '../ipc/handlers';
+import { logAudit } from '../ipc/shared';
 
 export interface BackupFileInfo {
   fileName: string;
@@ -13,6 +13,20 @@ export interface BackupFileInfo {
 }
 
 export function getBackupsDirectory(): string {
+  try {
+    const db = getDb();
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'local_backup_path'").get() as any;
+    if (row && row.value) {
+      const customPath = row.value;
+      if (!fs.existsSync(customPath)) {
+        fs.mkdirSync(customPath, { recursive: true });
+      }
+      return customPath;
+    }
+  } catch (e) {
+    // If DB is not available yet, fallback
+  }
+
   const userData = app.getPath('userData');
   const backupDir = path.join(userData, 'backups');
   if (!fs.existsSync(backupDir)) {
@@ -47,6 +61,13 @@ export function createDatabaseBackup(targetFilePath?: string, isAuto: boolean = 
   if (isAuto) {
     cleanOldBackups(14);
   }
+
+  // Trigger Google Drive upload asynchronously for BOTH auto and manual backups
+  import('./googleDrive').then((gdrive) => {
+    if (gdrive.isDriveConnected()) {
+      gdrive.uploadToDrive(finalPath).catch(err => console.error('GDrive Upload error:', err));
+    }
+  }).catch(err => console.error('Failed to load Google Drive service', err));
 
   return {
     fileName: path.basename(finalPath),

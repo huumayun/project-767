@@ -81,6 +81,16 @@ export interface ShiftSummaryData {
   cash_transactions: ShiftCashTransaction[];
   sales_count: number;
   note?: string | null;
+  user_breakdown?: Array<{
+    user_id: string;
+    user_name: string;
+    sales_count: number;
+    total_sales_paisa: number;
+    cash_sales_paisa: number;
+    cash_refund_paisa: number;
+    cash_in_paisa: number;
+    cash_out_paisa: number;
+  }>;
 }
 
 export interface Category {
@@ -366,7 +376,7 @@ export interface ShopSettings {
   device_id_prefix?: string;
   idle_lock_minutes: string | number;
   default_invoice_layout: string;
-  inventory_valuation_method?: 'wac' | 'fifo';
+
   enable_shifts?: boolean;
   barcode_scanner_mode?: 'speed' | 'prefix';
   barcode_scanner_prefix?: string;
@@ -418,7 +428,7 @@ export interface IElectronApi {
     create: (data: any) => Promise<Product>;
     update: (data: any) => Promise<{ success: boolean }>;
     delete: (id: string) => Promise<{ success: boolean }>;
-    stockIn: (data: { product_id: string; qty: number; cost_price_paisa?: number; reason?: string }) => Promise<{ success: boolean; newStock: number }>;
+    stockIn: (data: { product_id: string; qty: number; cost_price_paisa?: number; sell_price_paisa?: number; reason?: string }) => Promise<{ success: boolean; newStock: number }>;
     stockAdjustment: (data: { product_id: string; qty_delta: number; reason: string }) => Promise<{ success: boolean; newStock: number }>;
     getStockHistory: (productId: string) => Promise<any[]>;
     bulkImport: (payload: { mode: 'dry_run' | 'commit'; rows: any[] }) => Promise<{ success: boolean; totalRows?: number; validRowsCount?: number; imported?: number; errors: string[] }>;
@@ -501,7 +511,16 @@ export interface IElectronApi {
   backup: {
     list: () => Promise<BackupFileInfo[]>;
     createManual: (targetPath?: string) => Promise<BackupFileInfo>;
-    restore: (backupFilePath: string) => Promise<{ success: boolean }>;
+    restore: (filePath: string) => Promise<{ success: boolean }>;
+    selectFolder: () => Promise<string | null>;
+    selectFile: () => Promise<string | null>;
+    restoreLocalFile: (filePath: string) => Promise<{ success: boolean }>;
+  };
+  gdrive: {
+    status: () => Promise<{ isConnected: boolean }>;
+    getAuthUrl: () => Promise<{ success: boolean }>;
+    authorize: (code: string) => Promise<{ success: boolean }>;
+    disconnect: () => Promise<{ success: boolean }>;
   };
   wizard: {
     checkStatus: () => Promise<{ isFirstRun: boolean }>;

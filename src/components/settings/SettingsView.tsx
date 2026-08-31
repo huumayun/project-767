@@ -47,7 +47,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
   const [deviceIdPrefix, setDeviceIdPrefix] = useState('');
   const [defaultInvoiceLayout, setDefaultInvoiceLayout] = useState<'80mm' | 'a5'>('80mm');
   const [idleLockMinutes, setIdleLockMinutes] = useState('15');
-  const [inventoryValuationMethod, setInventoryValuationMethod] = useState<'wac' | 'fifo'>('wac');
+
   const [enableShifts, setEnableShifts] = useState(true);
   const [barcodeScannerMode, setBarcodeScannerMode] = useState<'speed' | 'prefix'>('speed');
   const [barcodeScannerPrefix, setBarcodeScannerPrefix] = useState('');
@@ -72,7 +72,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
       setDeviceIdPrefix(s.device_id_prefix || 'REG01');
       setDefaultInvoiceLayout((s.default_invoice_layout as any) || '80mm');
       setIdleLockMinutes((s.idle_lock_minutes || 15).toString());
-      setInventoryValuationMethod((s.inventory_valuation_method as any) || 'wac');
       setEnableShifts(s.enable_shifts ?? true);
       setBarcodeScannerMode(s.barcode_scanner_mode || 'speed');
       setBarcodeScannerPrefix(s.barcode_scanner_prefix || '');
@@ -457,20 +456,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
               </span>
             </div>
 
-            <div>
-              <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Inventory Valuation Method</label>
-              <select
-                value={inventoryValuationMethod}
-                onChange={(e) => setInventoryValuationMethod(e.target.value as any)}
-                className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 font-semibold focus:outline-hidden focus:border-azure-mist-600"
-              >
-                <option value="wac">Weighted Average Cost (WAC)</option>
-                <option value="fifo">First-In, First-Out (FIFO)</option>
-              </select>
-              <span className="text-ui-2xs text-jungle-teal-500 mt-1 block">
-                Determines how cost of goods sold and profit are calculated.
-              </span>
-            </div>
 
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1">
@@ -500,7 +485,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
           <div className="flex justify-end pt-2 mt-4 border-t border-jungle-teal-200">
             <button
               type="button"
-              onClick={() => handleSaveSection('Security & Session Policies', { idle_lock_minutes: parseInt(idleLockMinutes, 10) || 15, inventory_valuation_method: inventoryValuationMethod, enable_shifts: enableShifts })}
+              onClick={() => handleSaveSection('Security & Session Policies', { idle_lock_minutes: parseInt(idleLockMinutes, 10) || 15, enable_shifts: enableShifts })}
               disabled={loading}
               className="h-9 px-5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-semibold rounded-xl text-ui-xs flex items-center gap-2 shadow-sm transition-colors disabled:opacity-40 cursor-pointer"
             >
