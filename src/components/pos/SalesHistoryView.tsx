@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toLocalDateString } from '../../utils/localDate';
 import { SaleRecord, UserSession } from '../../types/ipc';
 import {
   ShoppingBag,
@@ -73,7 +74,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
   const filteredSales = sales.filter((s) => {
     let match = true;
     if (dateFilter) {
-      const saleDate = new Date(s.created_at).toISOString().split('T')[0];
+      const saleDate = toLocalDateString(new Date(s.created_at));
       if (saleDate !== dateFilter) {
         match = false;
       }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toLocalDateString } from '../../utils/localDate';
 import { Supplier, Product, PurchasePayload } from '../../types/ipc';
 import {
   Truck,
@@ -100,8 +101,8 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
       start.setFullYear(2000);
     }
     
-    const startStr = start.toISOString().slice(0, 10);
-    const endStr = end.toISOString().slice(0, 10);
+    const startStr = toLocalDateString(start);
+    const endStr = toLocalDateString(end);
 
     window.api.reports.getProfitReport({ startDate: startStr, endDate: endStr })
       .then(report => {

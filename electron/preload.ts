@@ -105,7 +105,7 @@ contextBridge.exposeInMainWorld('api', {
     getStockValuation: () => ipcRenderer.invoke('api:reports:getStockValuation'),
   },
   users: {
-    list: (filters?: any) => ipcRenderer.invoke('api:users:list', filters),
+    list: () => ipcRenderer.invoke('api:users:list'),
     create: (data: any) => ipcRenderer.invoke('api:users:create', data),
     update: (data: any) => ipcRenderer.invoke('api:users:update', data),
     updatePin: (data: any) => ipcRenderer.invoke('api:users:updatePin', data),

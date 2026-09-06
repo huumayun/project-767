@@ -39,9 +39,6 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
   const [passwordTargetUser, setPasswordTargetUser] = useState<UserRecord | null>(null);
   const [newPassword, setNewPassword] = useState('');
 
-  const [datePreset, setDatePreset] = useState<'all' | 'today' | '7days' | '15days' | '30days' | 'custom'>('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
 
   const isOwner = currentSession?.role === 'owner';
 
@@ -50,14 +47,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
     setLoading(true);
     setError(null);
     try {
-      // "All Time" sends no range, which the handler reads as every sale rather
-      // than none - it used to report zero for everyone until a preset was picked.
-      const filters: { startDate?: string; endDate?: string } = {};
-      if (datePreset !== 'all') {
-        if (startDate) filters.startDate = startDate;
-        if (endDate) filters.endDate = endDate;
-      }
-      const list = await window.api.users.list(filters);
+      const list = await window.api.users.list();
       setUsers(list);
     } catch (err: any) {
       setError(err.message || 'Failed to load users list.');
@@ -66,26 +56,10 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
     }
   };
 
-  const handlePreset = (preset: 'all' | 'today' | '7days' | '15days' | '30days') => {
-    setDatePreset(preset);
-    if (preset === 'all') {
-      setStartDate('');
-      setEndDate('');
-    } else {
-      const end = new Date();
-      const start = new Date();
-      if (preset === '7days') start.setDate(end.getDate() - 7);
-      else if (preset === '15days') start.setDate(end.getDate() - 15);
-      else if (preset === '30days') start.setDate(end.getDate() - 30);
-      
-      setStartDate(start.toISOString().split('T')[0]);
-      setEndDate(end.toISOString().split('T')[0]);
-    }
-  };
 
   useEffect(() => {
     fetchUsers();
-  }, [isOwner, startDate, endDate, datePreset]);
+  }, [isOwner]);
 
   const handleOpenCreate = () => {
     setEditingUser(null);
@@ -207,64 +181,6 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
         </div>
       )}
 
-      {/* Date Filter Toolbar */}
-      <div className="bg-jungle-teal-50 border border-jungle-teal-200 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handlePreset('all')}
-            className={`px-3 py-1.5 rounded-lg border font-semibold transition-colors ${datePreset === 'all' ? 'bg-azure-mist-600 text-white border-azure-mist-700' : 'bg-white text-jungle-teal-700 border-jungle-teal-300 hover:bg-jungle-teal-50'}`}
-          >
-            All Time
-          </button>
-          <button
-            onClick={() => handlePreset('today')}
-            className={`px-3 py-1.5 rounded-lg border font-semibold transition-colors ${datePreset === 'today' ? 'bg-azure-mist-600 text-white border-azure-mist-700' : 'bg-white text-jungle-teal-700 border-jungle-teal-300 hover:bg-jungle-teal-50'}`}
-          >
-            Today
-          </button>
-          <button
-            onClick={() => handlePreset('7days')}
-            className={`px-3 py-1.5 rounded-lg border font-semibold transition-colors ${datePreset === '7days' ? 'bg-azure-mist-600 text-white border-azure-mist-700' : 'bg-white text-jungle-teal-700 border-jungle-teal-300 hover:bg-jungle-teal-50'}`}
-          >
-            Last 7 Days
-          </button>
-          <button
-            onClick={() => handlePreset('15days')}
-            className={`px-3 py-1.5 rounded-lg border font-semibold transition-colors ${datePreset === '15days' ? 'bg-azure-mist-600 text-white border-azure-mist-700' : 'bg-white text-jungle-teal-700 border-jungle-teal-300 hover:bg-jungle-teal-50'}`}
-          >
-            Last 15 Days
-          </button>
-          <button
-            onClick={() => handlePreset('30days')}
-            className={`px-3 py-1.5 rounded-lg border font-semibold transition-colors ${datePreset === '30days' ? 'bg-azure-mist-600 text-white border-azure-mist-700' : 'bg-white text-jungle-teal-700 border-jungle-teal-300 hover:bg-jungle-teal-50'}`}
-          >
-            Last 30 Days
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-jungle-teal-600 font-semibold">Custom:</span>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => {
-              setStartDate(e.target.value);
-              setDatePreset('custom');
-            }}
-            className="w-[125px] bg-white border border-jungle-teal-300 rounded-lg px-2 py-1.5 text-jungle-teal-900 text-xs font-sans focus:outline-hidden focus:border-azure-mist-600 cursor-pointer"
-          />
-          <span className="text-jungle-teal-500">to</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => {
-              setEndDate(e.target.value);
-              setDatePreset('custom');
-            }}
-            className="w-[125px] bg-white border border-jungle-teal-300 rounded-lg px-2 py-1.5 text-jungle-teal-900 text-xs font-sans focus:outline-hidden focus:border-azure-mist-600 cursor-pointer"
-          />
-        </div>
-      </div>
-
       {/* Users Table */}
       <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
@@ -274,9 +190,6 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
                 <th className="p-3.5">Full Name</th>
                 <th className="p-3.5">Username</th>
                 <th className="p-3.5 text-center">Role</th>
-                <th className="p-3.5 text-right" title="Invoices rung up by this user in the selected period, less anything returned against them">
-                  Net Sales (৳)
-                </th>
                 <th className="p-3.5 text-center">Quick PIN</th>
                 <th className="p-3.5 text-center">Status</th>
                 <th className="p-3.5">Created Date</th>
@@ -298,9 +211,6 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
                     >
                       {u.role}
                     </span>
-                  </td>
-                  <td className="p-3.5 text-right font-sans font-bold text-azure-mist-800">
-                    {((u.total_sales_paisa || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td className="p-3.5 text-center">
                     <span className="font-mono font-bold text-xs bg-jungle-teal-100 px-2 py-0.5 rounded-md border border-jungle-teal-200 text-jungle-teal-800">

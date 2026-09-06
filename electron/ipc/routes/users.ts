@@ -4,12 +4,12 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, hashPin, pinTakenBy, localDateKey } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, hashPin, pinTakenBy } from '../shared';
 
 
 export function registerUsersHandlers() {
   // Users Management Handlers
-  ipcMain.handle('api:users:list', async (_event, filters?: { startDate?: string; endDate?: string }) => {
+  ipcMain.handle('api:users:list', async () => {
       requireRole(['owner']);
       const db = getDb();
       // has_pin, not the PIN itself: the users screen only needs to know whether
@@ -19,49 +19,6 @@ export function registerUsersHandlers() {
                (pin_code IS NOT NULL AND pin_code != '') AS has_pin
         FROM users WHERE deleted_at IS NULL ORDER BY name ASC
       `).all() as any[];
-  
-      // What a cashier actually took: every invoice they rang up that was not
-      // parked as a held cart, less anything returned against it.
-      //
-      // Filtering on status = 'completed' used to drop an entire invoice from
-      // their figure the moment one item came back, and returns were never
-      // subtracted from the invoices that did count. Dates were compared as UTC
-      // instants against a plain date, which credited everything sold before 6am
-      // to the previous day and made this screen disagree with the reports.
-      const salesRows = db.prepare(`
-        SELECT
-          s.user_id,
-          s.created_at,
-          s.total_paisa - COALESCE((
-            SELECT SUM(ri.amount_paisa)
-            FROM returns r
-            JOIN return_items ri ON ri.return_id = r.id
-            WHERE r.sale_id = s.id AND r.deleted_at IS NULL AND ri.deleted_at IS NULL
-          ), 0) AS net_paisa
-        FROM sales s
-        WHERE s.deleted_at IS NULL AND s.status != 'held'
-      `).all() as { user_id: string; created_at: string; net_paisa: number }[];
-
-      const startDate = filters?.startDate;
-      const endDate = filters?.endDate;
-      const salesMap = new Map<string, number>();
-
-      for (const row of salesRows) {
-        if (!row.created_at) continue;
-        if (startDate || endDate) {
-          const day = localDateKey(row.created_at);
-          if (startDate && day < startDate) continue;
-          if (endDate && day > endDate) continue;
-        }
-        salesMap.set(row.user_id, (salesMap.get(row.user_id) || 0) + row.net_paisa);
-      }
-
-      // No range means all time, which is what the button says. It used to
-      // report zero for everyone, so the column read empty until a range was
-      // picked.
-      for (const u of users) {
-        u.total_sales_paisa = salesMap.get(u.id) || 0;
-      }
   
       return users;
     });

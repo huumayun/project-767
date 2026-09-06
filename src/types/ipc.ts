@@ -15,7 +15,6 @@ export interface UserRecord {
   /** Whether a PIN is set. The PIN itself is hashed and never sent to the renderer. */
   has_pin?: number | boolean;
   device_id?: string | null;
-  total_sales_paisa?: number;
   created_at: string;
   updated_at: string;
 }
@@ -486,7 +485,7 @@ export interface IElectronApi {
     getStockValuation: () => Promise<StockValuationData>;
   };
   users: {
-    list: (filters?: { startDate?: string; endDate?: string }) => Promise<UserRecord[]>;
+    list: () => Promise<UserRecord[]>;
     create: (data: { username: string; name: string; role: 'owner' | 'staff'; password: string; pin_code?: string }) => Promise<UserRecord>;
     /** Omit pin_code to keep the existing PIN; pass clear_pin to remove it. */
     update: (data: { id: string; name: string; role: 'owner' | 'staff'; is_active: boolean; pin_code?: string; clear_pin?: boolean }) => Promise<{ success: boolean }>;
