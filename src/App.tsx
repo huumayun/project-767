@@ -18,8 +18,6 @@ import {
   Layers,
   LogOut,
   Menu,
-  ChevronDown,
-  Layers3,
   Lock,
   Clock,
 } from 'lucide-react';
@@ -71,7 +69,6 @@ function MainApp() {
   const [showWizardModal, setShowWizardModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [catalogOpen, setCatalogOpen] = useState(true);
   const [lang, setLang] = useState<Language>('en');
 
   // Shift & Quick Lock State
@@ -328,6 +325,76 @@ function MainApp() {
   const isOwner = currentSession.role === 'owner';
   const lowStockCount = products.filter((p) => p.stock_qty <= (p.low_stock_threshold ?? 5)).length;
 
+  // The menu as data. Sections are ordered by how often a shop actually reaches
+  // for them: counter work all day, stock now and then, records at closing, admin
+  // rarely. Items the signed-in role cannot open are dropped rather than shown
+  // disabled, and a section with nothing left in it disappears with them.
+  const navSections: {
+    key: string;
+    heading: string;
+    items: {
+      id: typeof activeTab;
+      label: string;
+      icon: React.ComponentType<{ className?: string }>;
+      badge?: number | string;
+      badgeTone?: 'warn' | 'due' | 'muted';
+      badgeTitle?: string;
+    }[];
+  }[] = [
+    {
+      key: 'counter',
+      heading: t.secOperations,
+      items: [
+        { id: 'dashboard', label: t.navDashboard, icon: LayoutDashboard },
+        { id: 'pos', label: t.navPos, icon: ShoppingCart },
+        {
+          id: 'customers',
+          label: t.navCustomers,
+          icon: Users,
+          badge: dueCustomerCount > 0 ? dueCustomerCount : undefined,
+          badgeTone: 'due',
+          badgeTitle: `${dueCustomerCount} customers carrying a due balance`,
+        },
+      ],
+    },
+    {
+      key: 'stock',
+      heading: t.secCatalog,
+      items: [
+        {
+          id: 'products',
+          label: t.navProducts,
+          icon: Package,
+          badge: lowStockCount > 0 ? lowStockCount : undefined,
+          badgeTone: 'warn',
+          badgeTitle: `${lowStockCount} items below minimum stock threshold`,
+        },
+        { id: 'categories', label: t.navCategories, icon: Layers, badge: categories.length, badgeTone: 'muted' },
+        ...(isOwner ? [{ id: 'suppliers' as const, label: t.navSuppliers, icon: Truck }] : []),
+      ],
+    },
+    {
+      key: 'records',
+      heading: t.secReports,
+      items: [
+        { id: 'reports', label: t.navReports, icon: BarChart3 },
+        { id: 'sales', label: t.navSales, icon: ShoppingBag },
+        ...(enableShifts ? [{ id: 'shifts' as const, label: t.navShifts, icon: Clock }] : []),
+      ],
+    },
+    ...(isOwner
+      ? [{
+          key: 'admin',
+          heading: t.secAdmin,
+          items: [
+            { id: 'settings' as const, label: t.navSettings, icon: Settings },
+            { id: 'users' as const, label: t.navUsers, icon: UserCog },
+            { id: 'audit' as const, label: t.navAudit, icon: ShieldCheck },
+          ],
+        }]
+      : []),
+  ];
+
   return (
 
     <div className="h-screen w-screen flex flex-col bg-jungle-teal-100/90 text-jungle-teal-900 font-sans overflow-hidden select-none">
@@ -347,11 +414,13 @@ function MainApp() {
           sidebarOpen ? 'w-[192px]' : 'w-[56px]'
         } bg-jungle-teal-50 border-r border-jungle-teal-200 shadow-xs flex flex-col min-h-0 select-none overflow-hidden transition-[width] duration-[240ms] ease-in-out`}
       >
-        {/* Brand & Logo */}
-        <div className="shrink-0 px-3 py-3 border-b border-jungle-teal-200">
-          <div className="flex items-center gap-2.5">
+        {/* Brand. One row rather than three: the title, tagline and version
+            badge each had their own line and pushed the menu itself down the
+            rail. Version now sits with the profile in the footer. */}
+        <div className="shrink-0 px-2 py-2 border-b border-jungle-teal-200">
+          <div className="flex items-center gap-1.5">
             {/* Rail toggle. Kept leftmost so it stays on screen when the rail
-                collapses — a toggle further right would be clipped away and
+                collapses - a toggle further right would be clipped away and
                 there would be nothing left to click to reopen. */}
             <button
               type="button"
@@ -359,32 +428,32 @@ function MainApp() {
               title={sidebarOpen ? 'Collapse menu' : 'Expand menu'}
               aria-label={sidebarOpen ? 'Collapse menu' : 'Expand menu'}
               aria-expanded={sidebarOpen}
-              className="w-10 h-10 shrink-0 -ml-1 rounded-xl flex items-center justify-center text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100 transition-colors"
+              className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center text-jungle-teal-600 hover:text-jungle-teal-900 hover:bg-jungle-teal-100 transition-colors"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-[18px] h-[18px]" />
             </button>
-            {sidebarOpen && <BrandLogoIcon className="w-9 h-9 shrink-0" />}
+
+            {sidebarOpen && (
+              <>
+                <BrandLogoIcon className="w-7 h-7 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-ui-xs font-bold tracking-tight text-jungle-teal-900 font-sans truncate leading-tight">
+                    Mechanical Shop POS
+                  </h1>
+                  {isOwner && <SyncStatusBadge onOpenSyncModal={() => setShowSyncModal(true)} />}
+                </div>
+              </>
+            )}
           </div>
-          {sidebarOpen && (
-            <div className="min-w-0 mt-2">
-              <h1 className="text-ui-sm font-bold tracking-tight text-jungle-teal-900 font-sans truncate">
-                Mechanical Shop POS
-              </h1>
-              <p className="text-ui-2xs text-jungle-teal-500 font-mono truncate">Offline-First</p>
-            </div>
-          )}
-          {sidebarOpen && (
-            <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
-              <span className="text-ui-2xs font-mono font-semibold bg-[#f0f5f2] text-[#3c5d4b] border border-[#c1d7cb] px-2 py-0.5 rounded-full whitespace-nowrap">
-                v1.0 Production
-              </span>
-              {isOwner && <SyncStatusBadge onOpenSyncModal={() => setShowSyncModal(true)} />}
-            </div>
-          )}
         </div>
 
-        {/* Primary Tab Navigation */}
-        <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 p-2 text-ui-sm font-medium">
+        {/* Primary navigation.
+            Grouped rather than one flat list of thirteen: reports and history
+            screens read as reports, admin screens as admin, and the counter
+            work the cashier does all day sits at the top. Every row shares one
+            definition below, so an item cannot drift out of style from the
+            rest - previously each button carried its own copy of the classes. */}
+        <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col p-1.5 text-ui-sm font-medium">
 
           {/* Shift Status & Drawer Button */}
           {enableShifts && (
@@ -398,7 +467,7 @@ function MainApp() {
                 }
                 setShowShiftModal(true);
               }}
-              className={`${sidebarOpen ? 'w-full' : 'w-10'} px-2.5 py-1.5 rounded-xl border flex items-center gap-2 transition-all text-left overflow-hidden whitespace-nowrap mb-1 ${
+              className={`${sidebarOpen ? 'w-full' : 'w-10'} px-2.5 py-1.5 rounded-lg border flex items-center gap-2 transition-colors text-left overflow-hidden whitespace-nowrap mb-1.5 ${
                 activeShift
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100'
                   : 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
@@ -426,205 +495,53 @@ function MainApp() {
             </button>
           )}
 
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-              activeTab === 'dashboard'
-                ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4 shrink-0" />
-            <span className="truncate">{t.navDashboard}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('pos')}
-            className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-              activeTab === 'pos'
-                ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-            }`}
-          >
-            <ShoppingCart className="w-4 h-4 shrink-0" />
-            <span className="truncate">{lang === 'bn' ? 'সিস্টেম (POS)' : 'POS Terminal'}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('customers')}
-            className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-              activeTab === 'customers'
-                ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-            }`}
-          >
-            <Users className="w-4 h-4 shrink-0" />
-            <span className="truncate">{lang === 'bn' ? 'গ্রাহক (Customers)' : 'Customers'}</span>
-            {dueCustomerCount > 0 && (
-              <span className="ml-auto shrink-0 px-1.5 py-0.2 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-mono font-bold">
-                {dueCustomerCount}
-              </span>
-            )}
-          </button>
-
-          {/* Catalog group — Products + Categories */}
-          <button
-            onClick={() => (sidebarOpen ? setCatalogOpen((prev) => !prev) : setSidebarOpen(true))}
-            aria-expanded={catalogOpen}
-            title={sidebarOpen ? 'Catalog' : 'Catalog — click to expand the menu'}
-            className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-              activeTab === 'products' || activeTab === 'categories' && !catalogOpen
-                ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-            }`}
-          >
-            <Layers3 className="w-4 h-4 shrink-0" />
-            <span className="truncate">Catalog</span>
-            {lowStockCount > 0 && !catalogOpen && (
-              <span
-                className="ml-auto shrink-0 px-1.5 py-0.2 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-[10px] font-mono font-bold"
-                title={`${lowStockCount} items below minimum stock threshold`}
-              >
-                {lowStockCount}
-              </span>
-            )}
-            <ChevronDown
-              className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
-                lowStockCount > 0 && !catalogOpen ? 'ml-1.5' : 'ml-auto'
-              } ${catalogOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
-
-          {sidebarOpen && catalogOpen && (
-            <div className="ml-3 pl-3 border-l border-jungle-teal-200 flex flex-col gap-1">
-              <button
-                onClick={() => setActiveTab('products')}
-                className={`w-full px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-                  activeTab === 'products'
-                    ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                    : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-                }`}
-              >
-                <Package className="w-4 h-4 shrink-0" />
-                <span className="truncate">Products</span>
-                {lowStockCount > 0 && (
-                  <span
-                    className="ml-auto shrink-0 px-1.5 py-0.2 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-[10px] font-mono font-bold"
-                    title={`${lowStockCount} items below minimum stock threshold`}
-                  >
-                    {lowStockCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveTab('categories')}
-                className={`w-full px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-                  activeTab === 'categories'
-                    ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                    : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-                }`}
-              >
-                <Layers className="w-4 h-4 shrink-0" />
-                <span className="truncate">Categories</span>
-                <span className="ml-auto shrink-0 font-mono text-[10px] text-jungle-teal-500">
-                  {categories.length}
+          {navSections.map((section, sectionIndex) => (
+            <div key={section.key} className="flex flex-col">
+              {sidebarOpen ? (
+                <span className="px-3 pt-3 pb-1 text-ui-2xs font-mono uppercase tracking-[0.14em] text-jungle-teal-400 select-none">
+                  {section.heading}
                 </span>
-              </button>
+              ) : (
+                sectionIndex > 0 && <span className="my-1.5 mx-2 border-t border-jungle-teal-200" />
+              )}
+
+              {section.items.map((item) => {
+                const active = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    title={sidebarOpen ? undefined : item.label}
+                    aria-current={active ? 'page' : undefined}
+                    className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-1.5 mb-0.5 rounded-lg flex items-center gap-2.5 transition-colors text-left overflow-hidden whitespace-nowrap ${
+                      active
+                        ? 'bg-muted-teal-800 text-white font-semibold'
+                        : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
+                    }`}
+                  >
+                    <item.icon className="w-[18px] h-[18px] shrink-0" />
+                    {sidebarOpen && <span className="truncate">{item.label}</span>}
+                    {sidebarOpen && item.badge != null && (
+                      <span
+                        className={`ml-auto shrink-0 px-1.5 rounded-full text-[10px] font-mono font-bold border ${
+                          active
+                            ? 'bg-white/15 text-white border-white/25'
+                            : item.badgeTone === 'warn'
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : item.badgeTone === 'due'
+                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                            : 'bg-jungle-teal-100 text-jungle-teal-600 border-jungle-teal-200'
+                        }`}
+                        title={item.badgeTitle}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
-          )}
-
-          {isOwner && (
-            <button
-              onClick={() => setActiveTab('suppliers')}
-              className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-                activeTab === 'suppliers'
-                  ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                  : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-              }`}
-            >
-              <Truck className="w-4 h-4 shrink-0" />
-              <span className="truncate">{lang === 'bn' ? 'সরবরাহকারী (Suppliers)' : 'Suppliers'}</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => setActiveTab('reports')}
-            className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-              activeTab === 'reports'
-                ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4 shrink-0" />
-            <span className="truncate">{lang === 'bn' ? 'রিপোর্ট (Reports)' : 'Reports'}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('sales')}
-            className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-              activeTab === 'sales'
-                ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-            }`}
-          >
-            <ShoppingBag className="w-4 h-4 shrink-0" />
-            <span className="truncate">{lang === 'bn' ? 'বিক্রয় তালিকা' : 'Sales'}</span>
-          </button>
-
-          {enableShifts && (
-            <button
-              onClick={() => setActiveTab('shifts')}
-              className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-                activeTab === 'shifts'
-                  ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                  : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-              }`}
-            >
-              <Clock className="w-4 h-4 shrink-0" />
-              <span className="truncate">{lang === 'bn' ? 'শিফট তালিকা' : 'Shifts History'}</span>
-            </button>
-          )}
-
-          {isOwner && (
-            <>
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-                  activeTab === 'settings'
-                    ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                    : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-                }`}
-              >
-                <Settings className="w-4 h-4 shrink-0" />
-                <span className="truncate">{lang === 'bn' ? 'সেটিংস (Settings)' : 'Settings'}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('users')}
-                className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-                  activeTab === 'users'
-                    ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                    : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-                }`}
-              >
-                <UserCog className="w-4 h-4 shrink-0" />
-                <span className="truncate">{t.navUsers}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('audit')}
-                className={`${sidebarOpen ? 'w-full' : 'w-10'} px-3 py-2 rounded-xl flex items-center gap-2.5 transition-all text-left overflow-hidden whitespace-nowrap ${
-                  activeTab === 'audit'
-                    ? 'bg-muted-teal-800 text-white font-bold shadow-md shadow-muted-teal-800/20'
-                    : 'text-jungle-teal-700 hover:text-jungle-teal-900 hover:bg-jungle-teal-100'
-                }`}
-              >
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                <span className="truncate">{t.navAudit}</span>
-              </button>
-            </>
-          )}
+          ))}
         </nav>
 
         {/* Sidebar Footer Tools (Language, Theme, User Profile) */}

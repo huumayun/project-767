@@ -4,15 +4,21 @@ export const translations = {
   en: {
     // Navigation
     navDashboard: 'Dashboard',
-    navPos: 'POS',
-    navSales: 'Sales',
+    navPos: 'POS Terminal',
+    navSales: 'Sales History',
     navCustomers: 'Customers',
     navProducts: 'Products',
+    navCategories: 'Categories',
     navSuppliers: 'Suppliers',
     navReports: 'Reports',
+    navShifts: 'Shift History',
     navUsers: 'Staff & Users',
     navSettings: 'Settings',
     navAudit: 'Audit Log',
+    secOperations: 'Counter',
+    secCatalog: 'Stock',
+    secReports: 'Records',
+    secAdmin: 'Admin',
     
     // Auth & Roles
     activeRole: 'Active Role',
@@ -71,11 +77,17 @@ export const translations = {
     navSales: 'বিক্রয় তালিকা',
     navCustomers: 'গ্রাহক (Customers)',
     navProducts: 'মালামাল (Products)',
+    navCategories: 'ক্যাটাগরি',
     navSuppliers: 'মহাজন (Suppliers)',
     navReports: 'হিসাব-নিকাশ',
+    navShifts: 'শিফট তালিকা',
     navUsers: 'ইউজার ও স্টাফ',
     navSettings: 'সেটিংস',
     navAudit: 'অডিট লগ',
+    secOperations: 'কাউন্টার',
+    secCatalog: 'স্টক',
+    secReports: 'রেকর্ড',
+    secAdmin: 'অ্যাডমিন',
 
     // Auth & Roles
     activeRole: 'বর্তমান রোল',
