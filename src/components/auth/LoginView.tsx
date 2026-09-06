@@ -21,7 +21,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, lang, onLa
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!window.api) return;
+    if (!window.api) {
+      setError(
+        lang === 'bn'
+          ? 'সতর্কতা: এটি একটি ইলেকট্রন ডেস্কটপ অ্যাপ! লোকাল ডাটাবেজ সহ সম্পূর্ণ অ্যাপটি চালাতে আপনার টার্মিনালে "npm run electron:dev" চালান।'
+          : 'Web Browser Mode: This is an Electron desktop app! To use the SQLite database and hardware integrations, please run "npm run electron:dev" or "npm start" in your terminal.'
+      );
+      return;
+    }
 
     if (!username.trim() || !password.trim()) {
       setError(lang === 'bn' ? 'ইউজারনেম এবং পাসওয়ার্ড পূরণ করুন' : 'Please enter both username and password.');

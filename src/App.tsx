@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 
 import { UserSession, Product, Category, ShiftSummaryData } from './types/ipc';
-import { AuthBanner } from './components/AuthBanner';
 import { LoginView } from './components/auth/LoginView';
 import { PinLoginScreen } from './components/auth/PinLoginScreen';
 import { ShiftModal } from './components/shifts/ShiftModal';
@@ -291,6 +290,12 @@ function MainApp() {
     if (authMode === 'pin') {
       return (
         <>
+          {!isElectron && (
+            <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-jungle-teal-950 px-4 py-2 text-xs font-mono font-bold flex items-center justify-between border-b border-amber-600 shadow-md">
+              <span>⚠️ Web Browser Detected. This is an Electron desktop app with embedded SQLite.</span>
+              <span className="text-[11px] bg-black/20 px-2 py-0.5 rounded-sm">Launch: npm run electron:dev</span>
+            </div>
+          )}
           <PinLoginScreen
             onLoginSuccess={handleLoginSuccess}
             onSwitchToPasswordLogin={() => setAuthMode('password')}
@@ -308,6 +313,12 @@ function MainApp() {
 
     return (
       <>
+        {!isElectron && (
+          <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-jungle-teal-950 px-4 py-2 text-xs font-mono font-bold flex items-center justify-between border-b border-amber-600 shadow-md">
+            <span>⚠️ Web Browser Detected. This is an Electron desktop app with embedded SQLite.</span>
+            <span className="text-[11px] bg-black/20 px-2 py-0.5 rounded-sm">Launch: npm run electron:dev</span>
+          </div>
+        )}
         <LoginView
           onLoginSuccess={handleLoginSuccess}
           lang={lang}

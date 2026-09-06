@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import path from 'path';
 import { setupSecurityPolicies } from './security';
 import { getDb } from './db';
@@ -39,15 +39,22 @@ function createWindow() {
   // Apply Security Hardening
   setupSecurityPolicies(mainWindow);
 
-  // Initialize SQLite database
-  getDb();
-
-  // Register IPC handlers
-  registerIpcHandlers();
+  // Initialize SQLite database & IPC handlers
+  try {
+    getDb();
+    registerIpcHandlers();
+  } catch (err: any) {
+    console.error('Fatal database initialization error:', err);
+    dialog.showErrorBox(
+      'Database Initialization Error',
+      `Failed to load SQLite native database:\n\n${err?.message || err}\n\nPlease run:\nnpx electron-builder install-app-deps\nin your terminal to compile SQLite for Electron.`
+    );
+  }
 
   // Load URL
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
