@@ -266,6 +266,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           gross_sales_paisa: grossSalesPaisa,
           refunds_count: 0,
           total_refunded_paisa: 0,
+          total_returned_paisa: 0,
           net_sales_paisa: grossSalesPaisa,
           payments_breakdown: {
             cash_paisa: grossSalesPaisa,
