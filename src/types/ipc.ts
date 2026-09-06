@@ -12,7 +12,8 @@ export interface UserRecord {
   name: string;
   role: 'owner' | 'staff';
   is_active: number | boolean;
-  pin_code?: string | null;
+  /** Whether a PIN is set. The PIN itself is hashed and never sent to the renderer. */
+  has_pin?: number | boolean;
   device_id?: string | null;
   total_sales_paisa?: number;
   created_at: string;
@@ -387,6 +388,8 @@ export interface ShopSettings {
   supabase_anon_key?: string;
   supabase_shop_id?: string;
   shop_id?: string;
+  local_backup_path?: string;
+  first_run_completed?: string;
 }
 
 export type SyncStatusType = 'synced' | 'syncing' | 'pending' | 'offline' | 'error';
@@ -485,7 +488,8 @@ export interface IElectronApi {
   users: {
     list: (filters?: { startDate?: string; endDate?: string }) => Promise<UserRecord[]>;
     create: (data: { username: string; name: string; role: 'owner' | 'staff'; password: string; pin_code?: string }) => Promise<UserRecord>;
-    update: (data: { id: string; name: string; role: 'owner' | 'staff'; is_active: boolean; pin_code?: string }) => Promise<{ success: boolean }>;
+    /** Omit pin_code to keep the existing PIN; pass clear_pin to remove it. */
+    update: (data: { id: string; name: string; role: 'owner' | 'staff'; is_active: boolean; pin_code?: string; clear_pin?: boolean }) => Promise<{ success: boolean }>;
     updatePin: (data: { userId: string; pin_code: string }) => Promise<{ success: boolean }>;
     changePassword: (data: { userId: string; newPassword: string }) => Promise<{ success: boolean }>;
   };
@@ -524,6 +528,7 @@ export interface IElectronApi {
     getAuthUrl: () => Promise<{ success: boolean }>;
     authorize: (code: string) => Promise<{ success: boolean }>;
     disconnect: () => Promise<{ success: boolean }>;
+    restoreLatest: () => Promise<{ success: boolean }>;
   };
   wizard: {
     checkStatus: () => Promise<{ isFirstRun: boolean }>;

@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../db';
 
@@ -35,6 +36,55 @@ export function requireRole(allowedRoles: ('owner' | 'staff')[]) {
  * First run is the same flag the wizard itself uses, checked in the main process
  * rather than assumed from where the call came from.
  */
+/**
+ * PINs are credentials and are stored hashed, like passwords. They used to sit
+ * in the users table as typed, which put every PIN in plain sight in the users
+ * list, in every backup, and in every copy uploaded to Drive - and a PIN grants
+ * a full session, owner included.
+ *
+ * Cost 10 rather than the 12 used for passwords: a PIN is checked against each
+ * user in turn (there is no username to look it up by), so the work is
+ * multiplied by the number of staff and has to stay inside a counter-speed
+ * response. Rate limiting, not hash cost, is what defends a 4-digit secret.
+ */
+const PIN_BCRYPT_ROUNDS = 10;
+
+export function hashPin(pin: string): string {
+  return bcrypt.hashSync(pin, bcrypt.genSaltSync(PIN_BCRYPT_ROUNDS));
+}
+
+/** A stored value that is not a bcrypt hash is a PIN from before they were hashed. */
+export function isPinHashed(stored: string | null | undefined): boolean {
+  return typeof stored === 'string' && /^\$2[aby]\$/.test(stored);
+}
+
+export function verifyPin(pin: string, stored: string | null | undefined): boolean {
+  if (!stored) return false;
+  if (!isPinHashed(stored)) return stored === pin;
+  return bcrypt.compareSync(pin, stored);
+}
+
+export function findActiveUserByPin(db: any, pin: string): any | null {
+  const candidates = db
+    .prepare("SELECT * FROM users WHERE pin_code IS NOT NULL AND pin_code != '' AND is_active = 1 AND deleted_at IS NULL ORDER BY created_at ASC")
+    .all() as any[];
+  // Every candidate is checked even after a match so the time taken does not
+  // reveal where in the list the PIN sits.
+  let found: any = null;
+  for (const user of candidates) {
+    if (verifyPin(pin, user.pin_code) && !found) found = user;
+  }
+  return found;
+}
+
+/** Returns the username already using this PIN, or null. */
+export function pinTakenBy(db: any, pin: string, exceptUserId?: string): string | null {
+  const match = findActiveUserByPin(db, pin);
+  if (!match) return null;
+  if (exceptUserId && match.id === exceptUserId) return null;
+  return match.username;
+}
+
 export function requireOwnerOrFirstRun() {
   if (activeSession?.role === 'owner') return;
 
@@ -148,6 +198,55 @@ export function processStockIn(db: any, productId: string, addQty: number, unitC
   `).run(uuidv7(), productId, addQty, refTable, refId, reason, userId, deviceId, now, now, incomingCost);
   
   return product.stock_qty + addQty;
+}
+
+/**
+ * Takes qty out of a product's FIFO batches, oldest first, and reports what it
+ * cost. Used by anything that removes stock so that products.stock_qty and the
+ * batch pool stay two views of one fact rather than two independent records.
+ *
+ * If the batches hold less than asked for, the shortfall is costed at the
+ * product's current cost price and the caller is told - that only happens when
+ * the two have already drifted apart.
+ */
+export function consumeFifoBatches(
+  db: any,
+  productId: string,
+  qty: number,
+  fallbackCostPaisa: number
+): { totalCostPaisa: number; consumed: { batch_id: string; qty: number; cost_price_paisa: number }[]; shortfall: number } {
+  const batches = db.prepare(
+    'SELECT id, remaining_qty, cost_price_paisa FROM inventory_batches WHERE product_id = ? AND remaining_qty > 0 ORDER BY received_at ASC'
+  ).all(productId) as any[];
+
+  const take = db.prepare('UPDATE inventory_batches SET remaining_qty = remaining_qty - ? WHERE id = ?');
+  const consumed: { batch_id: string; qty: number; cost_price_paisa: number }[] = [];
+  let left = qty;
+  let totalCostPaisa = 0;
+
+  for (const batch of batches) {
+    if (left <= 0) break;
+    const takeQty = Math.min(batch.remaining_qty, left);
+    left -= takeQty;
+    totalCostPaisa += takeQty * batch.cost_price_paisa;
+    take.run(takeQty, batch.id);
+    consumed.push({ batch_id: batch.id, qty: takeQty, cost_price_paisa: batch.cost_price_paisa });
+  }
+
+  if (left > 0) totalCostPaisa += left * fallbackCostPaisa;
+  return { totalCostPaisa, consumed, shortfall: left };
+}
+
+/** Products whose stock_qty disagrees with the sum of their open batches. */
+export function findBatchDrift(db: any): { id: string; name: string; stock_qty: number; batch_qty: number }[] {
+  return db.prepare(`
+    SELECT p.id, p.name, p.stock_qty, COALESCE(b.q, 0) AS batch_qty
+    FROM products p
+    LEFT JOIN (
+      SELECT product_id, SUM(remaining_qty) AS q FROM inventory_batches GROUP BY product_id
+    ) b ON p.id = b.product_id
+    WHERE p.deleted_at IS NULL AND p.stock_qty <> COALESCE(b.q, 0)
+  `).all() as any[];
 }
 
 export function calculateShiftSummary(db: any, shift: any) {

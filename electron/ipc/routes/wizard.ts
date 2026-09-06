@@ -33,6 +33,25 @@ export function registerWizardHandlers() {
   
       const data = schema.parse(rawPayload);
       const now = new Date().toISOString();
+
+      // The owner account is seeded as owner/owner123 and that password was
+      // published in the console on every start, so leaving setup with it still
+      // in place hands the shop to anyone who has read the README. Enforced here
+      // rather than in the form alone, since the form is not the only caller.
+      const isFirstRun = already?.value !== '1';
+      if (isFirstRun) {
+        const chosen = (data.owner_password || '').trim();
+        if (!chosen) {
+          throw new Error('Set a password for the owner account before finishing setup.');
+        }
+        if (chosen.length < 6) {
+          throw new Error('The owner password must be at least 6 characters.');
+        }
+        if (chosen === 'owner123') {
+          throw new Error('Choose a different owner password - the default one cannot be kept.');
+        }
+        data.owner_password = chosen;
+      }
   
       db.transaction(() => {
         const upsertSetting = db.prepare(`

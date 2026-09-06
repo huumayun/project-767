@@ -4,7 +4,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit , processStockIn } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit , processStockIn, consumeFifoBatches, findBatchDrift } from '../shared';
 
 
 export function registerProductsHandlers() {
@@ -277,10 +277,10 @@ export function registerProductsHandlers() {
       const db = getDb();
       const now = new Date().toISOString();
       const userId = activeSession?.id || 'system';
-  
+
       let newStock = 0;
       db.transaction(() => {
-        const product = db.prepare('SELECT stock_qty FROM products WHERE id = ? AND deleted_at IS NULL').get(data.product_id) as any;
+        const product = db.prepare('SELECT stock_qty, cost_price_paisa FROM products WHERE id = ? AND deleted_at IS NULL').get(data.product_id) as any;
         if (!product) throw new Error('Product not found');
   
         if (product.stock_qty + data.qty_delta < 0) {
@@ -289,16 +289,49 @@ export function registerProductsHandlers() {
   
         newStock = product.stock_qty + data.qty_delta;
         db.prepare('UPDATE products SET stock_qty = stock_qty + ?, updated_at = ? WHERE id = ?').run(data.qty_delta, now, data.product_id);
-  
+
+        // Adjustments used to move stock_qty alone. Writing off breakage left
+        // the units sitting in the FIFO pool to be sold later at a cost that no
+        // longer existed, and adding stock left quantity with no batch behind
+        // it, so COGS silently fell back to the product's current cost price.
+        const costPaisa = product.cost_price_paisa ?? 0;
+        let unitCostPaisa = costPaisa;
+
+        if (data.qty_delta < 0) {
+          const { totalCostPaisa, shortfall } = consumeFifoBatches(
+            db, data.product_id, -data.qty_delta, costPaisa
+          );
+          unitCostPaisa = Math.round(totalCostPaisa / -data.qty_delta);
+          if (shortfall > 0) {
+            console.warn(
+              `Stock adjustment for ${data.product_id}: ${shortfall} unit(s) had no FIFO batch; ` +
+              `costed at the product's current price.`
+            );
+          }
+        } else if (data.qty_delta > 0) {
+          db.prepare(`
+            INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
+            VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, 'adjustment', ?)
+          `).run(data.product_id, data.qty_delta, data.qty_delta, costPaisa, now, data.product_id);
+        }
+
         db.prepare(`
           INSERT INTO stock_transactions (
-            id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at
-          ) VALUES (?, ?, 'adjustment', ?, 'products', ?, ?, ?, ?, ?)
-        `).run(uuidv7(), data.product_id, data.qty_delta, data.product_id, data.reason, userId, now, now);
+            id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at, unit_cost_paisa
+          ) VALUES (?, ?, 'adjustment', ?, 'products', ?, ?, ?, ?, ?, ?)
+        `).run(uuidv7(), data.product_id, data.qty_delta, data.product_id, data.reason, userId, now, now, unitCostPaisa);
       })();
   
       logAudit('STOCK_ADJUSTMENT', 'products', data.product_id, { qtyDelta: data.qty_delta, reason: data.reason, newStock });
       return { success: true, newStock };
+    });
+
+  // Surfaces any product whose stock count and FIFO batches have come apart.
+  // Should always be empty; if it is not, something wrote stock without going
+  // through the batch pool and the valuation cannot be trusted.
+  ipcMain.handle('api:products:getBatchDrift', async () => {
+      requireRole(['owner']);
+      return findBatchDrift(getDb());
     });
 
   ipcMain.handle('api:products:getStockHistory', async (_event, productId: string) => {

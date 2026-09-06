@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('api', {
     stockAdjustment: (data: { product_id: string; qty_delta: number; reason: string }) =>
       ipcRenderer.invoke('api:products:stockAdjustment', data),
     getStockHistory: (productId: string) => ipcRenderer.invoke('api:products:getStockHistory', productId),
+    getBatchDrift: () => ipcRenderer.invoke('api:products:getBatchDrift'),
     bulkImport: (payload: { mode: 'dry_run' | 'commit'; rows: any[] }) =>
       ipcRenderer.invoke('api:products:bulkImport', payload),
   },

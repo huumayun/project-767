@@ -5,7 +5,8 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "npm exec -- vite",
-    "build": "npm exec -- vite build && npm exec -- tsc -p tsconfig.electron.json",
+    "typecheck": "npm exec -- tsc -p tsconfig.json --noEmit && npm exec -- tsc -p tsconfig.electron.json --noEmit",
+    "build": "npm run typecheck && npm exec -- vite build && npm exec -- tsc -p tsconfig.electron.json",
     "electron:dev": "node scripts/dev.js",
     "electron:build": "npm run build && npm exec -- electron-builder --win",
     "postinstall": "npm exec -- electron-builder install-app-deps"

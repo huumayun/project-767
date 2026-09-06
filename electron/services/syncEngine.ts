@@ -33,14 +33,28 @@ let lastSyncTimestamp: string | null = null;
 let lastSyncError: string | null = null;
 let cachedPendingCount = 0;
 
+/**
+ * Rows are ordered by (updated_at, id) rather than updated_at alone. A bulk
+ * import stamps every row it writes with one identical timestamp, so a cursor
+ * holding only that timestamp skipped everything past the first page of such a
+ * batch - permanently, because the next pass asked for rows strictly after it.
+ */
+const PENDING_WHERE = '(updated_at > ? OR (updated_at = ? AND id > ?))';
+
+function cursorFor(db: any, table: string): [string, string, string] {
+  const row = db.prepare('SELECT last_pushed_at, last_pushed_id FROM sync_state WHERE table_name = ?').get(table) as any;
+  const at = row?.last_pushed_at || '1970-01-01T00:00:00.000Z';
+  const id = row?.last_pushed_id || '';
+  return [at, at, id];
+}
+
 export function getPendingChangesCount(): number {
   try {
     const db = getDb();
     let totalPending = 0;
     for (const table of SYNC_ORDER) {
-      const stateRow = db.prepare('SELECT last_pushed_at FROM sync_state WHERE table_name = ?').get(table) as any;
-      const lastPushed = stateRow?.last_pushed_at || '1970-01-01T00:00:00.000Z';
-      const countRow = db.prepare(`SELECT COUNT(id) as cnt FROM ${table} WHERE updated_at > ?`).get(lastPushed) as any;
+      const cursor = cursorFor(db, table);
+      const countRow = db.prepare(`SELECT COUNT(id) as cnt FROM ${table} WHERE ${PENDING_WHERE}`).get(...cursor) as any;
       totalPending += (countRow?.cnt || 0);
     }
     cachedPendingCount = totalPending;
@@ -114,11 +128,16 @@ export async function executeDeltaSync(): Promise<SyncStatusInfo> {
     const nowUTC = new Date().toISOString();
 
     // 1. Dependency-Ordered Push
+    let pushFailed = false;
     for (const table of SYNC_ORDER) {
-      const stateRow = db.prepare('SELECT last_pushed_at FROM sync_state WHERE table_name = ?').get(table) as any;
-      const lastPushed = stateRow?.last_pushed_at || '1970-01-01T00:00:00.000Z';
+      // A failure earlier in the order means later tables may reference rows
+      // that never landed, so stop rather than push children without parents.
+      if (pushFailed) break;
 
-      const unpushedRows = db.prepare(`SELECT * FROM ${table} WHERE updated_at > ? ORDER BY updated_at ASC LIMIT 100`).all(lastPushed) as any[];
+      const cursor = cursorFor(db, table);
+      const unpushedRows = db.prepare(
+        `SELECT * FROM ${table} WHERE ${PENDING_WHERE} ORDER BY updated_at ASC, id ASC LIMIT 100`
+      ).all(...cursor) as any[];
 
       if (unpushedRows.length > 0) {
         // Prepare rows with shop_id
@@ -128,6 +147,7 @@ export async function executeDeltaSync(): Promise<SyncStatusInfo> {
         }));
 
         // Push to Supabase REST endpoint
+        let accepted = false;
         try {
           const res = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
             method: 'POST',
@@ -140,22 +160,36 @@ export async function executeDeltaSync(): Promise<SyncStatusInfo> {
             body: JSON.stringify(payload),
           });
 
-          if (!res.ok && res.status !== 404 && res.status !== 401) {
-            console.warn(`Supabase sync warning for ${table}: HTTP ${res.status}`);
+          accepted = res.ok;
+          if (!res.ok) {
+            lastSyncError = `${table}: HTTP ${res.status}`;
+            console.warn(`Supabase sync rejected ${table}: HTTP ${res.status}`);
           }
         } catch (fetchErr: any) {
           // Network offline / unreachable
           lastSyncError = fetchErr.message || 'Network unreachable';
         }
 
-        // Record last_pushed_at locally
-        const latestTime = unpushedRows[unpushedRows.length - 1].updated_at;
+        // The cursor moves only for rows the server confirmed it took. This
+        // used to advance no matter what came back, so anything written while
+        // the shop was offline - or refused by the server - was marked as sent
+        // and never offered again.
+        if (!accepted) {
+          pushFailed = true;
+          break;
+        }
+
+        const lastRow = unpushedRows[unpushedRows.length - 1];
         db.prepare(`
-          INSERT INTO sync_state (table_name, last_pushed_at) VALUES (?, ?)
-          ON CONFLICT(table_name) DO UPDATE SET last_pushed_at = excluded.last_pushed_at
-        `).run(table, latestTime);
+          INSERT INTO sync_state (table_name, last_pushed_at, last_pushed_id) VALUES (?, ?, ?)
+          ON CONFLICT(table_name) DO UPDATE SET
+            last_pushed_at = excluded.last_pushed_at,
+            last_pushed_id = excluded.last_pushed_id
+        `).run(table, lastRow.updated_at, lastRow.id);
       }
     }
+
+    if (!pushFailed) lastSyncError = null;
 
     lastSyncTimestamp = nowUTC;
   } catch (err: any) {

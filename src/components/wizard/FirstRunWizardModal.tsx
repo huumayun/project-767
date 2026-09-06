@@ -29,8 +29,23 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
   const [shopAddress, setShopAddress] = useState('Dhaka, Bangladesh');
   const [deviceIdPrefix, setDeviceIdPrefix] = useState('REG01');
   const [defaultInvoiceLayout, setDefaultInvoiceLayout] = useState<'80mm' | 'a5'>('80mm');
-  const [ownerPassword, setOwnerPassword] = useState('owner123');
+  // Deliberately blank: prefilling the seeded password is what let shops finish
+  // setup still using owner/owner123.
+  const [ownerPassword, setOwnerPassword] = useState('');
+  const [ownerPasswordConfirm, setOwnerPasswordConfirm] = useState('');
   const [seedDemoData, setSeedDemoData] = useState(true);
+
+  const ownerPasswordError = (() => {
+    if (!ownerPassword) return null;
+    if (ownerPassword.trim().length < 6) return 'Use at least 6 characters.';
+    if (ownerPassword.trim() === 'owner123') return 'Pick something other than the default password.';
+    if (ownerPasswordConfirm && ownerPassword !== ownerPasswordConfirm) return 'The two passwords do not match.';
+    return null;
+  })();
+  const ownerPasswordReady =
+    ownerPassword.trim().length >= 6 &&
+    ownerPassword.trim() !== 'owner123' &&
+    ownerPassword === ownerPasswordConfirm;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +78,7 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
         shop_phone: shopPhone.trim(),
         device_id_prefix: deviceIdPrefix.trim() || 'REG01',
         default_invoice_layout: defaultInvoiceLayout,
-        owner_password: ownerPassword.trim() || 'owner123',
+        owner_password: ownerPassword.trim(),
       });
 
       onCompleted();
@@ -431,13 +446,28 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
                 <input
                   type="password"
                   required
+                  minLength={6}
                   value={ownerPassword}
                   onChange={(e) => setOwnerPassword(e.target.value)}
-                  placeholder="owner123"
+                  placeholder="At least 6 characters"
                   className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono focus:outline-hidden focus:border-azure-mist-600 font-bold"
                 />
+                <input
+                  type="password"
+                  required
+                  value={ownerPasswordConfirm}
+                  onChange={(e) => setOwnerPasswordConfirm(e.target.value)}
+                  placeholder="Type it again to confirm"
+                  className="w-full mt-2 bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono focus:outline-hidden focus:border-azure-mist-600 font-bold"
+                />
+                {ownerPasswordError && (
+                  <span className="text-[11px] text-rose-600 font-semibold mt-1 block">
+                    {ownerPasswordError}
+                  </span>
+                )}
                 <span className="text-[10px] text-jungle-teal-500 mt-1 block">
-                  Username: <strong className="text-jungle-teal-800">owner</strong> (Used for full system control)
+                  Username: <strong className="text-jungle-teal-800">owner</strong> (Used for full system control).
+                  This replaces the temporary setup password.
                 </span>
               </div>
 
@@ -471,7 +501,7 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
               </button>
               <button
                 type="button"
-                disabled={loading}
+                disabled={loading || !ownerPasswordReady}
                 onClick={handleFinishWizard}
                 className="px-6 py-2.5 bg-muted-teal-700 hover:bg-muted-teal-600 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 shadow-md transition-colors disabled:opacity-50"
               >

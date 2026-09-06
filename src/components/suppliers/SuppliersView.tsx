@@ -105,14 +105,17 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
 
     window.api.reports.getProfitReport({ startDate: startStr, endDate: endStr })
       .then(report => {
-        const soldQty = report.products.reduce((acc: number, p: any) => acc + (p.qty_sold || 0), 0);
+        const soldQty = (report.product_profits || []).reduce((acc, p) => acc + (p.qty_sold || 0), 0);
         setSalesSummary({
           soldQty,
           salesTaka: (report.total_revenue_paisa || 0) / 100,
-          profitTaka: (report.total_gross_profit_paisa || 0) / 100
+          profitTaka: (report.gross_profit_paisa || 0) / 100
         });
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error('Failed to load supplier sales summary:', err);
+        toast.error('Could not load the sales summary for this period.');
+      });
   }, [dateFilter]);
 
   const handleSupplierSubmit = async (values: SupplierFormValues) => {

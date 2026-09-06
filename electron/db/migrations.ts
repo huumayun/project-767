@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
 
 export interface Migration {
   id: string;
@@ -306,6 +307,7 @@ export function applyBaseSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS sync_state (
       table_name TEXT PRIMARY KEY,
       last_pushed_at TEXT,
+      last_pushed_id TEXT,
       last_pulled_at TEXT
     );
   `);
@@ -568,6 +570,25 @@ export const MIGRATIONS: Migration[] = [
           );
       `).run(payer.id, deviceId);
     }
+  },
+  {
+    id: '005_hash_existing_pins',
+    name: 'Hash login PINs that were stored as typed',
+    up: (db: Database.Database) => {
+      // PINs were kept in plain text, so every backup - including the copies
+      // uploaded to Drive - carried working credentials for every account, and
+      // the owner's PIN was visible in the users list. Anything that is not
+      // already a bcrypt hash is rewritten as one here.
+      const rows = db.prepare(
+        "SELECT id, pin_code FROM users WHERE pin_code IS NOT NULL AND pin_code != ''"
+      ).all() as { id: string; pin_code: string }[];
+
+      const update = db.prepare('UPDATE users SET pin_code = ? WHERE id = ?');
+      for (const row of rows) {
+        if (/^\$2[aby]\$/.test(row.pin_code)) continue; // already hashed
+        update.run(bcrypt.hashSync(row.pin_code, bcrypt.genSaltSync(10)), row.id);
+      }
+    }
   }
 ];
 
@@ -599,6 +620,9 @@ const ADDITIVE_COLUMNS: Record<string, Record<string, string>> = {
   },
   stock_transactions: {
     unit_cost_paisa: 'INTEGER',
+  },
+  sync_state: {
+    last_pushed_id: 'TEXT',
   },
 };
 

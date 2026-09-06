@@ -102,7 +102,9 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
     setFormName(user.name);
     setFormRole(user.role);
     setFormPassword('');
-    setFormPinCode(user.pin_code || '');
+    // A hash cannot be shown back, and leaving the field blank now means
+    // "keep the current PIN" rather than clearing it.
+    setFormPinCode('');
     setFormIsActive(Boolean(user.is_active));
     setShowFormModal(true);
   };
@@ -298,7 +300,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
                   </td>
                   <td className="p-3.5 text-center">
                     <span className="font-mono font-bold text-xs bg-jungle-teal-100 px-2 py-0.5 rounded-md border border-jungle-teal-200 text-jungle-teal-800">
-                      {u.pin_code ? '••••' : 'Not set'}
+                      {u.has_pin ? '••••' : 'Not set'}
                     </span>
                   </td>
                   <td className="p-3.5 text-center">
@@ -407,11 +409,12 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
                   maxLength={6}
                   value={formPinCode}
                   onChange={(e) => setFormPinCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="e.g. 1234 (4-6 numbers)"
+                  placeholder={editingUser ? 'Leave blank to keep the current PIN' : 'e.g. 1234 (4-6 numbers)'}
                   className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono font-bold tracking-widest focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
                 />
                 <p className="text-[11px] text-jungle-teal-500 mt-0.5">
                   POS স্ক্রিনে দ্রুত লগইনের জন্য একক পিন কোড।
+                  {editingUser && ' PIN কোড সংরক্ষিত থাকে — বদলাতে চাইলে নতুন পিন লিখুন।'}
                 </p>
               </div>
 

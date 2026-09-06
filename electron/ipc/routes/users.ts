@@ -4,7 +4,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, hashPin, pinTakenBy } from '../shared';
 
 
 export function registerUsersHandlers() {
@@ -12,7 +12,13 @@ export function registerUsersHandlers() {
   ipcMain.handle('api:users:list', async (_event, filters?: { startDate?: string; endDate?: string }) => {
       requireRole(['owner']);
       const db = getDb();
-      const users = db.prepare('SELECT id, username, name, role, is_active, pin_code, device_id, created_at, updated_at FROM users WHERE deleted_at IS NULL ORDER BY name ASC').all() as any[];
+      // has_pin, not the PIN itself: the users screen only needs to know whether
+      // one is set, and returning the stored value put a credential on screen.
+      const users = db.prepare(`
+        SELECT id, username, name, role, is_active, device_id, created_at, updated_at,
+               (pin_code IS NOT NULL AND pin_code != '') AS has_pin
+        FROM users WHERE deleted_at IS NULL ORDER BY name ASC
+      `).all() as any[];
   
       if (filters && (filters.startDate || filters.endDate)) {
         let sql = `SELECT user_id, SUM(total_paisa) as total_sales_paisa FROM sales WHERE status = 'completed' AND deleted_at IS NULL`;
@@ -59,9 +65,9 @@ export function registerUsersHandlers() {
       }
   
       if (data.pin_code) {
-        const existingPin = db.prepare('SELECT username FROM users WHERE pin_code = ? AND is_active = 1 AND deleted_at IS NULL').get(data.pin_code) as any;
-        if (existingPin) {
-          throw new Error(`PIN "${data.pin_code}" is already assigned to user "${existingPin.username}". Choose a unique PIN.`);
+        const takenBy = pinTakenBy(db, data.pin_code);
+        if (takenBy) {
+          throw new Error(`That PIN is already assigned to user "${takenBy}". Choose a unique PIN.`);
         }
       }
   
@@ -74,7 +80,7 @@ export function registerUsersHandlers() {
       db.prepare(`
         INSERT INTO users (id, name, username, role, password_hash, pin_code, is_active, device_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-      `).run(id, data.name.trim(), data.username.trim(), data.role, passwordHash, data.pin_code || null, deviceId, now, now);
+      `).run(id, data.name.trim(), data.username.trim(), data.role, passwordHash, data.pin_code ? hashPin(data.pin_code) : null, deviceId, now, now);
   
       logAudit('CREATE_USER', 'users', id, { username: data.username, role: data.role });
       return {
@@ -82,7 +88,7 @@ export function registerUsersHandlers() {
         name: data.name.trim(),
         username: data.username.trim(),
         role: data.role,
-        pin_code: data.pin_code || null,
+        has_pin: Boolean(data.pin_code),
         is_active: 1,
         device_id: deviceId,
         created_at: now,
@@ -98,22 +104,39 @@ export function registerUsersHandlers() {
         role: z.enum(['owner', 'staff']),
         is_active: z.boolean(),
         pin_code: z.string().min(4).max(6).optional(),
+        clear_pin: z.boolean().optional(),
       });
       const data = schema.parse(rawData);
       const db = getDb();
       const now = new Date().toISOString();
   
       if (data.pin_code) {
-        const existingPin = db.prepare('SELECT username FROM users WHERE pin_code = ? AND id != ? AND is_active = 1 AND deleted_at IS NULL').get(data.pin_code, data.id) as any;
-        if (existingPin) {
-          throw new Error(`PIN "${data.pin_code}" is already assigned to user "${existingPin.username}".`);
+        const takenBy = pinTakenBy(db, data.pin_code, data.id);
+        if (takenBy) {
+          throw new Error(`That PIN is already assigned to user "${takenBy}". Choose a different one.`);
         }
       }
   
-      db.prepare(`
-        UPDATE users SET name = ?, role = ?, is_active = ?, pin_code = ?, updated_at = ?
-        WHERE id = ? AND deleted_at IS NULL
-      `).run(data.name.trim(), data.role, data.is_active ? 1 : 0, data.pin_code || null, now, data.id);
+      // A blank PIN field means "leave it as it is". This wrote null, silently
+      // removing the user's PIN whenever their name or role was edited - and now
+      // that the form cannot prefill a hash, that would happen on every edit.
+      // Clearing a PIN is its own explicit action.
+      if (data.pin_code) {
+        db.prepare(`
+          UPDATE users SET name = ?, role = ?, is_active = ?, pin_code = ?, updated_at = ?
+          WHERE id = ? AND deleted_at IS NULL
+        `).run(data.name.trim(), data.role, data.is_active ? 1 : 0, hashPin(data.pin_code), now, data.id);
+      } else if (data.clear_pin) {
+        db.prepare(`
+          UPDATE users SET name = ?, role = ?, is_active = ?, pin_code = NULL, updated_at = ?
+          WHERE id = ? AND deleted_at IS NULL
+        `).run(data.name.trim(), data.role, data.is_active ? 1 : 0, now, data.id);
+      } else {
+        db.prepare(`
+          UPDATE users SET name = ?, role = ?, is_active = ?, updated_at = ?
+          WHERE id = ? AND deleted_at IS NULL
+        `).run(data.name.trim(), data.role, data.is_active ? 1 : 0, now, data.id);
+      }
   
       logAudit('UPDATE_USER', 'users', data.id, { name: data.name, role: data.role, is_active: data.is_active });
       return { success: true };
@@ -134,32 +157,19 @@ export function registerUsersHandlers() {
       }
   
       const db = getDb();
-      const existingPin = db.prepare('SELECT username FROM users WHERE pin_code = ? AND id != ? AND is_active = 1 AND deleted_at IS NULL').get(pin_code, userId) as any;
-      if (existingPin) {
-        throw new Error(`PIN "${pin_code}" is already taken by ${existingPin.username}. Choose a unique PIN.`);
+      const takenBy = pinTakenBy(db, pin_code, userId);
+      if (takenBy) {
+        throw new Error(`That PIN is already taken by ${takenBy}. Choose a different one.`);
       }
   
       const now = new Date().toISOString();
-      db.prepare('UPDATE users SET pin_code = ?, updated_at = ? WHERE id = ?').run(pin_code, now, userId);
+      db.prepare('UPDATE users SET pin_code = ?, updated_at = ? WHERE id = ?').run(hashPin(pin_code), now, userId);
       logAudit('UPDATE_PIN', 'users', userId);
       return { success: true };
     });
 
-  ipcMain.handle('api:users:pinLogin', async (_event, pin_code: string) => {
-      const db = getDb();
-      const user = db.prepare('SELECT * FROM users WHERE pin_code = ? AND is_active = 1 AND deleted_at IS NULL').get(pin_code) as any;
-      
-      if (!user) {
-        throw new Error('Invalid PIN');
-      }
-  
-      return {
-        id: user.id,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-      };
-    });
+  // api:users:pinLogin was removed: a second way in that skipped the lockout
+  // on api:auth:pinLogin. One PIN entry point, one throttle.
 
   ipcMain.handle('api:users:changePassword', async (_event, rawData) => {
       const schema = z.object({
