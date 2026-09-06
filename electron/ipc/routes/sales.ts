@@ -5,7 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit , generateInvoiceNumber } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit , generateInvoiceNumber, allocateSaleDiscount } from '../shared';
 
 
 export function registerSalesHandlers() {
@@ -245,11 +245,35 @@ export function registerSalesHandlers() {
       if (!sale) return null;
   
       const items = db.prepare(`
-        SELECT si.*, p.name as product_name, p.name_bn as product_name_bn, p.barcode, p.unit
+        SELECT si.*, p.name as product_name, p.name_bn as product_name_bn, p.barcode, p.unit,
+          COALESCE((SELECT SUM(ri.qty) FROM return_items ri
+                    JOIN returns r ON r.id = ri.return_id
+                    WHERE ri.sale_item_id = si.id AND r.sale_id = si.sale_id
+                      AND ri.deleted_at IS NULL), 0) AS returned_qty,
+          COALESCE((SELECT SUM(ri.amount_paisa) FROM return_items ri
+                    JOIN returns r ON r.id = ri.return_id
+                    WHERE ri.sale_item_id = si.id AND r.sale_id = si.sale_id
+                      AND ri.deleted_at IS NULL), 0) AS returned_paisa
         FROM sale_items si
         JOIN products p ON si.product_id = p.id
-        WHERE si.sale_id = ?
+        WHERE si.sale_id = ? AND si.deleted_at IS NULL
       `).all(sale.id) as any[];
+
+      // A line is worth what was paid for it: its price less its share of any
+      // whole-invoice discount. The return screen refunds against these figures
+      // rather than the sticker price, which would exceed what was collected.
+      const saleDiscountAlloc = allocateSaleDiscount(
+        items.map((it) => ({ id: it.id, grossPaisa: (it.unit_price_paisa * it.qty) - it.discount_paisa })),
+        sale.discount_paisa || 0
+      );
+      items.forEach((it) => {
+        const netLinePaisa = (it.unit_price_paisa * it.qty) - it.discount_paisa - (saleDiscountAlloc[it.id] || 0);
+        it.sale_discount_share_paisa = saleDiscountAlloc[it.id] || 0;
+        it.net_line_paisa = netLinePaisa;
+        it.refundable_qty = it.qty - it.returned_qty;
+        it.refundable_paisa = Math.max(0, netLinePaisa - it.returned_paisa);
+        it.net_unit_price_paisa = it.qty > 0 ? Math.round(netLinePaisa / it.qty) : 0;
+      });
   
       const payments = db.prepare(`
         SELECT * FROM payments WHERE sale_id = ?
@@ -348,23 +372,79 @@ export function registerSalesHandlers() {
           amount_paisa: z.number().int().min(0),
         })).min(1),
       });
-  
+
       const payload = schema.parse(rawPayload);
       const db = getDb();
       const now = new Date().toISOString();
       const userId = activeSession?.id || 'system';
       const deviceId = getDeviceId(db);
       const returnId = uuidv7();
-  
-      let totalRefundPaisa = 0;
-      payload.items.forEach(it => { totalRefundPaisa += it.amount_paisa; });
-  
+
+      let outcome = {
+        totalRefundPaisa: 0,
+        cashRefundPaisa: 0,
+        creditedToDuePaisa: 0,
+        status: 'partial_refund',
+      };
+
       db.transaction(() => {
+        const sale = db.prepare(`
+          SELECT id, customer_id, total_paisa, discount_paisa
+          FROM sales WHERE id = ? AND deleted_at IS NULL AND status != 'held'
+        `).get(payload.sale_id) as any;
+        if (!sale) throw new Error('Sale not found.');
+
+        const soldLines = db.prepare(
+          'SELECT id, qty, unit_price_paisa, discount_paisa FROM sale_items WHERE sale_id = ? AND deleted_at IS NULL'
+        ).all(payload.sale_id) as any[];
+
+        // What the customer paid for a line is its price less its share of any
+        // whole-invoice discount. Refunding the undiscounted price hands back
+        // more than was ever collected.
+        const discountAlloc = allocateSaleDiscount(
+          soldLines.map((l) => ({ id: l.id, grossPaisa: (l.unit_price_paisa * l.qty) - l.discount_paisa })),
+          sale.discount_paisa || 0
+        );
+
+        const returnedStmt = db.prepare(`
+          SELECT COALESCE(SUM(ri.qty), 0) AS qty, COALESCE(SUM(ri.amount_paisa), 0) AS amount_paisa
+          FROM return_items ri
+          JOIN returns r ON r.id = ri.return_id
+          WHERE ri.sale_item_id = ? AND r.sale_id = ? AND ri.deleted_at IS NULL
+        `);
+
+        // Nothing previously stopped the same line being sent back over and
+        // over, each pass restoring stock and paying out again.
+        let totalRefundPaisa = 0;
+        for (const item of payload.items) {
+          const line = soldLines.find((l) => l.id === item.sale_item_id);
+          if (!line) throw new Error('That item is not on this invoice.');
+
+          const already = returnedStmt.get(item.sale_item_id, payload.sale_id) as any;
+          const qtyLeft = line.qty - already.qty;
+          const netLinePaisa = (line.unit_price_paisa * line.qty) - line.discount_paisa - discountAlloc[line.id];
+          const valueLeftPaisa = netLinePaisa - already.amount_paisa;
+
+          if (qtyLeft <= 0) {
+            throw new Error('This item has already been fully returned.');
+          }
+          if (item.qty > qtyLeft) {
+            throw new Error(`Only ${qtyLeft} of ${line.qty} left to return on this item.`);
+          }
+          if (item.amount_paisa > valueLeftPaisa) {
+            throw new Error(
+              `Refund of \u09f3${(item.amount_paisa / 100).toFixed(2)} is more than the ` +
+              `\u09f3${(Math.max(0, valueLeftPaisa) / 100).toFixed(2)} left on this item.`
+            );
+          }
+          totalRefundPaisa += item.amount_paisa;
+        }
+
         db.prepare(`
           INSERT INTO returns (id, sale_id, user_id, reason, device_id, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(returnId, payload.sale_id, userId, payload.reason, deviceId, now, now);
-  
+
         const insertReturnItem = db.prepare(`
           INSERT INTO return_items (id, return_id, sale_item_id, qty, amount_paisa, device_id, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -375,36 +455,77 @@ export function registerSalesHandlers() {
             id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, device_id, created_at, updated_at
           ) VALUES (?, ?, 'return_in', ?, 'returns', ?, ?, ?, ?, ?, ?)
         `);
-  
         const insertBatchStmt = db.prepare(`
           INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
           VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, 'returns', ?)
         `);
-  
+
         for (const item of payload.items) {
           insertReturnItem.run(uuidv7(), returnId, item.sale_item_id, item.qty, item.amount_paisa, deviceId, now, now);
           restoreStockStmt.run(item.qty, now, item.product_id);
           insertStockTxStmt.run(uuidv7(), item.product_id, item.qty, returnId, `Customer Return: ${payload.reason}`, userId, deviceId, now, now);
-          
+
           const saleItem = db.prepare('SELECT unit_cost_paisa FROM sale_items WHERE id = ?').get(item.sale_item_id) as any;
           const costPaisa = saleItem?.unit_cost_paisa || 0;
           insertBatchStmt.run(item.product_id, item.qty, item.qty, costPaisa, now, returnId);
         }
-  
-        const saleRow = db.prepare('SELECT customer_id FROM sales WHERE id = ?').get(payload.sale_id) as any;
-        const customerId = saleRow ? saleRow.customer_id : null;
-  
-        db.prepare(`
-          INSERT INTO payments (
-            id, sale_id, customer_id, direction, method, amount_paisa, type, user_id, device_id, created_at, updated_at
-          ) VALUES (?, ?, ?, 'out', ?, ?, 'refund', ?, ?, ?, ?)
-        `).run(uuidv7(), payload.sale_id, customerId, payload.refund_method, totalRefundPaisa, userId, deviceId, now, now);
-  
-        db.prepare("UPDATE sales SET status = 'refunded', updated_at = ? WHERE id = ?").run(now, payload.sale_id);
+
+        // Cash goes back only for money that actually came in. Refunding the
+        // full value of a baki return paid out cash the customer never handed
+        // over, and because the credit note also lowers the sale, the due was
+        // left standing at exactly the figure it was before the return. What
+        // cannot go back as cash reduces what the customer owes instead, which
+        // the return_items rows above already do on their own.
+        const collectedPaisa = (db.prepare(
+          "SELECT COALESCE(SUM(amount_paisa), 0) AS n FROM payments WHERE sale_id = ? AND direction = 'in' AND deleted_at IS NULL"
+        ).get(payload.sale_id) as any).n;
+        const refundedBeforePaisa = (db.prepare(
+          "SELECT COALESCE(SUM(amount_paisa), 0) AS n FROM payments WHERE sale_id = ? AND direction = 'out' AND type = 'refund' AND deleted_at IS NULL"
+        ).get(payload.sale_id) as any).n;
+        const returnedTotalPaisa = (db.prepare(`
+          SELECT COALESCE(SUM(ri.amount_paisa), 0) AS n FROM return_items ri
+          JOIN returns r ON r.id = ri.return_id
+          WHERE r.sale_id = ? AND ri.deleted_at IS NULL
+        `).get(payload.sale_id) as any).n;
+
+        const netPaidPaisa = collectedPaisa - refundedBeforePaisa;
+        const saleValueLeftPaisa = sale.total_paisa - returnedTotalPaisa;
+        const overpaidPaisa = netPaidPaisa - saleValueLeftPaisa;
+        const cashRefundPaisa = Math.max(0, Math.min(totalRefundPaisa, netPaidPaisa, overpaidPaisa));
+        const creditedToDuePaisa = totalRefundPaisa - cashRefundPaisa;
+
+        if (cashRefundPaisa > 0) {
+          db.prepare(`
+            INSERT INTO payments (
+              id, sale_id, customer_id, direction, method, amount_paisa, type, user_id, device_id, created_at, updated_at
+            ) VALUES (?, ?, ?, 'out', ?, ?, 'refund', ?, ?, ?, ?)
+          `).run(uuidv7(), payload.sale_id, sale.customer_id, payload.refund_method, cashRefundPaisa, userId, deviceId, now, now);
+        }
+
+        // 'partial_refund' existed in the schema but was never written, so one
+        // returned bolt used to mark a whole invoice refunded.
+        const status = returnedTotalPaisa >= sale.total_paisa ? 'refunded' : 'partial_refund';
+        db.prepare('UPDATE sales SET status = ?, updated_at = ? WHERE id = ?').run(status, now, payload.sale_id);
+
+        outcome = { totalRefundPaisa, cashRefundPaisa, creditedToDuePaisa, status };
       })();
-  
-      logAudit('PROCESS_RETURN', 'returns', returnId, { saleId: payload.sale_id, totalRefundPaisa });
-      return { success: true, returnId };
+
+      logAudit('PROCESS_RETURN', 'returns', returnId, {
+        saleId: payload.sale_id,
+        totalRefundPaisa: outcome.totalRefundPaisa,
+        cashRefundPaisa: outcome.cashRefundPaisa,
+        creditedToDuePaisa: outcome.creditedToDuePaisa,
+        status: outcome.status,
+      });
+
+      return {
+        success: true,
+        returnId,
+        total_refund_paisa: outcome.totalRefundPaisa,
+        cash_refund_paisa: outcome.cashRefundPaisa,
+        credited_to_due_paisa: outcome.creditedToDuePaisa,
+        status: outcome.status,
+      };
     });
 
   ipcMain.handle('api:sales:generatePdf', async (_event, rawArgs) => {

@@ -1,3 +1,4 @@
+import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -88,8 +89,13 @@ export function cleanOldBackups(retentionDays: number = 14) {
     const now = Date.now();
     const maxAgeMs = retentionDays * 24 * 60 * 60 * 1000;
 
+    // Only files this module named. The backup folder is user-selectable, so a
+    // blanket *.db sweep could delete manual backups, pre-restore snapshots, or
+    // unrelated databases that happen to live in the chosen directory.
+    const AUTO_BACKUP_NAME = /^shop-backup-\d{4}-\d{2}-\d{2}-\d{6}-auto\.db$/;
+
     for (const file of files) {
-      if (!file.endsWith('.db')) continue;
+      if (!AUTO_BACKUP_NAME.test(file)) continue;
       const fullPath = path.join(backupDir, file);
       const stat = fs.statSync(fullPath);
       if (now - stat.mtimeMs > maxAgeMs) {
@@ -135,10 +141,46 @@ export function listBackups(): BackupFileInfo[] {
 /**
  * Restores database from a verified backup file after creating a pre-restore safety snapshot.
  */
+/**
+ * Reads the candidate file as a database and checks it is intact and actually
+ * ours before anything is overwritten. This used to be promised by a comment
+ * and not performed, so a truncated download or an unrelated .db would replace
+ * the shop's live data and only fail afterwards.
+ */
+function verifyBackupFile(backupFilePath: string) {
+  let probe: Database.Database | null = null;
+  try {
+    probe = new Database(backupFilePath, { readonly: true, fileMustExist: true });
+
+    const integrity = probe.pragma('integrity_check') as { integrity_check: string }[];
+    if (integrity[0]?.integrity_check !== 'ok') {
+      throw new Error('the file is a database but is damaged');
+    }
+
+    const required = ['migrations', 'settings', 'users', 'products', 'sales'];
+    const present = new Set(
+      (probe.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[])
+        .map((r) => r.name)
+    );
+    const missing = required.filter((t) => !present.has(t));
+    if (missing.length > 0) {
+      throw new Error(`it is not a Shop POS backup (missing: ${missing.join(', ')})`);
+    }
+  } catch (err: any) {
+    throw new Error(
+      `That file cannot be restored - ${err?.message || 'it could not be read as a database'}.`
+    );
+  } finally {
+    try { probe?.close(); } catch { /* already closed */ }
+  }
+}
+
 export function restoreDatabase(backupFilePath: string): boolean {
   if (!fs.existsSync(backupFilePath)) {
     throw new Error(`Backup file not found at: ${backupFilePath}`);
   }
+
+  verifyBackupFile(backupFilePath);
 
   // 1. Create a safety snapshot of current DB before replacing
   const backupDir = getBackupsDirectory();
@@ -155,6 +197,16 @@ export function restoreDatabase(backupFilePath: string): boolean {
 
   const currentDbPath = path.join(app.getPath('userData'), 'shop.db');
   fs.copyFileSync(backupFilePath, currentDbPath);
+
+  // A -wal left over from the closed connection would be replayed into the file
+  // we just put there, mixing the old database's tail into the restored one.
+  for (const sidecar of ['-wal', '-shm']) {
+    try {
+      if (fs.existsSync(currentDbPath + sidecar)) fs.unlinkSync(currentDbPath + sidecar);
+    } catch (err) {
+      console.warn('Could not remove ' + sidecar + ' sidecar:', err);
+    }
+  }
 
   logAudit('RESTORE_DATABASE', 'backups', undefined, {
     restoredFrom: backupFilePath,

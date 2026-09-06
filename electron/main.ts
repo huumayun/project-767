@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import path from 'path';
 import { setupSecurityPolicies } from './security';
 import { getDb } from './db';
@@ -39,8 +39,21 @@ function createWindow() {
   // Apply Security Hardening
   setupSecurityPolicies(mainWindow);
 
-  // Initialize SQLite database
-  getDb();
+  // Initialize SQLite database. Failing here used to leave the window blank
+  // because loadURL below never ran, so surface the error instead.
+  try {
+    getDb();
+  } catch (err) {
+    console.error('Failed to initialize database:', err);
+    dialog.showErrorBox(
+      'Database Error',
+      `The database could not be opened or migrated.
+
+${err instanceof Error ? err.message : String(err)}`
+    );
+    app.quit();
+    return;
+  }
 
   // Register IPC handlers
   registerIpcHandlers();

@@ -1,7 +1,7 @@
 import { ipcMain, shell, app } from 'electron';
 import path from 'path';
 import { getAuthUrl, authorizeWithCode, isDriveConnected, disconnectDrive, findAndDownloadLatestBackup } from '../../services/googleDrive';
-import { requireRole } from '../shared';
+import { requireRole, requireOwnerOrFirstRun, logAudit } from '../shared';
 
 export function registerGDriveHandlers() {
   ipcMain.handle('api:gdrive:status', async () => {
@@ -9,14 +9,14 @@ export function registerGDriveHandlers() {
   });
 
   ipcMain.handle('api:gdrive:getAuthUrl', async () => {
-    // Accessible during first run or by owner
+    requireOwnerOrFirstRun();
     const url = getAuthUrl();
     await shell.openExternal(url);
     return { success: true };
   });
 
   ipcMain.handle('api:gdrive:authorize', async (_event, code: string) => {
-    // Accessible during first run or by owner
+    requireOwnerOrFirstRun();
     const success = await authorizeWithCode(code);
     return { success };
   });
@@ -28,7 +28,8 @@ export function registerGDriveHandlers() {
   });
 
   ipcMain.handle('api:gdrive:restoreLatest', async () => {
-    // Doesn't require role because this is run before first run
+    requireOwnerOrFirstRun();
+    logAudit('RESTORE_FROM_DRIVE', 'backups');
     const userData = app.getPath('userData');
     const tempBackupPath = path.join(userData, 'backups', 'restored_from_gdrive.db');
     

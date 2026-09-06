@@ -299,7 +299,10 @@ export interface SalesReportData {
   discount_paisa: number;
   gross_sales_paisa: number;
   refunds_count: number;
+  /** Cash that actually left the drawer as refunds. */
   total_refunded_paisa: number;
+  /** Value of goods returned, whether refunded in cash or credited to a due. */
+  total_returned_paisa: number;
   net_sales_paisa: number;
   payments_breakdown: {
     cash_paisa: number;

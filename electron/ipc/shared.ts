@@ -26,6 +26,25 @@ export function requireRole(allowedRoles: ('owner' | 'staff')[]) {
   }
 }
 
+/**
+ * Restoring a backup has to work before anyone can log in - a fresh install has
+ * no owner to authenticate as. It must not stay open afterwards: these handlers
+ * replace the whole database, so leaving them unguarded let anyone at the login
+ * screen swap in a database of their own and come back as owner.
+ *
+ * First run is the same flag the wizard itself uses, checked in the main process
+ * rather than assumed from where the call came from.
+ */
+export function requireOwnerOrFirstRun() {
+  if (activeSession?.role === 'owner') return;
+
+  const db = getDb();
+  const flag = db.prepare("SELECT value FROM settings WHERE key = 'first_run_completed'").get() as any;
+  if (flag?.value === '1') {
+    throw new Error('Forbidden: only the Owner can restore a backup once the shop is set up.');
+  }
+}
+
 export function logAudit(action: string, entity: string, entityId?: string, detailJson?: any) {
   try {
     const db = getDb();
@@ -69,6 +88,41 @@ export function generateInvoiceNumber(db: any): string {
   return `${prefix}${datePart}-${serialStr}`;
 }
 
+
+/**
+ * Spreads an invoice-level discount across the lines it was given on, by value,
+ * so a line is worth what the customer actually paid for it. Returns paisa off
+ * each line, keyed by sale_item id.
+ *
+ * Rounding is done once against the running total rather than per line, and the
+ * remainder lands on the largest line, so the parts always add back up to the
+ * discount exactly - the same approach purchases uses for transport.
+ */
+export function allocateSaleDiscount(
+  lines: { id: string; grossPaisa: number }[],
+  discountPaisa: number
+): Record<string, number> {
+  const alloc: Record<string, number> = {};
+  for (const line of lines) alloc[line.id] = 0;
+  if (discountPaisa <= 0 || lines.length === 0) return alloc;
+
+  const grossTotal = lines.reduce((n, l) => n + l.grossPaisa, 0);
+  if (grossTotal <= 0) return alloc;
+
+  // A discount bigger than the goods would make lines worth less than nothing.
+  const capped = Math.min(discountPaisa, grossTotal);
+
+  let allocated = 0;
+  let biggest = lines[0];
+  for (const line of lines) {
+    alloc[line.id] = Math.floor((capped * line.grossPaisa) / grossTotal);
+    allocated += alloc[line.id];
+    if (line.grossPaisa > biggest.grossPaisa) biggest = line;
+  }
+  alloc[biggest.id] += capped - allocated;
+
+  return alloc;
+}
 
 export function processStockIn(db: any, productId: string, addQty: number, unitCostPaisa: number | null, reason: string, userId: string, deviceId: string, refTable: string, refId: string) {
   const now = new Date().toISOString();
@@ -126,6 +180,7 @@ export function calculateShiftSummary(db: any, shift: any) {
   let nagadSalesPaisa = 0;
   let cardSalesPaisa = 0;
   let cashRefundPaisa = 0;
+  let cashPaidOutPaisa = 0;
 
   payments.forEach((p) => {
     if (p.direction === 'in') {
@@ -133,8 +188,12 @@ export function calculateShiftSummary(db: any, shift: any) {
       else if (p.method === 'bkash') bkashSalesPaisa += p.amount_paisa;
       else if (p.method === 'nagad') nagadSalesPaisa += p.amount_paisa;
       else if (p.method === 'card') cardSalesPaisa += p.amount_paisa;
-    } else if (p.direction === 'out' && p.type === 'refund' && p.method === 'cash') {
-      cashRefundPaisa += p.amount_paisa;
+    } else if (p.direction === 'out' && p.method === 'cash') {
+      // Any cash that leaves the drawer has to come off the expected count -
+      // paying a supplier empties the till exactly as a refund does. Counting
+      // only refunds made every such payment look like a shortage at close.
+      cashPaidOutPaisa += p.amount_paisa;
+      if (p.type === 'refund') cashRefundPaisa += p.amount_paisa;
     }
   });
 
@@ -154,7 +213,10 @@ export function calculateShiftSummary(db: any, shift: any) {
     else if (tx.type === 'cash_out') totalCashOutPaisa += tx.amount_paisa;
   });
 
-  const netCashSalesPaisa = Math.max(0, cashSalesPaisa - cashRefundPaisa);
+  // Not clamped at zero: a drawer that has paid out more than it took in is a
+  // real state the owner needs to see, and hiding it behind a floor of zero only
+  // moved the discrepancy into the closing count.
+  const netCashSalesPaisa = cashSalesPaisa - cashPaidOutPaisa;
   const expectedCashPaisa = shift.opening_cash_paisa + netCashSalesPaisa + totalCashInPaisa - totalCashOutPaisa;
 
   return {
@@ -177,6 +239,7 @@ export function calculateShiftSummary(db: any, shift: any) {
     total_nagad_sales_paisa: nagadSalesPaisa,
     total_card_sales_paisa: cardSalesPaisa,
     total_cash_refund_paisa: cashRefundPaisa,
+    total_cash_paid_out_paisa: cashPaidOutPaisa,
     total_cash_in_paisa: totalCashInPaisa,
     total_cash_out_paisa: totalCashOutPaisa,
     cash_transactions: cashTxs,

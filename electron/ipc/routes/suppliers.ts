@@ -201,6 +201,9 @@ export function registerSuppliersHandlers() {
         FROM purchases WHERE supplier_id = ? AND deleted_at IS NULL
       `).all(id) as any[];
   
+      // Every payment to this vendor is a row here, including the amount settled
+      // on the purchase itself. The purchase row therefore carries only the debit -
+      // crediting its paid_paisa too would relieve the balance twice.
       const payments = db.prepare(`
         SELECT id, amount_paisa, method, created_at
         FROM payments
@@ -217,7 +220,8 @@ export function registerSuppliersHandlers() {
           label: p.invoice_ref ? `Purchase ${p.invoice_ref}` : 'Purchase invoice',
           note: p.note || null,
           debit_paisa: p.total_paisa,
-          credit_paisa: p.paid_paisa,
+          credit_paisa: 0,
+          paid_on_invoice_paisa: p.paid_paisa,
           // Only a fare the vendor actually billed belongs on their ledger row;
           // one the shop paid the driver is stock cost, not vendor money.
           transport_paisa: p.transport_on_invoice ? (p.transport_paisa || 0) : 0,
@@ -230,6 +234,7 @@ export function registerSuppliersHandlers() {
           note: null,
           debit_paisa: 0,
           credit_paisa: p.amount_paisa,
+          paid_on_invoice_paisa: 0,
           transport_paisa: 0,
         })),
       ].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));

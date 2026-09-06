@@ -13,6 +13,7 @@ export function registerPurchasesHandlers() {
         supplier_id: z.string().optional().nullable(),
         invoice_ref: z.string().optional().nullable(),
         paid_taka: z.number().min(0),
+        payment_method: z.enum(['cash', 'bkash', 'nagad', 'card']).optional().default('cash'),
         transport_taka: z.number().min(0).optional().default(0),
         transport_on_invoice: z.boolean().optional().default(true),
         note: z.string().optional().nullable(),
@@ -123,6 +124,17 @@ export function registerPurchasesHandlers() {
           insertStockTx.run(uuidv7(), item.product_id, item.qty, purchaseId, `Purchase invoice ${data.invoice_ref || purchaseId.slice(0, 8)}`, userId, now, now, landedUnitCostPaisa);
         }
   
+        // Cash settled at the counter used to live only in purchases.paid_paisa,
+        // which no cash report reads - so the drawer never saw the money go and
+        // every shift closed short by whatever had been paid to vendors.
+        if (paidPaisa > 0) {
+          db.prepare(`
+            INSERT INTO payments (
+              id, supplier_id, direction, method, amount_paisa, type, user_id, device_id, created_at, updated_at
+            ) VALUES (?, ?, 'out', ?, ?, 'supplier_payment', ?, ?, ?, ?)
+          `).run(uuidv7(), data.supplier_id || null, data.payment_method, paidPaisa, userId, getDeviceId(db), now, now);
+        }
+
         const duePaisa = vendorInvoicePaisa - paidPaisa;
         if (data.supplier_id && duePaisa > 0) {
           db.prepare('UPDATE suppliers SET total_payable_paisa = total_payable_paisa + ?, updated_at = ? WHERE id = ?').run(duePaisa, now, data.supplier_id);

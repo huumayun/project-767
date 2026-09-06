@@ -5,7 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit } from '../shared';
+import { activeSession, setActiveSession, requireRole, requireOwnerOrFirstRun, getDeviceId, logAudit } from '../shared';
 
 
 export function registerBackupHandlers() {
@@ -42,7 +42,7 @@ export function registerBackupHandlers() {
   });
 
   ipcMain.handle('api:backup:selectFile', async () => {
-    // Allowed during first run (no requireRole check)
+    requireOwnerOrFirstRun();
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       title: 'Select Backup File',
@@ -54,8 +54,10 @@ export function registerBackupHandlers() {
     return null;
   });
 
-  ipcMain.handle('api:backup:restoreLocalFile', async (_event, filePath: string) => {
-    // Allowed during first run (no requireRole check)
+  ipcMain.handle('api:backup:restoreLocalFile', async (_event, rawFilePath) => {
+    requireOwnerOrFirstRun();
+    const filePath = z.string().min(1).parse(rawFilePath);
+    logAudit('RESTORE_FROM_FILE', 'backups', undefined, { filePath });
     restoreDatabase(filePath);
     app.relaunch();
     app.exit(0);

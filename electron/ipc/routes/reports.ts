@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, allocateSaleDiscount } from '../shared';
 
 
 export function registerReportsHandlers() {
@@ -51,7 +51,34 @@ export function registerReportsHandlers() {
         subtotalPaisa += s.subtotal_paisa;
         discountPaisa += s.discount_paisa;
         grossSalesPaisa += s.total_paisa;
-        if (s.status === 'refunded') {
+      });
+
+      // Counted from the returns themselves rather than from sale status: a
+      // sale reads 'refunded' however many times it was returned against, and
+      // 'partial_refund' did not used to be counted at all.
+      const rawReturns = db.prepare(`
+        SELECT r.id, r.created_at, COALESCE(SUM(ri.amount_paisa), 0) AS amount_paisa
+        FROM returns r
+        JOIN return_items ri ON ri.return_id = r.id
+        WHERE r.deleted_at IS NULL AND ri.deleted_at IS NULL
+        GROUP BY r.id
+      `).all() as any[];
+
+      let totalReturnedPaisa = 0;
+      rawReturns.forEach((r) => {
+        if (!r.created_at) return;
+        const d = new Date(r.created_at);
+        let localDateKey = '';
+        if (!isNaN(d.getTime())) {
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          localDateKey = `${year}-${month}-${day}`;
+        } else {
+          localDateKey = String(r.created_at).slice(0, 10);
+        }
+        if (localDateKey >= startDate && localDateKey <= endDate) {
+          totalReturnedPaisa += r.amount_paisa;
           refundsCount++;
         }
       });
@@ -93,7 +120,10 @@ export function registerReportsHandlers() {
         }
       });
   
-      const netSalesPaisa = grossSalesPaisa - totalRefundedPaisa;
+      // totalRefundedPaisa stays the cash that actually left the drawer; net
+      // sales comes off the goods that came back, which is the larger figure
+      // whenever a return was settled against a customer's balance.
+      const netSalesPaisa = grossSalesPaisa - totalReturnedPaisa;
   
       // Generate daily trends map with accurate local date grouping
       const trendsMap: Record<string, { orders_count: number; sales_paisa: number }> = {};
@@ -155,6 +185,7 @@ export function registerReportsHandlers() {
         gross_sales_paisa: grossSalesPaisa,
         refunds_count: refundsCount,
         total_refunded_paisa: totalRefundedPaisa,
+        total_returned_paisa: totalReturnedPaisa,
         net_sales_paisa: netSalesPaisa,
         payments_breakdown: {
           cash_paisa: cashPaisa,
@@ -176,33 +207,48 @@ export function registerReportsHandlers() {
       const { startDate, endDate } = schema.parse(rawArgs);
       const db = getDb();
   
+      // Line rows plus the header figures needed to charge each line its share
+      // of any whole-invoice discount. Revenue used to be summed from line
+      // prices alone, so every taka taken off at the counter was booked as
+      // profit and this report disagreed with the sales report.
       const rawProductProfits = db.prepare(`
         SELECT 
+          si.id as sale_item_id,
+          si.sale_id,
           COALESCE(p.id, si.product_id) as product_id,
           COALESCE(p.name, 'Deleted Product') as product_name,
           p.barcode,
-          COALESCE(p.cost_price_paisa, si.unit_cost_paisa, 0) as cost_price_paisa,
-          (si.qty - COALESCE((SELECT SUM(qty) FROM return_items WHERE sale_item_id = si.id), 0)) as qty_sold,
-          (
-            (si.unit_price_paisa * si.qty - si.discount_paisa) - 
-            COALESCE((SELECT SUM(amount_paisa) FROM return_items WHERE sale_item_id = si.id), 0)
-          ) as revenue_paisa,
-          (
-            COALESCE(si.unit_cost_paisa, p.cost_price_paisa, 0) * 
-            (si.qty - COALESCE((SELECT SUM(qty) FROM return_items WHERE sale_item_id = si.id), 0))
-          ) as cost_paisa,
+          COALESCE(si.unit_cost_paisa, p.cost_price_paisa, 0) as cost_price_paisa,
+          si.qty,
+          (si.unit_price_paisa * si.qty - si.discount_paisa) as gross_paisa,
+          COALESCE((SELECT SUM(qty) FROM return_items WHERE sale_item_id = si.id), 0) as returned_qty,
+          COALESCE((SELECT SUM(amount_paisa) FROM return_items WHERE sale_item_id = si.id), 0) as returned_paisa,
+          s.discount_paisa as sale_discount_paisa,
           s.created_at
         FROM sale_items si
         JOIN sales s ON si.sale_id = s.id
         LEFT JOIN products p ON si.product_id = p.id
-        WHERE s.deleted_at IS NULL AND s.status != 'held'
+        WHERE s.deleted_at IS NULL AND s.status != 'held' AND si.deleted_at IS NULL
       `).all() as any[];
-  
+
+      // Allocate each invoice discount across its own lines before anything is
+      // filtered by date, so a line always carries the same share.
+      const bySale: Record<string, any[]> = {};
+      rawProductProfits.forEach((it) => {
+        (bySale[it.sale_id] = bySale[it.sale_id] || []).push(it);
+      });
+      const discountByItem: Record<string, number> = {};
+      Object.values(bySale).forEach((lines) => {
+        const alloc = allocateSaleDiscount(
+          lines.map((l) => ({ id: l.sale_item_id, grossPaisa: l.gross_paisa })),
+          lines[0].sale_discount_paisa || 0
+        );
+        Object.assign(discountByItem, alloc);
+      });
+
       const matchingProfits = rawProductProfits.filter((it) => {
         if (!it.created_at) return false;
-        // Only include items where net qty is > 0 or revenue > 0
-        if (it.qty_sold <= 0 && it.revenue_paisa <= 0) return false;
-        
+
         const d = new Date(it.created_at);
         let localDateKey = '';
         if (!isNaN(d.getTime())) {
@@ -215,32 +261,45 @@ export function registerReportsHandlers() {
         }
         return localDateKey >= startDate && localDateKey <= endDate;
       });
-  
+
       const profitByProduct: Record<string, any> = {};
       let totalRevenue = 0;
       let totalCogs = 0;
-  
+      let totalDiscounts = 0;
+
       matchingProfits.forEach((it) => {
+        const lineDiscountPaisa = discountByItem[it.sale_item_id] || 0;
+        const qtySold = it.qty - it.returned_qty;
+        const revenuePaisa = it.gross_paisa - lineDiscountPaisa - it.returned_paisa;
+        const costPaisa = it.cost_price_paisa * qtySold;
+
+        // A line returned in full contributes nothing either way.
+        if (qtySold <= 0 && revenuePaisa <= 0) return;
+
         const pId = it.product_id;
         if (!profitByProduct[pId]) {
           profitByProduct[pId] = {
             product_id: it.product_id,
             product_name: it.product_name,
             barcode: it.barcode,
+            cost_price_paisa: it.cost_price_paisa,
             qty_sold: 0,
             revenue_paisa: 0,
             cost_paisa: 0,
+            discount_paisa: 0,
             profit_paisa: 0,
             margin_percent: 0,
           };
         }
-        profitByProduct[pId].qty_sold += it.qty_sold;
-        profitByProduct[pId].revenue_paisa += it.revenue_paisa;
-        profitByProduct[pId].cost_paisa += it.cost_paisa;
-        totalRevenue += it.revenue_paisa;
-        totalCogs += it.cost_paisa;
+        profitByProduct[pId].qty_sold += qtySold;
+        profitByProduct[pId].revenue_paisa += revenuePaisa;
+        profitByProduct[pId].cost_paisa += costPaisa;
+        profitByProduct[pId].discount_paisa += lineDiscountPaisa;
+        totalRevenue += revenuePaisa;
+        totalCogs += costPaisa;
+        totalDiscounts += lineDiscountPaisa;
       });
-  
+
       const list = Object.values(profitByProduct).map((item: any) => {
         const profit = item.revenue_paisa - item.cost_paisa;
         const margin = item.revenue_paisa > 0 ? Math.round((profit / item.revenue_paisa) * 100) : 0;
@@ -250,7 +309,7 @@ export function registerReportsHandlers() {
           margin_percent: margin,
         };
       }).sort((a, b) => b.revenue_paisa - a.revenue_paisa);
-  
+
       const grossProfit = totalRevenue - totalCogs;
       const overallMargin = totalRevenue > 0 ? parseFloat(((grossProfit / totalRevenue) * 100).toFixed(1)) : 0;
   
@@ -260,7 +319,7 @@ export function registerReportsHandlers() {
         total_revenue_paisa: totalRevenue,
         total_cogs_paisa: totalCogs,
         gross_profit_paisa: grossProfit,
-        total_discounts_paisa: 0,
+        total_discounts_paisa: totalDiscounts,
         net_profit_paisa: grossProfit,
         profit_margin_percent: overallMargin,
         product_profits: list,

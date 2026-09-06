@@ -32,27 +32,33 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
     setReturnQtys((prev) => ({ ...prev, [itemId]: safeVal }));
   };
 
+  // Refund what the customer paid for the line, not its sticker price: an
+  // invoice discount means those differ, and refunding the sticker price hands
+  // back more than was ever collected. The server sends the discounted figures.
+  const refundableQty = (it: any) => it.refundable_qty ?? it.qty;
+
   const returnPayloadItems = items
     .filter((it) => (returnQtys[it.id] || 0) > 0)
     .map((it) => {
       const q = returnQtys[it.id];
-      const itemUnitPrice = it.unit_price_paisa;
+      const left = refundableQty(it);
+      const refundableLeft = it.refundable_paisa ?? (it.unit_price_paisa * it.qty);
+      // Returning the last of a line clears its remaining value exactly, so
+      // rounding on the per-unit share can never strand a paisa.
+      const amount = q >= left
+        ? refundableLeft
+        : Math.min(refundableLeft, Math.round((refundableLeft * q) / Math.max(1, left)));
       return {
         sale_item_id: it.id,
         product_id: it.product_id,
         qty: q,
-        amount_paisa: q * itemUnitPrice,
+        amount_paisa: amount,
       };
     });
 
   const totalRefundPaisa = returnPayloadItems.reduce((s, i) => s + i.amount_paisa, 0);
 
-  const isFullyReturned = items.every((it) => {
-    const alreadyReturned = (sale.returns || [])
-      .filter((r: any) => r.sale_item_id === it.id)
-      .reduce((sum: number, r: any) => sum + (r.returned_qty || 0), 0);
-    return it.qty - alreadyReturned === 0;
-  });
+  const isFullyReturned = items.every((it) => refundableQty(it) === 0);
 
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,10 +126,9 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
             <label className="text-xs font-bold text-jungle-teal-700 block">Select Items & Quantities to Return:</label>
             <div className="divide-y divide-jungle-teal-100 border border-jungle-teal-200 rounded-xl bg-jungle-teal-50 p-2 max-h-48 overflow-y-auto">
               {items.map((it) => {
-                const alreadyReturned = (sale.returns || [])
-                  .filter((r: any) => r.sale_item_id === it.id)
-                  .reduce((sum: number, r: any) => sum + (r.returned_qty || 0), 0);
-                const maxReturnable = it.qty - alreadyReturned;
+                const alreadyReturned = it.returned_qty ?? 0;
+                const maxReturnable = refundableQty(it);
+                const unitRefundPaisa = it.net_unit_price_paisa ?? it.unit_price_paisa;
 
                 return (
                   <div key={it.id} className={`py-2 flex items-center justify-between gap-3 text-xs ${maxReturnable === 0 ? 'opacity-50 grayscale' : ''}`}>
@@ -133,7 +138,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
                         {maxReturnable === 0 && <span className="ml-2 text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded uppercase font-bold">Fully Returned</span>}
                       </div>
                       <div className="text-[11px] text-jungle-teal-500 font-mono mt-0.5">
-                        Sold: {it.qty} {alreadyReturned > 0 && <span className="text-rose-600 font-bold ml-1">(Returned: {alreadyReturned})</span>} · Unit: ৳{(it.unit_price_paisa / 100).toFixed(2)}
+                        Sold: {it.qty} {alreadyReturned > 0 && <span className="text-rose-600 font-bold ml-1">(Returned: {alreadyReturned})</span>} · Unit: ৳{(unitRefundPaisa / 100).toFixed(2)}
                       </div>
                     </div>
 
