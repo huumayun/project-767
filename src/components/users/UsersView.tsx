@@ -50,8 +50,10 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
     setLoading(true);
     setError(null);
     try {
+      // "All Time" sends no range, which the handler reads as every sale rather
+      // than none - it used to report zero for everyone until a preset was picked.
       const filters: { startDate?: string; endDate?: string } = {};
-      if (datePreset !== 'all' && (startDate || endDate)) {
+      if (datePreset !== 'all') {
         if (startDate) filters.startDate = startDate;
         if (endDate) filters.endDate = endDate;
       }
@@ -272,7 +274,9 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
                 <th className="p-3.5">Full Name</th>
                 <th className="p-3.5">Username</th>
                 <th className="p-3.5 text-center">Role</th>
-                <th className="p-3.5 text-right">Sales (৳)</th>
+                <th className="p-3.5 text-right" title="Invoices rung up by this user in the selected period, less anything returned against them">
+                  Net Sales (৳)
+                </th>
                 <th className="p-3.5 text-center">Quick PIN</th>
                 <th className="p-3.5 text-center">Status</th>
                 <th className="p-3.5">Created Date</th>

@@ -148,6 +148,23 @@ export function generateInvoiceNumber(db: any): string {
  * remainder lands on the largest line, so the parts always add back up to the
  * discount exactly - the same approach purchases uses for transport.
  */
+/**
+ * The local calendar day a timestamp belongs to. Timestamps are stored as UTC,
+ * and Bangladesh runs six hours ahead, so comparing a UTC instant against a
+ * plain date string moves everything sold between midnight and 6am into the
+ * previous day. The reports already group this way; anything that filters by
+ * date needs to agree with them.
+ */
+export function localDateKey(timestamp: string): string {
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return String(timestamp).slice(0, 10);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
 export function allocateSaleDiscount(
   lines: { id: string; grossPaisa: number }[],
   discountPaisa: number
