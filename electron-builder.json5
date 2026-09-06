@@ -7,7 +7,8 @@
   },
   "files": [
     "dist/**/*",
-    "dist-electron/**/*"
+    "dist-electron/**/*",
+    "build/icon.*"
   ],
   "asar": true,
   "win": {
@@ -21,6 +22,7 @@
         "arch": ["x64"]
       }
     ],
+    "icon": "build/icon.ico",
     "artifactName": "${productName}-Setup-${version}.${ext}",
     "signAndEditExecutable": false,
     "sign": null,

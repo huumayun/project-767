@@ -1,10 +1,27 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { setupSecurityPolicies } from './security';
 import { getDb } from './db';
 import { registerIpcHandlers } from './ipc/handlers';
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * The icon sits beside the build output in development and inside the asar once
+ * packaged, so the path is resolved rather than assumed. Returning undefined
+ * lets Windows fall back to the icon compiled into the exe, which is the same
+ * artwork.
+ */
+function appIconPath(): string | undefined {
+  for (const candidate of [
+    path.join(__dirname, '../build/icon.ico'),
+    path.join(process.resourcesPath || '', 'build/icon.ico'),
+  ]) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
 
 function createWindow() {
   // Configure auto-start on boot (Task Manager Startup)
@@ -26,7 +43,7 @@ function createWindow() {
     minHeight: 700,
     title: 'Mechanical Shop POS',
     backgroundColor: '#0b0f19',
-    icon: path.join(__dirname, '../build/icon.ico'), // App Icon
+    icon: appIconPath(), // App Icon
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

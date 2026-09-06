@@ -62,19 +62,12 @@ function seedInitialDefaults(db: Database.Database) {
       INSERT INTO users (id, name, username, role, password_hash, is_active, device_id, created_at, updated_at)
       VALUES (?, ?, ?, 'owner', ?, 1, ?, ?, ?)
     `).run(ownerId, 'Default Owner', 'owner', passwordHash, deviceId, now, now);
-    console.log('Ensured default owner account (username: owner, password: owner123)');
+    console.log('Seeded the owner account. The setup wizard will require a new password before use.');
   }
 
-  const staffUser = db.prepare('SELECT id FROM users WHERE username = ? AND deleted_at IS NULL').get('staff');
-  if (!staffUser) {
-    const salt = bcrypt.genSaltSync(12);
-    const staffHash = bcrypt.hashSync('staff123', salt);
-    const staffId = uuidv7();
-    db.prepare(`
-      INSERT INTO users (id, name, username, role, password_hash, is_active, device_id, created_at, updated_at)
-      VALUES (?, ?, ?, 'staff', ?, 1, ?, ?, ?)
-    `).run(staffId, 'Default Staff', 'staff', staffHash, deviceId, now, now);
-    console.log('Ensured default staff account (username: staff, password: staff123)');
-  }
+  // No default staff account. It was recreated on every start with a password
+  // published in the console, so it was a permanently known way in that no
+  // amount of changing it could close. The owner creates staff logins with real
+  // passwords from the Users screen.
 }
 
