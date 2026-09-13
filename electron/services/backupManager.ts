@@ -185,10 +185,19 @@ export function restoreDatabase(backupFilePath: string): boolean {
   // 1. Create a safety snapshot of current DB before replacing
   const backupDir = getBackupsDirectory();
   const preRestorePath = path.join(backupDir, `pre-restore-snapshot-${Date.now()}.db`);
+  /*
+   * No snapshot, no restore. A failure here used to be logged as a warning and
+   * the restore carried on - so picking the wrong backup, on a day the disk was
+   * full or the backup folder was unreachable, overwrote the live data with
+   * nothing kept of what it replaced. Restoring is never urgent enough to be
+   * worth that; refusing leaves the shop exactly as it was.
+   */
   try {
     createDatabaseBackup(preRestorePath, false);
-  } catch (err) {
-    console.warn('Pre-restore snapshot warning:', err);
+  } catch (err: any) {
+    throw new Error(
+      `Nothing was restored: a copy of the current data could not be saved first (${err?.message || 'unknown error'}).`
+    );
   }
 
   const db = getDb();

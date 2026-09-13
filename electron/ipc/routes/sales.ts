@@ -1,17 +1,27 @@
 import { generateInvoicePdf, InvoicePdfData } from '../../services/invoicePdf';
+import { printOptionsFromSettings } from '../../services/invoicePrintOptions';
 
 import { ipcMain, dialog, app } from 'electron';
 import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit , generateInvoiceNumber, allocateSaleDiscount } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, requireOpenShift, generateInvoiceNumber, isInvoiceNumberCollision, allocateSaleDiscount } from '../shared';
+
+/** Every setting in one query - the invoice needs a dozen of them. */
+function readSettingsMap(db: any): Record<string, string> {
+  const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+  const map: Record<string, string> = {};
+  rows.forEach((r) => { map[r.key] = r.value; });
+  return map;
+}
 
 
 export function registerSalesHandlers() {
   // --- SALES & INVOICING HANDLERS ---
   ipcMain.handle('api:sales:create', async (_event, rawPayload) => {
       requireRole(['owner', 'staff']);
+      requireOpenShift(getDb(), 'A sale');
       const schema = z.object({
         customer_id: z.string().optional().nullable(),
         subtotal_paisa: z.number().int().min(0),
@@ -25,12 +35,12 @@ export function registerSalesHandlers() {
           serial_number_id: z.string().optional().nullable(),
         })).min(1),
         payments: z.array(z.object({
-          method: z.enum(['cash', 'bkash', 'nagad', 'card']),
+          method: z.enum(['cash', 'bkash', 'nagad', 'card', 'other']),
           amount_paisa: z.number().int().min(0),
         })).min(1),
         total_paid_paisa: z.number().int().min(0),
         change_paisa: z.number().int().min(0).default(0),
-        layout: z.enum(['80mm', 'a5']).default('80mm'),
+        layout: z.enum(['80mm', 'a4']).default('80mm'),
       });
   
       const payload = schema.parse(rawPayload);
@@ -47,11 +57,13 @@ export function registerSalesHandlers() {
       }
   
       const saleId = uuidv7();
-      const invoiceNo = generateInvoiceNumber(db);
-  
+      // Assigned inside the transaction below, where the number it reads cannot
+      // be taken by anyone else before this sale is written.
+      let invoiceNo = '';
+
       let customerInfo: any = null;
       if (payload.customer_id) {
-        customerInfo = db.prepare('SELECT name, phone FROM customers WHERE id = ?').get(payload.customer_id);
+        customerInfo = db.prepare('SELECT name, phone, address FROM customers WHERE id = ?').get(payload.customer_id);
       }
   
       const totalCollected = payload.payments.reduce((sum, p) => sum + (p.amount_paisa || 0), 0);
@@ -59,12 +71,40 @@ export function registerSalesHandlers() {
       const remainingDue = Math.max(0, payload.total_paisa - netCollected);
   
       if (remainingDue > 0 && !payload.customer_id) {
-        throw new Error('Walk-in (খুচরা) গ্রাহকের ক্ষেত্রে বাকি বিক্রি গ্রহণযোগ্য নয়। বাকি রাখতে হলে কাস্টমার নির্বাচন করুন।');
+        throw new Error('A walk-in customer cannot be sold on credit. Select a customer to record a due.');
+      }
+
+      /*
+       * The payment rows written below are what a customer's balance is built
+       * from; total_paid_paisa is what the invoice prints as collected. When a
+       * till sent one and booked the other, the receipt and the ledger
+       * disagreed - a part-paid credit sale posted a single zero payment and
+       * billed the customer the whole amount while the cash sat in the drawer.
+       *
+       * Refusing the sale is loud, and better than a quiet mis-billing that
+       * nobody notices until the customer argues about their balance.
+       */
+      if (payload.total_paid_paisa !== totalCollected) {
+        throw new Error(
+          `Payment mismatch: this sale reports ৳ ${(payload.total_paid_paisa / 100).toFixed(2)} collected, ` +
+            `but its payment lines add up to ৳ ${(totalCollected / 100).toFixed(2)}. Nothing has been saved.`
+        );
       }
   
       const invoiceItems: any[] = [];
-  
-      db.transaction(() => {
+
+      const writeSale = db.transaction(() => {
+        /*
+         * Numbered here rather than before the transaction opened.
+         *
+         * The number is read as "highest so far, plus one", and that read used
+         * to happen outside any transaction - so two sales rung up in the same
+         * moment both read the same highest number and both tried to write it.
+         * One of them hit UNIQUE(invoice_no) and the cashier was shown a
+         * constraint error for a sale that was perfectly good.
+         */
+        invoiceNo = generateInvoiceNumber(db);
+
         // 1. Insert Sales Record
         db.prepare(`
           INSERT INTO sales (
@@ -185,25 +225,52 @@ export function registerSalesHandlers() {
             }
           }
         }
-      })();
-  
+      });
+
+      /*
+       * Retried on a number collision, and on nothing else.
+       *
+       * Two tills on one database - or one cashier who double-clicks Complete -
+       * can still both reach the numbering at the same instant. The loser's
+       * whole transaction rolls back, so taking the next number and writing it
+       * again is safe: no stock was moved and no payment was recorded by the
+       * attempt that failed. Anything that is not a duplicate number is a real
+       * failure and is thrown as it is.
+       */
+      for (let attempt = 1; ; attempt++) {
+        try {
+          // Repopulated by each attempt; a retry must not print the items twice.
+          invoiceItems.length = 0;
+          writeSale();
+          break;
+        } catch (err) {
+          if (attempt >= 5 || !isInvoiceNumberCollision(err)) throw err;
+        }
+      }
+
       logAudit('CREATE_SALE', 'sales', saleId, { invoiceNo, totalPaisa: payload.total_paisa });
   
-      const shopName = (db.prepare('SELECT value FROM settings WHERE key = ?').get('shop_name') as any)?.value || 'Mechanical Parts Shop';
-      const shopAddress = (db.prepare('SELECT value FROM settings WHERE key = ?').get('shop_address') as any)?.value || 'Dhaka, Bangladesh';
-      const invoiceFooter = (db.prepare('SELECT value FROM settings WHERE key = ?').get('invoice_footer') as any)?.value || 'Thank you for your business!';
+      const settingsMap = readSettingsMap(db);
+      const shopName = settingsMap['shop_name'] || 'Mechanical Parts Shop';
+      const shopAddress = settingsMap['shop_address'] || 'Dhaka, Bangladesh';
+      const invoiceFooter = settingsMap['invoice_footer'] || 'Thank you for your business!';
   
-      const duePaisa = Math.max(0, payload.total_paisa - payload.total_paid_paisa);
+      // Same figure the walk-in guard above used, so the printed invoice and
+      // the customer's balance cannot drift apart.
+      const duePaisa = remainingDue;
   
       const pdfData: InvoicePdfData = {
         shopName,
         shopAddress,
         invoiceFooter,
         invoiceNo,
-        date: new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString(),
+        // The sale's own timestamp; invoicePdf formats it for print. A string
+        // formatted here was read back month-first on the A4 memo.
+        date: now,
         cashierName: activeSession?.name || 'Staff',
         customerName: customerInfo?.name,
         customerPhone: customerInfo?.phone,
+        customerAddress: customerInfo?.address,
         items: invoiceItems,
         subtotalPaisa: payload.subtotal_paisa,
         discountPaisa: payload.discount_paisa,
@@ -216,7 +283,7 @@ export function registerSalesHandlers() {
   
       let pdfBase64 = '';
       try {
-        pdfBase64 = await generateInvoicePdf(pdfData, payload.layout);
+        pdfBase64 = await generateInvoicePdf(pdfData, printOptionsFromSettings(settingsMap, payload.layout));
       } catch (pdfErr) {
         console.error('Invoice PDF generation warning:', pdfErr);
       }
@@ -235,7 +302,7 @@ export function registerSalesHandlers() {
       const db = getDb();
   
       const sale = db.prepare(`
-        SELECT s.*, c.name as customer_name, c.phone as customer_phone, u.name as cashier_name
+        SELECT s.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_address, u.name as cashier_name
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
         LEFT JOIN users u ON s.user_id = u.id
@@ -299,11 +366,32 @@ export function registerSalesHandlers() {
       const limit = typeof limitRaw === 'number' ? limitRaw : 50;
       const db = getDb();
   
+      /*
+       * `paid_at_sale_paisa` is what was collected when the bill was cut, and
+       * nothing else - only payments carrying this sale_id and typed
+       * 'sale_payment'.
+       *
+       * It is deliberately not the invoice's current outstanding balance, and
+       * cannot be: settling a baki later goes through collectDue, which writes
+       * a payment against the customer with no sale_id at all, because nothing
+       * records which invoice the money was meant for. Summing per-invoice would
+       * therefore show a bill as unpaid for ever, however much the customer had
+       * since handed over. What is owed now is a customer-level figure - see
+       * v_customer_due and the Due & Payable report.
+       */
       return db.prepare(`
-        SELECT s.*, c.name as customer_name, u.name as cashier_name
+        SELECT s.*, c.name as customer_name, u.name as cashier_name,
+          COALESCE(paid.sum_paid, 0) AS paid_at_sale_paisa,
+          MAX(0, s.total_paisa - COALESCE(paid.sum_paid, 0)) AS due_at_sale_paisa
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
         LEFT JOIN users u ON s.user_id = u.id
+        LEFT JOIN (
+          SELECT p.sale_id, SUM(p.amount_paisa) AS sum_paid
+          FROM payments p
+          WHERE p.direction = 'in' AND p.type = 'sale_payment' AND p.deleted_at IS NULL
+          GROUP BY p.sale_id
+        ) paid ON paid.sale_id = s.id
         WHERE s.deleted_at IS NULL AND s.status != 'held'
         ORDER BY s.created_at DESC
         LIMIT ?
@@ -361,10 +449,12 @@ export function registerSalesHandlers() {
 
   ipcMain.handle('api:sales:processReturn', async (_event, rawPayload) => {
       requireRole(['owner', 'staff']);
+      // A refund pays cash out of the same drawer a sale fills.
+      requireOpenShift(getDb(), 'A refund');
       const schema = z.object({
         sale_id: z.string().min(1),
         reason: z.string().min(1),
-        refund_method: z.enum(['cash', 'bkash', 'nagad', 'card']).default('cash'),
+        refund_method: z.enum(['cash', 'bkash', 'nagad', 'card', 'other']).default('cash'),
         items: z.array(z.object({
           sale_item_id: z.string().min(1),
           product_id: z.string().min(1),
@@ -532,13 +622,13 @@ export function registerSalesHandlers() {
       requireRole(['owner', 'staff']);
       const schema = z.object({
         invoice_no: z.string().min(1),
-        layout: z.enum(['80mm', 'a5']).default('80mm'),
+        layout: z.enum(['80mm', 'a4']).default('80mm'),
       });
       const { invoice_no, layout } = schema.parse(rawArgs);
       const db = getDb();
   
       const sale = db.prepare(`
-        SELECT s.*, c.name as customer_name, c.phone as customer_phone, u.name as cashier_name
+        SELECT s.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_address, u.name as cashier_name
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
         LEFT JOIN users u ON s.user_id = u.id
@@ -554,23 +644,53 @@ export function registerSalesHandlers() {
         WHERE si.sale_id = ?
       `).all(sale.id) as any[];
   
-      const payments = db.prepare(`SELECT * FROM payments WHERE sale_id = ? AND direction = 'in'`).all(sale.id) as any[];
-  
-      const shopName = (db.prepare('SELECT value FROM settings WHERE key = ?').get('shop_name') as any)?.value || 'Mechanical Parts Shop';
-      const shopAddress = (db.prepare('SELECT value FROM settings WHERE key = ?').get('shop_address') as any)?.value || 'Dhaka, Bangladesh';
-      const invoiceFooter = (db.prepare('SELECT value FROM settings WHERE key = ?').get('invoice_footer') as any)?.value || 'Thank you for your business!';
-  
+      const payments = db.prepare(
+        `SELECT * FROM payments WHERE sale_id = ? AND direction = 'in' AND deleted_at IS NULL`
+      ).all(sale.id) as any[];
+
+      const settingsMap = readSettingsMap(db);
+      const shopName = settingsMap['shop_name'] || 'Mechanical Parts Shop';
+      const shopAddress = settingsMap['shop_address'] || 'Dhaka, Bangladesh';
+      const invoiceFooter = settingsMap['invoice_footer'] || 'Thank you for your business!';
+
       const totalPaid = payments.reduce((sum: number, p: any) => sum + p.amount_paisa, 0);
-  
+
+      /*
+       * What is still owed on this bill, with the returns taken off it.
+       *
+       * The due printed here was the sale total less what had been collected,
+       * and nothing else. On a credit sale that was partly handed back, the
+       * goods had gone off the bill and the cash paid out had left the drawer,
+       * but neither showed - so a reprint handed the customer a demand for
+       * money they no longer owed, on a document that looks official.
+       *
+       * The same three figures processReturn settles a refund against, read the
+       * same way, so the reprint and the customer's ledger cannot disagree.
+       */
+      const returnedPaisa = (db.prepare(`
+        SELECT COALESCE(SUM(ri.amount_paisa), 0) AS n
+        FROM return_items ri
+        JOIN returns r ON r.id = ri.return_id
+        WHERE r.sale_id = ? AND r.deleted_at IS NULL AND ri.deleted_at IS NULL
+      `).get(sale.id) as any).n as number;
+
+      const refundedPaisa = (db.prepare(`
+        SELECT COALESCE(SUM(amount_paisa), 0) AS n FROM payments
+        WHERE sale_id = ? AND direction = 'out' AND type = 'refund' AND deleted_at IS NULL
+      `).get(sale.id) as any).n as number;
+
+      const duePaisa = Math.max(0, (sale.total_paisa - returnedPaisa) - (totalPaid - refundedPaisa));
+
       const pdfData: InvoicePdfData = {
         shopName,
         shopAddress,
         invoiceFooter,
         invoiceNo: sale.invoice_no,
-        date: new Date(sale.created_at).toLocaleDateString('en-GB') + ' ' + new Date(sale.created_at).toLocaleTimeString(),
+        date: sale.created_at,
         cashierName: sale.cashier_name || 'Staff',
         customerName: sale.customer_name,
         customerPhone: sale.customer_phone,
+        customerAddress: sale.customer_address,
         items: items.map(it => ({
           name: it.product_name,
           nameBn: it.product_name_bn,
@@ -584,10 +704,10 @@ export function registerSalesHandlers() {
         totalPaisa: sale.total_paisa,
         payments: payments.map((p: any) => ({ method: p.method, amountPaisa: p.amount_paisa })),
         totalPaidPaisa: totalPaid,
-        duePaisa: Math.max(0, sale.total_paisa - totalPaid),
+        duePaisa,
       };
   
-      const pdfBase64 = await generateInvoicePdf(pdfData, layout);
+      const pdfBase64 = await generateInvoicePdf(pdfData, printOptionsFromSettings(settingsMap, layout));
       return { success: true, pdfBase64 };
     });
 

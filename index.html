@@ -3,7 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co;" />
+    <!--
+      frame-src blob: lets the invoice previews show. Each preview is the real
+      PDF, handed to a frame as a blob: URL, and with no frame-src the policy
+      fell back to default-src 'self' - which blob: does not match - so every
+      preview was refused and came up white. A blob: URL can only be minted by
+      this page's own scripts, which script-src 'self' already limits to the
+      app's bundle, so this lets nothing from outside in.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' https://*.supabase.co;" />
     <title>Mechanical Shop POS</title>
   </head>
   <body class="bg-jungle-teal-100 text-jungle-teal-900 antialiased overflow-hidden select-none h-screen w-screen">

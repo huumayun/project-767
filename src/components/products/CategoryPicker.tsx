@@ -1,25 +1,23 @@
 import React, { useMemo, useState } from 'react';
 import { Category } from '../../types/ipc';
 import { Plus, Check, X, CornerDownRight } from 'lucide-react';
-import {
-  buildCategoryTree,
-  splitCategoryName,
-  composeCategoryName,
-  SEPARATOR,
-} from '../../utils/categoryTree';
+import { buildCategoryTree } from '../../utils/categoryTree';
 
 interface CategoryPickerProps {
   categories: Category[];
   value: string;
   onChange: (categoryId: string) => void;
-  onAddCategory: (name: string) => Promise<Category | null>;
+  onAddCategory: (name: string, parentId?: string | null) => Promise<Category | null>;
 }
 
 /**
  * Group first, then subcategory.
  *
- * A single flat <select> meant scrolling 60 entries whose names all begin with
+ * A single flat <select> meant scrolling 60 entries whose names all began with
  * the same prefix. Picking the group narrows the second list to a handful.
+ *
+ * Keyed on the parent's id rather than its name: the parent is a column now, so
+ * renaming a group no longer detaches the products filed beneath it.
  */
 export const CategoryPicker: React.FC<CategoryPickerProps> = ({
   categories,
@@ -30,46 +28,39 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
   const tree = useMemo(() => buildCategoryTree(categories), [categories]);
 
   const selected = categories.find((c) => c.id === value) || null;
-  const selectedGroup = selected ? splitCategoryName(selected.name).parent ?? splitCategoryName(selected.name).leaf : '';
+  const selectedGroupId = selected ? selected.parent_id || selected.id : '';
 
-  const [group, setGroup] = useState(selectedGroup);
+  const [groupId, setGroupId] = useState(selectedGroupId);
 
-  // Sync group when value changes from props (e.g., when modal loads product data in useEffect)
+  // Follow the value when it changes from outside — the product form fills it
+  // in after loading.
   React.useEffect(() => {
-    if (selectedGroup) {
-      setGroup(selectedGroup);
-    } else if (!value) {
-      setGroup('');
-    }
-  }, [value, selectedGroup]);
+    if (selectedGroupId) setGroupId(selectedGroupId);
+    else if (!value) setGroupId('');
+  }, [value, selectedGroupId]);
 
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const node = tree.find((n) => n.parentName === group) || null;
+  const node = tree.find((n) => n.parent.id === groupId) || null;
 
-  const pickGroup = (name: string) => {
-    setGroup(name);
+  const pickGroup = (id: string) => {
+    setGroupId(id);
     setAdding(false);
-    if (!name) {
-      onChange('');
-      return;
-    }
-    // Land on the group itself when it exists, so a product can be filed
-    // directly under it without touching the second dropdown.
-    const n = tree.find((t) => t.parentName === name);
-    onChange(n?.self?.id || '');
+    // Land on the group itself, so a product can be filed directly under it
+    // without touching the second dropdown.
+    onChange(id);
   };
 
   const handleCreate = async () => {
     const leaf = newName.trim();
     if (!leaf) return;
     setSaving(true);
-    const created = await onAddCategory(composeCategoryName(group || null, leaf));
+    const created = await onAddCategory(leaf, groupId || null);
     setSaving(false);
     if (created) {
-      if (!group) setGroup(leaf);
+      if (!groupId) setGroupId(created.id);
       onChange(created.id);
       setNewName('');
       setAdding(false);
@@ -78,6 +69,8 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
 
   const selectClass =
     'w-full bg-white border border-jungle-teal-200 rounded-xl px-3 h-[40px] text-sm font-medium text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 shadow-2xs transition-all disabled:opacity-50 disabled:bg-jungle-teal-50 cursor-pointer';
+
+  const groupName = node?.parentName || '';
 
   return (
     <div>
@@ -91,13 +84,13 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
           }}
           className="text-ui-2xs text-azure-mist-800 hover:underline flex items-center gap-0.5 font-semibold"
         >
-          <Plus className="w-3 h-3" /> {group ? `New under ${group}` : 'New group'}
+          <Plus className="w-3 h-3" /> {groupName ? `New under ${groupName}` : 'New group'}
         </button>
       </div>
 
       {adding ? (
         <div className="flex items-center gap-1.5">
-          {group && <CornerDownRight className="w-3.5 h-3.5 text-jungle-teal-400 shrink-0" />}
+          {groupId && <CornerDownRight className="w-3.5 h-3.5 text-jungle-teal-400 shrink-0" />}
           <input
             autoFocus
             value={newName}
@@ -112,7 +105,7 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
                 setAdding(false);
               }
             }}
-            placeholder={group ? 'Subcategory name' : 'New group name'}
+            placeholder={groupId ? 'Subcategory name' : 'New group name'}
             className="flex-1 min-w-0 bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-2.5 h-[40px] text-ui-sm text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-600"
           />
           <button
@@ -135,10 +128,10 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
-          <select value={group} onChange={(e) => pickGroup(e.target.value)} className={selectClass}>
+          <select value={groupId} onChange={(e) => pickGroup(e.target.value)} className={selectClass}>
             <option value="">— No category —</option>
             {tree.map((n) => (
-              <option key={n.parentName} value={n.parentName}>
+              <option key={n.parent.id} value={n.parent.id}>
                 {n.parentName}
               </option>
             ))}
@@ -152,11 +145,10 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
             className={selectClass}
           >
             {!node && <option value="">—</option>}
-            {node?.self && <option value={node.self.id}>Directly in {node.parentName}</option>}
-            {node && !node.self && <option value="">Pick a subcategory</option>}
-            {node?.children.map((c) => (
-              <option key={c.category.id} value={c.category.id}>
-                {c.leafName}
+            {node && <option value={node.parent.id}>Directly in {node.parentName}</option>}
+            {node?.children.map((child) => (
+              <option key={child.id} value={child.id}>
+                {child.name}
               </option>
             ))}
           </select>
@@ -165,13 +157,7 @@ export const CategoryPicker: React.FC<CategoryPickerProps> = ({
 
       {selected && (
         <p className="mt-1 font-mono text-ui-2xs text-jungle-teal-500 truncate">
-          filed as “{selected.name}”
-        </p>
-      )}
-      {!selected && group && (
-        <p className="mt-1 text-ui-2xs text-amber-800">
-          Pick a subcategory, or add one under {group}
-          {SEPARATOR ? '' : ''}.
+          filed as “{selected.parent_id && node ? `${node.parentName} · ${selected.name}` : selected.name}”
         </p>
       )}
     </div>

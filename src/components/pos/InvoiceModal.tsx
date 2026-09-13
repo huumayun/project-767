@@ -1,13 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Printer, Download, X, FileText, CheckCircle2, RefreshCw, QrCode, Phone, MapPin, User, Calendar, Tag, ShieldCheck } from 'lucide-react';
+import { usePdfObjectUrl } from '../../utils/pdfObjectUrl';
 import { ShopSettings } from '../../types/ipc';
+
+const LAYOUT_TABS: Array<{ id: '80mm' | 'a4'; label: string }> = [
+  { id: '80mm', label: '80mm' },
+  { id: 'a4', label: 'A4' },
+];
 
 interface InvoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoiceNo: string;
   pdfBase64?: string;
-  layout?: '80mm' | 'a5';
+  layout?: '80mm' | 'a4';
 }
 
 export const InvoiceModal: React.FC<InvoiceModalProps> = ({
@@ -17,15 +23,20 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   pdfBase64: initialPdf,
   layout = '80mm',
 }) => {
-  const [currentLayout, setCurrentLayout] = useState<'80mm' | 'a5'>(layout);
+  const [currentLayout, setCurrentLayout] = useState<'80mm' | 'a4'>(layout);
   const [pdfData, setPdfData] = useState<string>(initialPdf || '');
   const [saleDetails, setSaleDetails] = useState<any>(null);
   const [shopSettings, setShopSettings] = useState<ShopSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const printAreaRef = useRef<HTMLDivElement>(null);
+  const [printing, setPrinting] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const pdfUrl = usePdfObjectUrl(pdfData);
+  // Read with the rest of the shop settings below; a counter is taken to have a
+  // printer until those arrive, so a printing shop never sees its button vanish.
+  const hasPrinter = shopSettings ? shopSettings.has_printer !== false : true;
 
-  const loadInvoiceData = async (targetLayout: '80mm' | 'a5') => {
+  const loadInvoiceData = async (targetLayout: '80mm' | 'a4') => {
     if (!window.api || !invoiceNo) return;
     setLoading(true);
     setError(null);
@@ -55,92 +66,81 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
   useEffect(() => {
     if (isOpen && invoiceNo) {
+      // The modal stays mounted between bills; "Saved" belongs to the last one.
+      setSaveState('idle');
       loadInvoiceData(currentLayout);
     }
   }, [isOpen, invoiceNo]);
 
   if (!isOpen) return null;
 
-  const handlePrint = () => {
-    if (!printAreaRef.current) {
-      window.print();
-      return;
+  /*
+   * Prints the PDF, not the screen.
+   *
+   * This built a fresh HTML document and opened a second window for it.
+   * Electron denies window.open (electron/security.ts), so it fell through to
+   * window.print() - which prints the renderer, sidebar and all. That is the
+   * "screenshot" that came out of the printer instead of an invoice. The
+   * generated PDF goes to the main process, which prints the document itself.
+   */
+  const handlePrint = async () => {
+    if (!pdfData || !window.api?.print) return;
+    setPrinting(true);
+    try {
+      await window.api.print.pdf({ pdfBase64: pdfData, fileName: `invoice-${invoiceNo}` });
+    } catch (err: any) {
+      setError(err?.message || 'The invoice could not be sent to the printer.');
+    } finally {
+      setPrinting(false);
     }
-
-    const printContent = printAreaRef.current.innerHTML;
-    const printWindow = window.open('', '', 'width=800,height=900');
-    if (!printWindow) {
-      window.print();
-      return;
-    }
-
-    printWindow.document.open();
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Invoice #${invoiceNo}</title>
-          <meta charset="utf-8" />
-          <style>
-            @page {
-              margin: ${currentLayout === '80mm' ? '4mm' : '10mm'};
-              size: ${currentLayout === '80mm' ? '80mm auto' : 'A5 portrait'};
-            }
-            body {
-              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-              color: #0f172a;
-              background: #ffffff;
-              margin: 0;
-              padding: ${currentLayout === '80mm' ? '4px' : '16px'};
-              font-size: ${currentLayout === '80mm' ? '12px' : '13px'};
-              line-height: 1.35;
-            }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .text-left { text-align: left; }
-            .font-bold { font-weight: 700; }
-            .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-            .border-b { border-bottom: 1px dashed #cbd5e1; }
-            .border-t { border-top: 1px dashed #cbd5e1; }
-            .my-2 { margin-top: 8px; margin-bottom: 8px; }
-            .py-1 { padding-top: 4px; padding-bottom: 4px; }
-            .w-full { width: 100%; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { padding: 4px 2px; }
-            th { border-bottom: 1px solid #0f172a; font-size: 11px; text-transform: uppercase; }
-            .totals-row td { padding: 2px 0; }
-            @media print {
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent}
-          <script>
-            window.onload = function() {
-              window.focus();
-              window.print();
-              setTimeout(function() { window.close(); }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
   };
 
-  const handleDownload = () => {
-    if (!pdfData) return;
-    const link = document.createElement('a');
-    link.href = `data:application/pdf;base64,${pdfData}`;
-    link.download = `Invoice-${invoiceNo}-${currentLayout}.pdf`;
-    link.click();
+  /*
+   * Saves through the main process, which asks where and then opens the file.
+   *
+   * An <a download> pointed at a data: URL started a download Electron never
+   * showed: no location asked, nothing opened, so the button looked as though
+   * it did nothing at all.
+   */
+  const handleDownload = async () => {
+    if (!pdfData || !window.api?.print?.savePdf) return;
+    setSaveState('saving');
+    setError(null);
+    try {
+      const res = await window.api.print.savePdf({
+        pdfBase64: pdfData,
+        fileName: `Invoice-${invoiceNo}-${currentLayout}`,
+      });
+      setSaveState(res.success ? 'saved' : 'idle');
+    } catch (err: any) {
+      setSaveState('idle');
+      setError(err?.message || 'The PDF could not be saved.');
+    }
   };
 
   const shopName = shopSettings?.shop_name || 'Mechanical Parts & Hardware Shop';
   const shopAddress = shopSettings?.shop_address || 'Dhaka, Bangladesh';
   const shopPhone = shopSettings?.shop_phone || '';
   const invoiceFooter = shopSettings?.invoice_footer || 'Thank you for your business!';
+
+  // The same switches the PDF obeys. This preview is also what the browser
+  // print path renders, so leaving them out here would print a different
+  // invoice from the one the PDF produces.
+  const logo = shopSettings?.invoice_logo || '';
+  const logoHeightMm = shopSettings?.invoice_logo_height_mm ?? 12;
+  const invoiceTitle = shopSettings?.invoice_title || '';
+  const headerNote = shopSettings?.invoice_header_note || '';
+  const terms = shopSettings?.invoice_terms || '';
+
+  const show = {
+    logo: shopSettings?.invoice_show_logo ?? true,
+    signature: shopSettings?.invoice_show_signature ?? false,
+    address: shopSettings?.invoice_show_address ?? true,
+    phone: shopSettings?.invoice_show_phone ?? true,
+    cashier: shopSettings?.invoice_show_cashier ?? true,
+    nameBn: shopSettings?.invoice_show_name_bn ?? true,
+    footer: shopSettings?.invoice_show_footer ?? true,
+  };
 
   const items = saleDetails?.items || [];
   const subtotalTaka = ((saleDetails?.subtotal_paisa || 0) / 100).toFixed(2);
@@ -168,37 +168,30 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
           <div className="flex items-center gap-2.5">
             <div className="flex items-center bg-jungle-teal-100 p-1 rounded-xl border border-jungle-teal-200 text-ui-xs">
-              <button
-                onClick={() => {
-                  setCurrentLayout('80mm');
-                  loadInvoiceData('80mm');
-                }}
-                className={`px-3 py-1 rounded-lg transition-colors font-semibold ${
-                  currentLayout === '80mm'
-                    ? 'bg-azure-mist-700 text-white font-bold shadow-xs'
-                    : 'text-jungle-teal-600 hover:text-jungle-teal-900'
-                }`}
-              >
-                80mm Thermal
-              </button>
-              <button
-                onClick={() => {
-                  setCurrentLayout('a5');
-                  loadInvoiceData('a5');
-                }}
-                className={`px-3 py-1 rounded-lg transition-colors font-semibold ${
-                  currentLayout === 'a5'
-                    ? 'bg-azure-mist-700 text-white font-bold shadow-xs'
-                    : 'text-jungle-teal-600 hover:text-jungle-teal-900'
-                }`}
-              >
-                A5 Formal
-              </button>
+              {LAYOUT_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setCurrentLayout(tab.id);
+                    // A different paper is a different file; "Saved" was about
+                    // the previous one.
+                    setSaveState('idle');
+                    loadInvoiceData(tab.id);
+                  }}
+                  className={`px-3 py-1 rounded-lg transition-colors font-semibold ${
+                    currentLayout === tab.id
+                      ? 'bg-azure-mist-700 text-white font-bold shadow-xs'
+                      : 'text-jungle-teal-600 hover:text-jungle-teal-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
             <button
               onClick={onClose}
-              className="p-2 text-jungle-teal-400 hover:text-jungle-teal-800 hover:bg-jungle-teal-100 rounded-xl transition-colors"
+              className="p-2 text-jungle-teal-600 hover:text-jungle-teal-800 hover:bg-jungle-teal-100 rounded-xl transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -218,130 +211,26 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               <RefreshCw className="w-7 h-7 animate-spin text-azure-mist-700" />
               <span className="font-semibold">Loading invoice and receipt data...</span>
             </div>
+          ) : pdfUrl ? (
+            /*
+              The generated PDF itself, not a second drawing of it.
+              
+              This panel used to lay the invoice out again in HTML - its own
+              header, its own table, its own totals - while the PDF that
+              actually reached the customer was built separately by
+              invoicePdf.ts. Two drawings of one bill drift apart the moment
+              either is touched, and they had: the preview never showed what
+              came out of the printer. Shown as the PDF, they cannot disagree.
+            */
+            <iframe
+              title={`Invoice ${invoiceNo}`}
+              src={`${pdfUrl}#toolbar=0&navpanes=0`}
+              className="w-full bg-white rounded-xl border border-slate-200 shadow-md"
+              style={{ height: currentLayout === '80mm' ? 520 : 680 }}
+            />
           ) : (
-            <div
-              ref={printAreaRef}
-              className={`bg-white text-slate-900 shadow-md border border-slate-200 rounded-xl p-6 font-sans transition-all ${
-                currentLayout === '80mm' ? 'w-[320px] text-xs' : 'w-full max-w-[520px] text-sm'
-              }`}
-            >
-              {/* Shop Header */}
-              <div className="text-center pb-3 border-b border-dashed border-slate-300">
-                <h2 className="font-extrabold text-base tracking-tight text-slate-900 uppercase">{shopName}</h2>
-                <p className="text-[11px] text-slate-600 mt-0.5">{shopAddress}</p>
-                {shopPhone && <p className="text-[11px] text-slate-600">Mobile: {shopPhone}</p>}
-              </div>
-
-              {/* Invoice Meta */}
-              <div className="py-2.5 border-b border-dashed border-slate-300 text-[11px] font-mono space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Invoice:</span>
-                  <span className="font-bold text-slate-900">{saleDetails?.invoice_no || invoiceNo}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Date:</span>
-                  <span className="text-slate-800">
-                    {saleDetails?.created_at
-                      ? new Date(saleDetails.created_at).toLocaleString('en-GB')
-                      : new Date().toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Cashier:</span>
-                  <span className="text-slate-800">{saleDetails?.cashier_name || 'Staff'}</span>
-                </div>
-                {saleDetails?.customer_name && (
-                  <div className="flex justify-between pt-1 border-t border-slate-100 font-sans">
-                    <span className="text-slate-500">Customer:</span>
-                    <span className="font-bold text-slate-900">
-                      {saleDetails.customer_name} {saleDetails.customer_phone ? `(${saleDetails.customer_phone})` : ''}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Items List Table */}
-              <div className="py-3 border-b border-dashed border-slate-300">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-[10px] uppercase font-mono text-slate-600">
-                      <th className="pb-1">Item</th>
-                      <th className="pb-1 text-center">Qty</th>
-                      <th className="pb-1 text-right">Price</th>
-                      <th className="pb-1 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-[11.5px] font-mono">
-                    {items.map((it: any, idx: number) => {
-                      const linePrice = (it.unit_price_paisa / 100).toFixed(2);
-                      const lineTotal = (((it.unit_price_paisa * it.qty) - (it.discount_paisa || 0)) / 100).toFixed(2);
-                      return (
-                        <tr key={idx} className="py-1">
-                          <td className="py-1.5 font-sans font-medium text-slate-900 pr-1">
-                            <div>{it.product_name || it.name}</div>
-                            {it.product_name_bn && (
-                              <div className="text-[10px] text-slate-500">{it.product_name_bn}</div>
-                            )}
-                          </td>
-                          <td className="py-1.5 text-center font-bold text-slate-800">{it.qty}</td>
-                          <td className="py-1.5 text-right text-slate-600">৳{linePrice}</td>
-                          <td className="py-1.5 text-right font-bold text-slate-900">৳{lineTotal}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Calculations & Totals */}
-              <div className="py-2.5 border-b border-dashed border-slate-300 text-[11.5px] font-mono space-y-1">
-                <div className="flex justify-between text-slate-600">
-                  <span>Subtotal:</span>
-                  <span>৳ {subtotalTaka}</span>
-                </div>
-                {Number(discountTaka) > 0 && (
-                  <div className="flex justify-between text-amber-700 font-semibold">
-                    <span>Discount:</span>
-                    <span>- ৳ {discountTaka}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm font-extrabold text-slate-900 pt-1 border-t border-slate-200">
-                  <span>Grand Total:</span>
-                  <span>৳ {totalTaka}</span>
-                </div>
-                <div className="flex justify-between text-slate-700">
-                  <span>Total Paid:</span>
-                  <span className="font-bold text-emerald-800">৳ {totalPaidTaka}</span>
-                </div>
-                {Number(dueTaka) > 0 && (
-                  <div className="flex justify-between text-rose-700 font-extrabold">
-                    <span>Remaining Due:</span>
-                    <span>৳ {dueTaka}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Payment Methods Breakdown */}
-              {payments.length > 0 && (
-                <div className="py-2 text-[10.5px] font-mono text-slate-600 border-b border-dashed border-slate-300">
-                  <span className="font-bold text-slate-800">Payment: </span>
-                  {payments.map((p: any, i: number) => (
-                    <span key={i}>
-                      {p.method?.toUpperCase()} (৳{((p.amount_paisa || 0) / 100).toFixed(2)})
-                      {i < payments.length - 1 ? ', ' : ''}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Footer Notice & Software Attribution */}
-              <div className="pt-3 text-center text-[10.5px] text-slate-500 font-sans space-y-1">
-                <p className="font-semibold text-slate-800">{invoiceFooter}</p>
-                <div className="flex items-center justify-center gap-1 text-[9.5px] text-slate-400 font-mono pt-1">
-                  <ShieldCheck className="w-3 h-3 text-muted-teal-600" />
-                  <span>Mechanical Shop POS · Verified Transaction</span>
-                </div>
-              </div>
+            <div className="p-12 text-center text-jungle-teal-500 font-sans text-ui-sm">
+              This invoice could not be prepared. Close and try again.
             </div>
           )}
         </div>
@@ -361,21 +250,35 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               <button
                 type="button"
                 onClick={handleDownload}
-                className="px-4 py-2 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-xl text-ui-xs font-semibold flex items-center gap-1.5 border border-jungle-teal-300 transition-colors"
+                disabled={saveState === 'saving'}
+                className={
+                  hasPrinter
+                    ? 'px-4 py-2 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-xl text-ui-xs font-semibold flex items-center gap-1.5 border border-jungle-teal-300 transition-colors disabled:opacity-60'
+                    : // With no printer this is the way the bill leaves the shop, so
+                      // it takes the place and the weight of the Print button.
+                      'px-6 py-2.5 bg-linear-to-r from-azure-mist-700 to-azure-mist-600 hover:from-azure-mist-600 hover:to-azure-mist-500 text-white rounded-xl text-ui-xs font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95 disabled:opacity-60'
+                }
               >
-                <Download className="w-4 h-4 text-azure-mist-700" />
-                <span>Download PDF</span>
+                {saveState === 'saved' ? (
+                  <CheckCircle2 className={`w-4 h-4 ${hasPrinter ? 'text-emerald-600' : ''}`} />
+                ) : (
+                  <Download className={`w-4 h-4 ${hasPrinter ? 'text-azure-mist-700' : ''}`} />
+                )}
+                <span>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved — opened' : 'Save PDF'}</span>
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="px-6 py-2.5 bg-linear-to-r from-azure-mist-700 to-azure-mist-600 hover:from-azure-mist-600 hover:to-azure-mist-500 text-white rounded-xl text-ui-xs font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print Invoice Receipt</span>
-            </button>
+            {hasPrinter && (
+              <button
+                type="button"
+                onClick={handlePrint}
+                disabled={!pdfData || printing}
+                className="px-6 py-2.5 bg-linear-to-r from-azure-mist-700 to-azure-mist-600 hover:from-azure-mist-600 hover:to-azure-mist-500 text-white rounded-xl text-ui-xs font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95"
+              >
+                <Printer className="w-4 h-4" />
+                <span>{printing ? 'Sending to printer…' : 'Print Invoice'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

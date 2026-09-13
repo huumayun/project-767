@@ -1,10 +1,18 @@
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import { encryptSecret, decryptSecret } from '../services/safeStore';
 
 export interface Migration {
   id: string;
   name: string;
   up: (db: Database.Database) => void;
+  /*
+   * Rebuilding a table that others point at needs foreign keys switched off
+   * first, and SQLite ignores that pragma inside a transaction. Such a
+   * migration runs on its own instead: keys off, its own transaction, keys back
+   * on - the procedure SQLite's own docs prescribe.
+   */
+  ownTransaction?: boolean;
 }
 
 /**
@@ -54,11 +62,13 @@ export function applyBaseSchema(db: Database.Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      parent_id TEXT,
       device_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      deleted_at TEXT
+      deleted_at TEXT,
+      FOREIGN KEY (parent_id) REFERENCES categories(id)
     );
   `);
 
@@ -201,8 +211,9 @@ export function applyBaseSchema(db: Database.Database) {
       sale_id TEXT,
       customer_id TEXT,
       supplier_id TEXT,
+      purchase_id TEXT,
       direction TEXT NOT NULL CHECK(direction IN ('in', 'out')),
-      method TEXT NOT NULL CHECK(method IN ('cash', 'bkash', 'nagad', 'card')),
+      method TEXT NOT NULL CHECK(method IN ('cash', 'bkash', 'nagad', 'card', 'other')),
       amount_paisa INTEGER NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('sale_payment', 'due_collection', 'refund', 'supplier_payment')),
       user_id TEXT NOT NULL,
@@ -572,6 +583,250 @@ export const MIGRATIONS: Migration[] = [
     }
   },
   {
+    id: '008_real_category_parents',
+    name: 'Turn "Parent — Child" category names into a real hierarchy',
+    ownTransaction: true,
+    up: (db: Database.Database) => {
+      /*
+       * Subcategories were a naming convention: a child was a row called
+       * "Batteries — Lead Acid". It read correctly and did nothing else -
+       * renaming a parent left its children stranded under the old prefix, a
+       * category whose own name held the separator was mistaken for a child,
+       * and UNIQUE(name) meant two parents could never share a child name.
+       *
+       * The parent is a column now. Existing rows are converted: the prefix
+       * becomes a real parent row, the child keeps only its leaf name.
+       */
+      const hasParent = (db.pragma('table_info(categories)') as { name: string }[])
+        .some((c) => c.name === 'parent_id');
+
+      const nameIsGloballyUnique = ((db.prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'categories'"
+      ).get() as { sql: string } | undefined)?.sql || '').includes('name TEXT NOT NULL UNIQUE');
+
+      if (nameIsGloballyUnique) {
+        /*
+         * The old UNIQUE is part of the column definition, so it lives in an
+         * implicit index that cannot be dropped - the table has to be rebuilt.
+         *
+         * legacy_alter_table keeps RENAME from rewriting the foreign key in
+         * products, which would otherwise be repointed at the temporary table
+         * and left dangling once it is dropped. PRAGMA foreign_keys cannot help
+         * here: it is ignored inside a transaction, and migrations run in one.
+         */
+        /*
+         * Build the replacement first, then drop the original, then rename into
+         * its place.
+         *
+         * Renaming the original out of the way instead - the obvious order -
+         * makes SQLite repoint products.category_id at the temporary table, and
+         * the reference is left dangling when that table goes. Renaming the new
+         * table in has nothing pointing at it to rewrite, so products keeps
+         * saying REFERENCES categories and finds this table when it is done.
+         */
+        db.exec(`
+          CREATE TABLE categories_rebuilt (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            parent_id TEXT,
+            device_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT,
+            FOREIGN KEY (parent_id) REFERENCES categories(id)
+          );
+
+          INSERT INTO categories_rebuilt (id, name, parent_id, device_id, created_at, updated_at, deleted_at)
+          SELECT id, name, ${hasParent ? 'parent_id' : 'NULL'}, device_id, created_at, updated_at, deleted_at
+          FROM categories;
+
+          DROP TABLE categories;
+          ALTER TABLE categories_rebuilt RENAME TO categories;
+        `);
+      }
+
+      /*
+       * Unique per parent rather than across the whole table: "Front" can sit
+       * under both Brake Pads and Mudguards, which a single global UNIQUE(name)
+       * made impossible. IFNULL folds the top level into one bucket, since
+       * SQLite counts every NULL as distinct and would otherwise allow two
+       * top-level categories with the same name.
+       *
+       * Created here rather than in the baseline schema: the baseline runs
+       * before the additive columns are reconciled, so on an older database
+       * parent_id does not exist yet.
+       */
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_unique_name
+          ON categories(IFNULL(parent_id, ''), name) WHERE deleted_at IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);
+      `);
+
+      // --- convert the naming convention ---
+      const SEPARATOR = ' \u2014 ';
+      const rows = db
+        .prepare("SELECT id, name FROM categories WHERE deleted_at IS NULL AND parent_id IS NULL")
+        .all() as { id: string; name: string }[];
+
+      const newId = () =>
+        'cat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+
+      const topLevel = new Map<string, string>();          // name -> id
+      for (const row of rows) {
+        if (!row.name.includes(SEPARATOR)) topLevel.set(row.name, row.id);
+      }
+
+      const now = new Date().toISOString();
+      const insertParent = db.prepare(
+        'INSERT INTO categories (id, name, parent_id, created_at, updated_at) VALUES (?, ?, NULL, ?, ?)'
+      );
+      const promote = db.prepare('UPDATE categories SET name = ?, parent_id = ?, updated_at = ? WHERE id = ?');
+      const takenUnder = db.prepare(
+        'SELECT id FROM categories WHERE IFNULL(parent_id, \'\') = ? AND name = ? AND deleted_at IS NULL'
+      );
+
+      for (const row of rows) {
+        const at = row.name.indexOf(SEPARATOR);
+        if (at === -1) continue;
+
+        const parentName = row.name.slice(0, at).trim();
+        const leafName = row.name.slice(at + SEPARATOR.length).trim();
+        if (!parentName || !leafName) continue;
+
+        let parentId = topLevel.get(parentName);
+        if (!parentId) {
+          parentId = newId();
+          insertParent.run(parentId, parentName, now, now);
+          topLevel.set(parentName, parentId);
+        }
+
+        // Two different prefixes can collapse onto the same leaf. Rather than
+        // fail the whole migration, such a row keeps its full name and simply
+        // stays where it is - visible, and fixable by hand.
+        if (takenUnder.get(parentId!, leafName)) continue;
+
+        promote.run(leafName, parentId!, now, row.id);
+      }
+    }
+  },
+  {
+    id: '007_allow_other_payment_method',
+    name: 'Allow a payment method of "other"',
+    up: (db: Database.Database) => {
+      /*
+       * The till used to offer bKash, Nagad and Card as separate buttons. The
+       * shop takes cash almost always and does not care which wallet the rest
+       * arrived on, so those three are now one "Other payment method" - but a
+       * CHECK constraint cannot be altered in SQLite, so the table is rebuilt.
+       *
+       * Nothing is reclassified: rows already recorded as bkash, nagad or card
+       * keep those values, and the reports still show them.
+       */
+      const existing = (db.prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'payments'"
+      ).get() as { sql: string } | undefined)?.sql || '';
+      if (existing.includes("'other'")) return;
+
+      /*
+       * Views built on payments have to come down first: SQLite refuses to drop
+       * a table a view still names, and the error it gives ("no such table")
+       * points at the view rather than at the table being replaced.
+       *
+       * Their definitions are read back from sqlite_master rather than written
+       * out here, so whatever an earlier migration left in place is what gets
+       * restored - v_customer_due has already been rewritten once.
+       */
+      const dependentViews = (db.prepare(`
+        SELECT name, sql FROM sqlite_master
+        WHERE type = 'view' AND sql LIKE '%payments%'
+      `).all() as { name: string; sql: string }[]);
+
+      for (const view of dependentViews) {
+        db.exec(`DROP VIEW IF EXISTS ${view.name};`);
+      }
+
+      // No PRAGMA foreign_keys here: it is a no-op inside a transaction, and
+      // nothing references payments, so the rebuild needs no such escape.
+      db.exec(`
+        CREATE TABLE payments_rebuilt (
+          id TEXT PRIMARY KEY,
+          sale_id TEXT,
+          customer_id TEXT,
+          supplier_id TEXT,
+          purchase_id TEXT,
+          direction TEXT NOT NULL CHECK(direction IN ('in', 'out')),
+          method TEXT NOT NULL CHECK(method IN ('cash', 'bkash', 'nagad', 'card', 'other')),
+          amount_paisa INTEGER NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('sale_payment', 'due_collection', 'refund', 'supplier_payment')),
+          user_id TEXT NOT NULL,
+          device_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT,
+          FOREIGN KEY (sale_id) REFERENCES sales(id),
+          FOREIGN KEY (customer_id) REFERENCES customers(id),
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        INSERT INTO payments_rebuilt
+          (id, sale_id, customer_id, supplier_id, purchase_id, direction, method,
+           amount_paisa, type, user_id, device_id, created_at, updated_at, deleted_at)
+        SELECT id, sale_id, customer_id, supplier_id, purchase_id, direction, method,
+               amount_paisa, type, user_id, device_id, created_at, updated_at, deleted_at
+        FROM payments;
+
+        DROP TABLE payments;
+        ALTER TABLE payments_rebuilt RENAME TO payments;
+
+        CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_payments_sale ON payments(sale_id);
+        CREATE INDEX IF NOT EXISTS idx_payments_supplier ON payments(supplier_id, direction, type);
+      `);
+
+      for (const view of dependentViews) {
+        if (view.sql) db.exec(view.sql + ';');
+      }
+    }
+  },
+  {
+    id: '006_link_purchase_payments',
+    name: 'Point existing supplier payments back at their purchase',
+    up: (db: Database.Database) => {
+      // payments.purchase_id is new, so rows written before it have to be
+      // matched the only way they can be: a purchase writes its payment inside
+      // the same transaction with the identical created_at stamp. Amount and
+      // supplier must agree too, and anything ambiguous is left unlinked rather
+      // than guessed at - an unlinked row simply blocks that bill from being
+      // voided, which is safer than reversing the wrong payment.
+      const candidates = db.prepare(`
+        SELECT pm.id AS payment_id, pu.id AS purchase_id
+        FROM payments pm
+        JOIN purchases pu
+          ON pu.created_at = pm.created_at
+         AND pu.paid_paisa = pm.amount_paisa
+         AND IFNULL(pu.supplier_id, '') = IFNULL(pm.supplier_id, '')
+        WHERE pm.purchase_id IS NULL
+          AND pm.direction = 'out'
+          AND pm.type = 'supplier_payment'
+          AND pm.deleted_at IS NULL
+      `).all() as { payment_id: string; purchase_id: string }[];
+
+      const seenPayment = new Map<string, number>();
+      const seenPurchase = new Map<string, number>();
+      for (const row of candidates) {
+        seenPayment.set(row.payment_id, (seenPayment.get(row.payment_id) || 0) + 1);
+        seenPurchase.set(row.purchase_id, (seenPurchase.get(row.purchase_id) || 0) + 1);
+      }
+
+      const link = db.prepare('UPDATE payments SET purchase_id = ? WHERE id = ?');
+      for (const row of candidates) {
+        if (seenPayment.get(row.payment_id) !== 1) continue;
+        if (seenPurchase.get(row.purchase_id) !== 1) continue;
+        link.run(row.purchase_id, row.payment_id);
+      }
+    }
+  },
+  {
     id: '005_hash_existing_pins',
     name: 'Hash login PINs that were stored as typed',
     up: (db: Database.Database) => {
@@ -588,6 +843,91 @@ export const MIGRATIONS: Migration[] = [
         if (/^\$2[aby]\$/.test(row.pin_code)) continue; // already hashed
         update.run(bcrypt.hashSync(row.pin_code, bcrypt.genSaltSync(10)), row.id);
       }
+    }
+  },
+  {
+    id: '009_drop_a5_invoice_paper',
+    name: 'Move any shop set to A5 onto A4',
+    up: (db: Database.Database) => {
+      /*
+       * A5 is no longer a paper the app knows about. A shop that had chosen it
+       * would fall back to the 80mm default - silently swapping a full sheet
+       * for a till roll, which is not a change anyone would want made for them
+       * without being told. A4 is the nearer of the two.
+       */
+      db.prepare(
+        "UPDATE settings SET value = 'a4', updated_at = ? WHERE key = 'default_invoice_layout' AND value = 'a5'"
+      ).run(new Date().toISOString());
+    }
+  },
+  {
+    id: '010_rebatch_csv_imported_stock',
+    name: 'Give unbatched stock a FIFO batch again',
+    up: (db: Database.Database) => {
+      /*
+       * A repeat of 003, needed because the hole it patched stayed open.
+       *
+       * CSV import wrote opening stock to products.stock_qty and a stock
+       * transaction, but never the inventory_batch that the single-product form
+       * writes. 003 backfilled whatever existed when it ran; every import after
+       * that put the same drift straight back. The import now creates the batch
+       * itself, and this clears what the shops have accumulated meanwhile.
+       *
+       * Costed at the product's current cost price - the only figure anything
+       * recorded for these units, and the one the valuation was already falling
+       * back to. Products whose batches already add up are untouched, so this is
+       * safe to run against a database that has no drift at all.
+       */
+      db.exec(`
+        INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
+        SELECT
+          lower(hex(randomblob(16))),
+          p.id,
+          (p.stock_qty - COALESCE(b.batched_qty, 0)),
+          (p.stock_qty - COALESCE(b.batched_qty, 0)),
+          p.cost_price_paisa,
+          p.created_at,
+          'products',
+          p.id
+        FROM products p
+        LEFT JOIN (
+          SELECT product_id, SUM(remaining_qty) as batched_qty
+          FROM inventory_batches
+          GROUP BY product_id
+        ) b ON p.id = b.product_id
+        WHERE p.deleted_at IS NULL AND (p.stock_qty - COALESCE(b.batched_qty, 0)) > 0;
+      `);
+    }
+  },
+  {
+    id: '011_encrypt_gdrive_refresh_token',
+    name: 'Encrypt the Google Drive refresh token at rest',
+    up: (db: Database.Database) => {
+      /*
+       * The Drive token was written exactly as Google returned it, while the
+       * Supabase key beside it went through safeStorage. So a credential giving
+       * standing access to the shop's Drive sat in plain text in shop.db - and
+       * shop.db is uploaded to that same Drive, meaning every backup carried the
+       * key to the account holding it. Anyone reading one backup could reach all
+       * of them.
+       *
+       * A value that already decrypts is left alone, so this does no harm on a
+       * database that has been through it, or on one connected after the fix.
+       */
+      const row = db
+        .prepare("SELECT value FROM settings WHERE key = 'gdrive_refresh_token'")
+        .get() as { value?: string } | undefined;
+      if (!row?.value) return;
+
+      if (decryptSecret(row.value)) return; // already encrypted
+
+      const encrypted = encryptSecret(row.value);
+      // encryptSecret returns '' only for empty input, but a write of '' here
+      // would silently disconnect a shop's Drive rather than protect it.
+      if (!encrypted) return;
+
+      db.prepare("UPDATE settings SET value = ?, updated_at = ? WHERE key = 'gdrive_refresh_token'")
+        .run(encrypted, new Date().toISOString());
     }
   }
 ];
@@ -608,12 +948,19 @@ const ADDITIVE_COLUMNS: Record<string, Record<string, string>> = {
     payment_terms_days: 'INTEGER',
     note: 'TEXT',
   },
+  categories: {
+    parent_id: 'TEXT',
+  },
   purchases: {
     transport_paisa: 'INTEGER NOT NULL DEFAULT 0',
     transport_on_invoice: 'INTEGER NOT NULL DEFAULT 1',
   },
   payments: {
     supplier_id: 'TEXT',
+    // Without this, the cash paid on a bill cannot be found again from the bill,
+    // so a mistyped purchase could not be reversed without guessing which row
+    // belonged to it.
+    purchase_id: 'TEXT',
   },
   sale_items: {
     unit_cost_paisa: 'INTEGER',
@@ -662,13 +1009,42 @@ export function runMigrations(db: Database.Database) {
 
   const insertMigration = db.prepare('INSERT INTO migrations (id, applied_at) VALUES (?, ?)');
 
+  const pending = MIGRATIONS.filter((m) => !appliedSet.has(m.id));
+
+  // Everything that can share a transaction does, so a failure rolls the whole
+  // batch back.
   db.transaction(() => {
-    for (const migration of MIGRATIONS) {
-      if (!appliedSet.has(migration.id)) {
-        console.log(`Applying DB migration: ${migration.id} - ${migration.name}`);
-        migration.up(db);
-        insertMigration.run(migration.id, new Date().toISOString());
-      }
+    for (const migration of pending) {
+      if (migration.ownTransaction) continue;
+      console.log(`Applying DB migration: ${migration.id} - ${migration.name}`);
+      migration.up(db);
+      insertMigration.run(migration.id, new Date().toISOString());
     }
   })();
+
+  for (const migration of pending) {
+    if (!migration.ownTransaction) continue;
+    console.log(`Applying DB migration: ${migration.id} - ${migration.name}`);
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.exec('BEGIN');
+      try {
+        migration.up(db);
+        insertMigration.run(migration.id, new Date().toISOString());
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      // Nothing may be left dangling by a table rebuild.
+      const violations = db.pragma('foreign_key_check') as unknown[];
+      if (violations.length > 0) {
+        throw new Error(
+          `Migration ${migration.id} left ${violations.length} foreign key violation(s); database unchanged is not possible at this point.`
+        );
+      }
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  }
 }

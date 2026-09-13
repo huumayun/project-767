@@ -2,14 +2,20 @@ import { ipcMain, shell, app } from 'electron';
 import path from 'path';
 import { getAuthUrl, authorizeWithCode, isDriveConnected, disconnectDrive, findAndDownloadLatestBackup } from '../../services/googleDrive';
 import { requireRole, requireOwnerOrFirstRun, logAudit } from '../shared';
+import { isGoogleConfigured, GOOGLE_NOT_CONFIGURED } from '../../services/googleCredentials';
 
 export function registerGDriveHandlers() {
+  // Gated like everything else. It was the one handler in the app that answered
+  // anybody, and what it answers - whether this shop has a cloud backup wired
+  // up - is not something the login screen needs to know.
   ipcMain.handle('api:gdrive:status', async () => {
-    return { isConnected: isDriveConnected() };
+    requireRole(['owner', 'staff']);
+    return { isConnected: isDriveConnected(), isConfigured: isGoogleConfigured() };
   });
 
   ipcMain.handle('api:gdrive:getAuthUrl', async () => {
     requireOwnerOrFirstRun();
+    if (!isGoogleConfigured()) throw new Error(GOOGLE_NOT_CONFIGURED);
     const url = getAuthUrl();
     await shell.openExternal(url);
     return { success: true };
@@ -17,6 +23,7 @@ export function registerGDriveHandlers() {
 
   ipcMain.handle('api:gdrive:authorize', async (_event, code: string) => {
     requireOwnerOrFirstRun();
+    if (!isGoogleConfigured()) throw new Error(GOOGLE_NOT_CONFIGURED);
     const success = await authorizeWithCode(code);
     return { success };
   });

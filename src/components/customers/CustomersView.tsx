@@ -25,9 +25,16 @@ import { useToast } from '../../context/ToastContext';
 
 interface CustomersViewProps {
   currentSession: UserSession | null;
+  /**
+   * Called when cash moves in or out of the drawer.
+   *
+   * The running shift lives in App; without this the sidebar's cash figure
+   * stays at whatever it was when the till opened.
+   */
+  onShiftChanged?: () => void;
 }
 
-export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession }) => {
+export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession, onShiftChanged }) => {
   const toast = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [dueSummary, setDueSummary] = useState<CustomerDueSummary | null>(null);
@@ -98,7 +105,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession }) 
   // WhatsApp Reminder Handler
   const handleSendWhatsAppReminder = (cust: Customer) => {
     const dueAmount = ((cust.due_paisa || 0) / 100).toFixed(2);
-    const message = `সম্মানিত ${cust.name}, আমাদের দোকানে আপনার মোট বকেয়া ৳${dueAmount} টাকা। অনুগ্রহ করে দ্রুত পরিশোধ করার অনুরোধ রইল। ধন্যবাদ।`;
+    const message = `Dear ${cust.name}, you have an outstanding due balance of ৳${dueAmount} at our shop. Please settle it at your earliest convenience. Thank you.`;
 
     let cleanPhone = (cust.phone || '').replace(/[^0-9]/g, '');
     if (cleanPhone.startsWith('01')) {
@@ -396,6 +403,8 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession }) 
           customer={collectTargetCustomer}
           onSuccess={() => {
             fetchData();
+            // Cash over the counter lands in the same drawer a sale does.
+            onShiftChanged?.();
             setShowCollectModal(false);
             setCollectTargetCustomer(null);
           }}

@@ -69,7 +69,7 @@ export const StockHistoryModal: React.FC<StockHistoryModalProps> = ({ isOpen, on
                     )}
                   </div>
                   <div className="flex flex-col items-end text-right">
-                    <span className="text-xs text-jungle-teal-500 font-sans mb-0.5">Cost Price</span>
+                    <span className="text-xs text-jungle-teal-500 font-sans mb-0.5">Batch Cost</span>
                     <span className="text-azure-mist-700 font-bold text-base bg-azure-mist-50 px-2.5 py-0.5 rounded-lg border border-azure-mist-200">
                       ৳ {(b.cost_price_paisa / 100).toFixed(2)}
                     </span>

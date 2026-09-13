@@ -289,6 +289,25 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
   const bkashTaka = (((targetSummary?.total_bkash_sales_paisa || 0)) / 100).toFixed(2);
   const nagadTaka = (((targetSummary?.total_nagad_sales_paisa || 0)) / 100).toFixed(2);
   const cardTaka = (((targetSummary?.total_card_sales_paisa || 0)) / 100).toFixed(2);
+  // Non-cash taken on the merged Other button, plus the older per-wallet rows.
+  const otherTaka = (
+    ((targetSummary?.total_other_sales_paisa || 0) +
+      (targetSummary?.total_bkash_sales_paisa || 0) +
+      (targetSummary?.total_nagad_sales_paisa || 0) +
+      (targetSummary?.total_card_sales_paisa || 0)) / 100
+  ).toFixed(2);
+  const tk = (paisa?: number) => ((paisa || 0) / 100).toFixed(2);
+  const returnedTaka = tk(targetSummary?.total_returned_paisa);
+  const netSalesTaka = tk(targetSummary?.net_sales_paisa);
+  const cogsTaka = tk(targetSummary?.total_cogs_paisa);
+  const grossProfitTaka = tk(targetSummary?.gross_profit_paisa);
+  const dueSalesTaka = tk(targetSummary?.total_due_sales_paisa);
+  const dueCollectedTaka = tk(
+    (targetSummary?.total_cash_due_collected_paisa || 0) +
+      (targetSummary?.total_other_due_collected_paisa || 0)
+  );
+  const saleRows = targetSummary?.sale_transactions || [];
+
   const cashInTaka = (((targetSummary?.total_cash_in_paisa || 0)) / 100).toFixed(2);
   const cashOutTaka = (((targetSummary?.total_cash_out_paisa || 0)) / 100).toFixed(2);
   const expectedTaka = (((targetSummary?.expected_cash_paisa || 0)) / 100).toFixed(2);
@@ -315,7 +334,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 {closedSummary
                   ? 'Shift Closed (Z-Report Summary)'
                   : currentMode === 'open'
-                  ? 'Start New Shift (নতুন শিফট শুরু)'
+                  ? 'Start New Shift'
                   : currentMode === 'close'
                   ? 'Close Shift & Reconcile Cash'
                   : 'Active Shift Status & Cash Drawer'}
@@ -349,7 +368,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <h4 className="font-extrabold text-emerald-950 text-sm">Shift Successfully Closed!</h4>
-              <p className="text-xs text-emerald-800">ক্যাশ ড্রয়ার হিসাব ক্লোজ করা হয়েছে ও ডাটাবেসে সংরক্ষিত হয়েছে।</p>
+              <p className="text-xs text-emerald-800">The cash drawer has been closed and saved.</p>
             </div>
 
             {/* Printable Area */}
@@ -385,17 +404,15 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                   <span>+ ৳ {cashSalesTaka}</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
-                  <span>bKash Sales:</span>
-                  <span>৳ {bkashTaka}</span>
+                  <span>Other (digital / card) Sales:</span>
+                  <span>৳ {otherTaka}</span>
                 </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Nagad Sales:</span>
-                  <span>৳ {nagadTaka}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Card Sales:</span>
-                  <span>৳ {cardTaka}</span>
-                </div>
+                {Number(dueCollectedTaka) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Old Balances Collected:</span>
+                    <span>+ ৳ {dueCollectedTaka}</span>
+                  </div>
+                )}
                 {Number(cashInTaka) > 0 && (
                   <div className="flex justify-between text-emerald-700">
                     <span>Cash In (+):</span>
@@ -406,6 +423,39 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                   <div className="flex justify-between text-rose-700">
                     <span>Cash Out / Expenses (-):</span>
                     <span>- ৳ {cashOutTaka}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* What the shift traded, as opposed to what passed through the drawer. */}
+              <div className="space-y-1 text-[11px] pb-2 border-b border-dashed border-slate-300">
+                <div className="font-bold text-slate-800 pb-1">Trading</div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Gross Sales:</span>
+                  <span>৳ {totalSalesTaka}</span>
+                </div>
+                {Number(returnedTaka) > 0 && (
+                  <div className="flex justify-between text-rose-700">
+                    <span>Returns (-):</span>
+                    <span>- ৳ {returnedTaka}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-semibold text-slate-800">
+                  <span>Net Sales:</span>
+                  <span>৳ {netSalesTaka}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Cost of Goods Sold:</span>
+                  <span>- ৳ {cogsTaka}</span>
+                </div>
+                <div className="flex justify-between font-bold text-emerald-800">
+                  <span>Gross Profit:</span>
+                  <span>৳ {grossProfitTaka}</span>
+                </div>
+                {Number(dueSalesTaka) > 0 && (
+                  <div className="flex justify-between text-amber-800 pt-1 border-t border-dashed border-slate-200">
+                    <span>Sold on Credit ({targetSummary?.due_sales_count || 0} bills):</span>
+                    <span>৳ {dueSalesTaka}</span>
                   </div>
                 )}
               </div>
@@ -438,11 +488,11 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-700 pt-1 border-t border-dashed border-slate-200">
-                  <span>Cash Withdrawn (মালিক নিয়ে গেছেন):</span>
+                  <span>Cash Withdrawn:</span>
                   <span className="font-bold">৳ {withdrawnTaka}</span>
                 </div>
                 <div className="flex justify-between text-emerald-800 font-extrabold">
-                  <span>Float Left in Drawer (পরবর্তী শিফটের জন্য জমা):</span>
+                  <span>Float Left in Drawer:</span>
                   <span>৳ {floatLeftTaka}</span>
                 </div>
               </div>
@@ -480,10 +530,10 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between font-mono">
                   <div>
                     <span className="text-xs font-bold text-emerald-950 font-sans block">
-                      গত শিফটের অবশিষ্ট ক্যাশ: ৳ {lastClosedFloatTaka}
+                      Left in the drawer last shift: ৳ {lastClosedFloatTaka}
                     </span>
                     <span className="text-[10.5px] text-emerald-700 font-sans">
-                      দোকান বন্ধের পর ড্রয়ারে রেখে যাওয়া টাকা
+                      Cash left behind when the shop closed
                     </span>
                   </div>
                   <button
@@ -491,14 +541,14 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                     onClick={() => setOpeningCashTaka(lastClosedFloatTaka)}
                     className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold font-mono transition-colors shadow-xs"
                   >
-                    ৳ {lastClosedFloatTaka} ব্যবহার করুন
+                    Use ৳ {lastClosedFloatTaka}
                   </button>
                 </div>
               )}
 
               <div>
                 <label className="block text-ui-xs font-bold text-jungle-teal-900 mb-1">
-                  আজকের প্রারম্ভিক ক্যাশ ফ্লোট (Opening Cash Float ৳):
+                  Opening Cash Float (৳):
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-jungle-teal-500 font-bold text-base">৳</span>
@@ -515,7 +565,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                   />
                 </div>
                 <p className="text-[11px] text-jungle-teal-500 mt-1 font-sans">
-                  * প্রয়োজন অনুযায়ী এই অ্যামাউন্ট পরিবর্তন বা যেকোনো নতুন অংক বসাতে পারেন।
+                  * Change this to whatever is actually in the drawer.
                 </p>
               </div>
 
@@ -527,7 +577,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                     onClick={() => setOpeningCashTaka(lastClosedFloatTaka)}
                     className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg text-ui-xs font-mono font-bold border border-emerald-300 transition-colors"
                   >
-                    গত শিফট: ৳ {lastClosedFloatTaka}
+                    Last shift: ৳ {lastClosedFloatTaka}
                   </button>
                 )}
                 {[0, 500, 1000, 2000, 5000].map((amt) => (
@@ -544,13 +594,13 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
 
               <div>
                 <label className="block text-ui-2xs font-semibold text-jungle-teal-700 mb-1">
-                  নোট বা মন্তব্য (Optional Note):
+                  Optional Note:
                 </label>
                 <input
                   type="text"
                   value={openNote}
                   onChange={(e) => setOpenNote(e.target.value)}
-                  placeholder="Morning shift / কাউন্টার ১"
+                  placeholder="Morning shift / Counter 1"
                   className="w-full bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 py-2 text-ui-xs text-jungle-teal-900 focus:outline-hidden"
                 />
               </div>
@@ -570,7 +620,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 className="px-6 py-2.5 bg-muted-teal-700 hover:bg-muted-teal-800 text-white rounded-xl text-ui-xs font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95"
               >
                 <Play className="w-4 h-4 fill-white" />
-                <span>{loading ? 'Starting Shift…' : 'Start Shift (শিফট শুরু)'}</span>
+                <span>{loading ? 'Starting Shift…' : 'Start Shift'}</span>
               </button>
             </div>
           </form>
@@ -598,7 +648,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
               {/* 1. Actual Counted Cash */}
               <div>
                 <label className="block text-ui-xs font-bold text-jungle-teal-900 mb-1">
-                  ১. ড্রয়ারে গুনে পাওয়া মোট নগদ ক্যাশ (Actual Total Cash in Drawer ৳):
+                  1. Actual total cash counted in the drawer (৳):
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-jungle-teal-500 font-bold text-base">৳</span>
@@ -622,7 +672,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
               {/* 2. Amount Withdrawn / Taken Out by Owner */}
               <div className="pt-1 border-t border-slate-100">
                 <label className="block text-ui-xs font-bold text-jungle-teal-900 mb-1">
-                  ২. ক্যাশ থেকে কত টাকা নিয়ে যাচ্ছেন / ড্রপ (Cash Withdrawn / Taken Home ৳):
+                  2. Cash withdrawn / taken home (৳):
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-rose-500 font-bold text-base">৳</span>
@@ -646,7 +696,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                     onClick={() => setWithdrawnCashTaka(cashSalesTaka)}
                     className="px-2.5 py-1 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-lg text-[11px] font-mono font-bold border border-jungle-teal-200"
                   >
-                    বিক্রি নিয়ে যাব (৳ {cashSalesTaka})
+                    Take the sales (৳ {cashSalesTaka})
                   </button>
                   <button
                     type="button"
@@ -656,7 +706,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                     }}
                     className="px-2.5 py-1 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-lg text-[11px] font-mono font-bold border border-jungle-teal-200"
                   >
-                    ড্রয়ারে ১০০০ রাখব
+                    Leave 1000 in the drawer
                   </button>
                   <button
                     type="button"
@@ -666,14 +716,14 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                     }}
                     className="px-2.5 py-1 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-lg text-[11px] font-mono font-bold border border-jungle-teal-200"
                   >
-                    ড্রয়ারে ৫০০ রাখব
+                    Leave 500 in the drawer
                   </button>
                   <button
                     type="button"
                     onClick={() => setWithdrawnCashTaka('0')}
                     className="px-2.5 py-1 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-lg text-[11px] font-mono font-bold border border-jungle-teal-200"
                   >
-                    টাকা নিব না (৳ 0)
+                    Take nothing (৳ 0)
                   </button>
                 </div>
               </div>
@@ -682,10 +732,10 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between font-mono">
                 <div>
                   <span className="text-xs font-bold text-emerald-950 font-sans block">
-                    পরবর্তী দিনের জন্য ড্রয়ারে থেকে যাবে (Left in Drawer for Next Day):
+                    Left in Drawer for Next Day:
                   </span>
                   <span className="text-[10.5px] text-emerald-700 font-sans">
-                    আগামীকাল দোকান খোলার সময় এই টাকা প্রারম্ভিক ক্যাশ হিসেবে সেট হবে।
+                    This becomes the opening float when the shop opens tomorrow.
                   </span>
                 </div>
                 <span className="text-base font-extrabold text-emerald-900 shrink-0">
@@ -704,20 +754,20 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                       : 'bg-rose-50 border-rose-200 text-rose-900'
                   }`}
                 >
-                  <span className="font-sans">ক্যাশ মেলানোর হিসাব (Reconciliation Difference):</span>
+                  <span className="font-sans">Reconciliation Difference:</span>
                   <span>
                     {diffPaisa === 0
-                      ? '৳ 0.00 (Balanced / মিলেছে)'
+                      ? '৳ 0.00 (Balanced)'
                       : diffPaisa > 0
-                      ? `+ ৳ ${diffTaka} (Over / বাড়তি)`
-                      : `- ৳ ${diffTaka} (Short / ঘাটতি)`}
+                      ? `+ ৳ ${diffTaka} (Over)`
+                      : `- ৳ ${diffTaka} (Short)`}
                   </span>
                 </div>
               )}
 
               <div>
                 <label className="block text-ui-2xs font-semibold text-jungle-teal-700 mb-1">
-                  ক্লোজিং নোট (Optional Closing Note):
+                  Closing Note (optional):
                 </label>
                 <input
                   type="text"
@@ -754,15 +804,15 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
             <div className="p-3 bg-white border border-jungle-teal-200 rounded-2xl flex items-center justify-between shadow-xs">
               <div>
                 <span className="text-xs font-bold text-jungle-teal-950 font-sans block">
-                  ক্যাশিয়ার: {shiftData?.user_name || 'Cashier'}
+                  Cashier: {shiftData?.user_name || 'Cashier'}
                 </span>
                 <span className="text-[11px] text-jungle-teal-600 font-sans">
-                  শুরু হয়েছে: {shiftData?.opened_at ? new Date(shiftData.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                  Started: {shiftData?.opened_at ? new Date(shiftData.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
                 </span>
               </div>
               <div className="px-2.5 py-1 bg-emerald-100/90 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 shadow-2xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                <span>চলছে: {formatDuration(shiftData?.opened_at)}</span>
+                <span>Running: {formatDuration(shiftData?.opened_at)}</span>
               </div>
             </div>
 
@@ -778,7 +828,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
               </div>
               <div className="p-3 bg-white border border-jungle-teal-200 rounded-2xl shadow-xs">
                 <span className="text-[10.5px] text-jungle-teal-600 font-sans block">Digital Sales</span>
-                <span className="text-sm font-bold text-azure-mist-700">৳ {(((parseFloat(bkashTaka) + parseFloat(nagadTaka) + parseFloat(cardTaka))))?.toFixed(2)}</span>
+                <span className="text-sm font-bold text-azure-mist-700">৳ {otherTaka}</span>
               </div>
               <div className="p-3 bg-white border border-jungle-teal-200 rounded-2xl shadow-xs">
                 <span className="text-[10.5px] text-emerald-700 font-sans block">Cash In (+)</span>
@@ -794,6 +844,81 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
               </div>
             </div>
 
+            {/* What the shift traded. The tiles above are the drawer; these are
+                the shop - a cashier can close a drawer perfectly while having
+                sold at a loss or lent out half the takings. */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono">
+              <div className="p-3 bg-white border border-jungle-teal-200 rounded-2xl shadow-xs">
+                <span className="text-[10.5px] text-jungle-teal-600 font-sans block">Net Sales</span>
+                <span className="text-sm font-bold text-jungle-teal-900">৳ {netSalesTaka}</span>
+                {Number(returnedTaka) > 0 && (
+                  <span className="text-[10px] text-rose-700 font-sans block">
+                    after ৳ {returnedTaka} returned
+                  </span>
+                )}
+              </div>
+              <div className="p-3 bg-white border border-jungle-teal-200 rounded-2xl shadow-xs">
+                <span className="text-[10.5px] text-jungle-teal-600 font-sans block">Cost of Goods</span>
+                <span className="text-sm font-bold text-jungle-teal-900">৳ {cogsTaka}</span>
+              </div>
+              <div className="p-3 bg-white border border-muted-teal-200 rounded-2xl shadow-xs">
+                <span className="text-[10.5px] text-muted-teal-700 font-sans block">Gross Profit</span>
+                <span className="text-sm font-bold text-muted-teal-800">৳ {grossProfitTaka}</span>
+              </div>
+              <div className="p-3 bg-white border border-amber-200 rounded-2xl shadow-xs">
+                <span className="text-[10.5px] text-amber-800 font-sans block">Sold on Credit</span>
+                <span className="text-sm font-bold text-amber-800">৳ {dueSalesTaka}</span>
+                <span className="text-[10px] text-jungle-teal-500 font-sans block">
+                  {targetSummary?.due_sales_count || 0} bill{(targetSummary?.due_sales_count || 0) === 1 ? '' : 's'}
+                  {Number(dueCollectedTaka) > 0 ? ` · ৳ ${dueCollectedTaka} collected` : ''}
+                </span>
+              </div>
+            </div>
+
+            {/* Every bill rung up in this shift. */}
+            {saleRows.length > 0 && (
+              <div className="border border-jungle-teal-200 rounded-2xl overflow-hidden bg-white">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-jungle-teal-200 bg-jungle-teal-50">
+                  <Receipt className="w-3.5 h-3.5 text-azure-mist-700" />
+                  <span className="text-ui-xs font-semibold text-jungle-teal-900">
+                    Transactions ({saleRows.length})
+                  </span>
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  <table className="w-full text-ui-2xs font-mono">
+                    <thead className="text-jungle-teal-600 bg-jungle-teal-50/60 sticky top-0">
+                      <tr>
+                        <th className="text-left font-medium px-3 py-1.5">Time</th>
+                        <th className="text-left font-medium px-2 py-1.5">Invoice</th>
+                        <th className="text-left font-medium px-2 py-1.5">Customer</th>
+                        <th className="text-right font-medium px-2 py-1.5">Total</th>
+                        <th className="text-right font-medium px-2 py-1.5">Paid</th>
+                        <th className="text-right font-medium px-3 py-1.5">Due</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-jungle-teal-100">
+                      {saleRows.map((row) => (
+                        <tr key={row.id} className="text-jungle-teal-800">
+                          <td className="px-3 py-1.5 whitespace-nowrap">
+                            {new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{row.invoice_no}</td>
+                          <td className="px-2 py-1.5 font-sans truncate max-w-[120px]">{row.customer_name}</td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap">৳ {tk(row.total_paisa)}</td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap text-muted-teal-800">
+                            ৳ {tk(row.paid_paisa)}
+                          </td>
+                          <td className={`px-3 py-1.5 text-right whitespace-nowrap ${row.due_paisa > 0 ? 'text-rose-700 font-bold' : 'text-jungle-teal-400'}`}>
+                            {row.due_paisa > 0 ? `৳ ${tk(row.due_paisa)}` : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Petty Cash In / Out Quick Buttons */}
             <div className="flex items-center gap-2.5">
               <button
@@ -805,7 +930,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 className="flex-1 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold rounded-xl text-ui-xs flex items-center justify-center gap-1.5 transition-colors"
               >
                 <PlusCircle className="w-4 h-4 text-emerald-600" />
-                <span>+ Cash In (ড্রয়ারে জমা)</span>
+                <span>+ Cash In</span>
               </button>
 
               <button
@@ -817,7 +942,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 className="flex-1 py-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 font-bold rounded-xl text-ui-xs flex items-center justify-center gap-1.5 transition-colors"
               >
                 <MinusCircle className="w-4 h-4 text-rose-600" />
-                <span>- Cash Out (খরচ / ড্রপ)</span>
+                <span>- Cash Out</span>
               </button>
             </div>
 
@@ -896,7 +1021,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
             <div className="bg-white border border-slate-200 rounded-3xl max-w-sm w-full p-5 shadow-2xl text-slate-900 space-y-4 animate-in zoom-in-95">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <h4 className="font-bold text-sm text-slate-900">
-                  {cashTxType === 'cash_in' ? '+ Cash In (ড্রয়ারে জমা)' : '- Cash Out (ড্রয়ার থেকে খরচ)'}
+                  {cashTxType === 'cash_in' ? '+ Cash In' : '- Cash Out'}
                 </h4>
                 <button onClick={() => setShowCashTxModal(false)} className="text-slate-400 hover:text-slate-700">
                   <X className="w-4 h-4" />
@@ -905,7 +1030,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
 
               <form onSubmit={handleAddCashTx} className="space-y-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">টাকার পরিমাণ (Amount ৳):</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Amount (৳):</label>
                   <input
                     type="number"
                     step="1"
@@ -920,7 +1045,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">কারণ বা খাত (Reason / Purpose):</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Reason / Purpose:</label>
                   <input
                     type="text"
                     required

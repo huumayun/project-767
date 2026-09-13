@@ -15,8 +15,23 @@ interface SaleSuccessModalProps {
   paymentMethodSummary: string;
   customer?: Customer | null;
   autoPrint?: boolean;
+  /** False at a counter with no printer: offer Save PDF where Re-Print would be. */
+  hasPrinter?: boolean;
   onViewInvoice?: () => void;
+  /**
+   * The paper this sale was rung up on. The quick print after a sale used to
+   * hardcode `size: 80mm auto`, so a shop set to A5 or A4 still got a receipt
+   * cut to a thermal roll.
+   */
+  layout?: '80mm' | 'a4';
+  /** The PDF this sale produced - the document that gets printed. */
+  pdfBase64?: string;
 }
+
+const PAGE_CSS: Record<'80mm' | 'a4', { margin: string; size: string; padding: string; fontSize: string }> = {
+  '80mm': { margin: '3mm', size: '80mm auto', padding: '4px', fontSize: '12px' },
+  a4: { margin: '12mm', size: 'A4 portrait', padding: '20px', fontSize: '14px' },
+};
 
 export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
   isOpen,
@@ -30,16 +45,26 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
   paymentMethodSummary,
   customer,
   autoPrint = false,
+  hasPrinter = true,
   onViewInvoice,
+  layout = '80mm',
+  pdfBase64,
 }) => {
   const [printStatus, setPrintStatus] = useState<'idle' | 'printing' | 'success' | 'failed'>('idle');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [copied, setCopied] = useState(false);
   const printTriggeredRef = useRef(false);
 
   useEffect(() => {
+    if (!isOpen) setSaveStatus('idle');
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen) {
       soundFx.playSuccessChime();
-      if (autoPrint && !printTriggeredRef.current) {
+      // Never at a counter with no printer: the print dialog would open over
+      // the success screen with nothing to send the receipt to.
+      if (autoPrint && hasPrinter && !printTriggeredRef.current) {
         printTriggeredRef.current = true;
         handleTriggerPrint();
       } else {
@@ -62,180 +87,56 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
       } else if (e.key === 'F8' || e.key === 'p' || e.key === 'P') {
         e.preventDefault();
         e.stopPropagation();
-        handleTriggerPrint();
+        // The same key does the same job either way: hand the customer a copy.
+        if (hasPrinter) handleTriggerPrint();
+        else handleSavePdf();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isOpen, onNewSale]);
+  }, [isOpen, onNewSale, hasPrinter]);
 
   if (!isOpen) return null;
 
+  /*
+   * Prints the PDF the sale already produced.
+   *
+   * This used to rebuild the whole receipt as an HTML string - shop header,
+   * item rows, totals, the lot - and open a second window for it. Electron
+   * denies window.open, so it fell back to window.print() and the printer got
+   * a picture of the POS screen. It was also a third drawing of the invoice,
+   * free to disagree with both the PDF and the memo view, and it did.
+   */
   const handleTriggerPrint = async () => {
+    if (!pdfBase64 || !window.api?.print) {
+      setPrintStatus('failed');
+      return;
+    }
     setPrintStatus('printing');
     try {
-      if (window.api && invoiceNo) {
-        const [saleRes, settingsRes] = await Promise.all([
-          window.api.sales.getByInvoice(invoiceNo).catch(() => null),
-          window.api.settings.get().catch(() => null),
-        ]);
-
-        const printWindow = window.open('', '', 'width=800,height=900');
-        if (!printWindow) {
-          window.print();
-          setPrintStatus('success');
-          return;
-        }
-
-        const items = saleRes?.items || [];
-        const shopName = settingsRes?.shop_name || 'Mechanical Workshop';
-        const shopAddress = settingsRes?.shop_address || 'Dhaka, Bangladesh';
-        const shopPhone = settingsRes?.shop_phone || '';
-        const invoiceFooter = settingsRes?.invoice_footer || 'Thank you for your business!';
-
-        const subtotalTaka = ((saleRes?.subtotal_paisa || totalPaisa) / 100).toFixed(2);
-        const discountTaka = ((saleRes?.discount_paisa || 0) / 100).toFixed(2);
-        const totalTaka = ((totalPaisa) / 100).toFixed(2);
-        const paidTaka = ((paidPaisa) / 100).toFixed(2);
-        const changeTaka = ((changePaisa) / 100).toFixed(2);
-        const dueTaka = ((duePaisa) / 100).toFixed(2);
-
-        printWindow.document.open();
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Invoice #${invoiceNo}</title>
-              <meta charset="utf-8" />
-              <style>
-                @page { margin: 4mm; size: 80mm auto; }
-                body {
-                  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                  color: #0f172a;
-                  background: #ffffff;
-                  margin: 0;
-                  padding: 4px;
-                  font-size: 12px;
-                  line-height: 1.35;
-                }
-                .text-center { text-align: center; }
-                .text-right { text-align: right; }
-                .text-left { text-align: left; }
-                .font-bold { font-weight: 700; }
-                .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-                .border-b { border-bottom: 1px dashed #cbd5e1; }
-                .border-t { border-top: 1px dashed #cbd5e1; }
-                .my-2 { margin-top: 8px; margin-bottom: 8px; }
-                .py-1 { padding-top: 4px; padding-bottom: 4px; }
-                .w-full { width: 100%; }
-                table { width: 100%; border-collapse: collapse; }
-                th, td { padding: 4px 2px; }
-                th { border-bottom: 1px solid #0f172a; font-size: 11px; text-transform: uppercase; }
-                @media print {
-                  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                }
-              </style>
-            </head>
-            <body>
-              <div class="text-center pb-3 border-b">
-                <h2 style="font-weight: 800; font-size: 16px; margin: 0; text-transform: uppercase;">${shopName}</h2>
-                <p style="margin: 2px 0 0 0; font-size: 11px; color: #475569;">${shopAddress}</p>
-                ${shopPhone ? `<p style="margin: 2px 0 0 0; font-size: 11px; color: #475569;">Phone: ${shopPhone}</p>` : ''}
-              </div>
-
-              <div class="my-2 border-b font-mono" style="font-size: 11px; padding-bottom: 6px;">
-                <div style="display:flex; justify-content:space-between;">
-                  <span style="color:#64748b;">Invoice:</span>
-                  <span class="font-bold">${invoiceNo}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-top:2px;">
-                  <span style="color:#64748b;">Date:</span>
-                  <span>${new Date().toLocaleString()}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-top:2px;">
-                  <span style="color:#64748b;">Customer:</span>
-                  <span class="font-bold">${customer?.name || 'Walking Retail Customer'}</span>
-                </div>
-              </div>
-
-              <table class="my-2">
-                <thead>
-                  <tr>
-                    <th class="text-left">Item</th>
-                    <th class="text-center">Qty</th>
-                    <th class="text-right">Price</th>
-                    <th class="text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody class="font-mono" style="font-size: 11.5px;">
-                  ${items.map((it: any) => `
-                    <tr>
-                      <td style="padding: 4px 2px; font-family: sans-serif;">${it.product_name || it.name}</td>
-                      <td class="text-center font-bold" style="padding: 4px 2px;">${it.qty}</td>
-                      <td class="text-right" style="padding: 4px 2px;">৳${(it.unit_price_paisa / 100).toFixed(2)}</td>
-                      <td class="text-right font-bold" style="padding: 4px 2px;">৳${(((it.unit_price_paisa * it.qty) - (it.discount_paisa || 0)) / 100).toFixed(2)}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-
-              <div class="border-t my-2 font-mono" style="font-size: 11.5px; padding-top: 6px;">
-                <div style="display:flex; justify-content:space-between; color:#475569;">
-                  <span>Subtotal:</span>
-                  <span>৳ ${subtotalTaka}</span>
-                </div>
-                ${Number(discountTaka) > 0 ? `
-                  <div style="display:flex; justify-content:space-between; color:#b45309; font-weight:bold;">
-                    <span>Discount:</span>
-                    <span>- ৳ ${discountTaka}</span>
-                  </div>
-                ` : ''}
-                <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:800; border-top:1px solid #e2e8f0; margin-top:4px; padding-top:4px;">
-                  <span>Total Payable:</span>
-                  <span>৳ ${totalTaka}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; margin-top:2px;">
-                  <span>Paid (${paymentMethodSummary}):</span>
-                  <span class="font-bold">৳ ${paidTaka}</span>
-                </div>
-                ${Number(changeTaka) > 0 ? `
-                  <div style="display:flex; justify-content:space-between; font-weight:bold; color:#065f46; margin-top:2px;">
-                    <span>Change Returned:</span>
-                    <span>৳ ${changeTaka}</span>
-                  </div>
-                ` : ''}
-                ${Number(dueTaka) > 0 ? `
-                  <div style="display:flex; justify-content:space-between; font-weight:bold; color:#991b1b; margin-top:2px;">
-                    <span>Remaining Due:</span>
-                    <span>৳ ${dueTaka}</span>
-                  </div>
-                ` : ''}
-              </div>
-
-              <div class="text-center pt-3" style="font-size: 10.5px; color: #64748b;">
-                <p style="margin: 0; font-weight: bold; color: #1e293b;">${invoiceFooter}</p>
-                <p style="margin: 4px 0 0 0; font-size: 9.5px; font-family: monospace;">POS · Verified Transaction</p>
-              </div>
-
-              <script>
-                window.onload = function() {
-                  window.focus();
-                  window.print();
-                  setTimeout(function() { window.close(); }, 500);
-                };
-              </script>
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        setTimeout(() => setPrintStatus('success'), 1200);
-      } else {
-        setPrintStatus('success');
-      }
+      await window.api.print.pdf({ pdfBase64, fileName: `invoice-${invoiceNo}` });
+      setPrintStatus('success');
     } catch (err) {
-      console.error('Print trigger error:', err);
+      console.error('Print failed:', err);
       setPrintStatus('failed');
+    }
+  };
+
+  /** Asks where to keep the bill, writes the PDF the sale produced, and opens it. */
+  const handleSavePdf = async () => {
+    if (!pdfBase64 || !window.api?.print?.savePdf) {
+      setSaveStatus('failed');
+      return;
+    }
+    setSaveStatus('saving');
+    try {
+      const res = await window.api.print.savePdf({ pdfBase64, fileName: `invoice-${invoiceNo}` });
+      // Closing the Save dialog is not a failure; the button just rests again.
+      setSaveStatus(res.success ? 'saved' : 'idle');
+    } catch (err) {
+      console.error('Save PDF failed:', err);
+      setSaveStatus('failed');
     }
   };
 
@@ -246,7 +147,7 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
       <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-3xl max-w-md w-full p-6 shadow-2xl text-jungle-teal-900 flex flex-col space-y-5 animate-in zoom-in-95 duration-200 font-sans">
         
         {/* Animated Badge & Status Header */}
@@ -278,8 +179,8 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
             </h2>
             <p className="text-ui-xs text-jungle-teal-600">
               {printStatus === 'printing'
-                ? 'রিসিট প্রিন্টারে পাঠানো হচ্ছে...'
-                : 'বিক্রয় সফলভাবে সম্পন্ন ও ডাটাবেসে সংরক্ষিত হয়েছে।'}
+                ? 'Sending the receipt to the printer...'
+                : 'Sale completed and saved.'}
             </p>
           </div>
         </div>
@@ -317,20 +218,20 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-sm">
             <span className="font-bold text-slate-700 font-sans">Total Bill:</span>
-            <span className="font-extrabold text-slate-950 text-base">৳ {(totalPaisa / 100).toFixed(2)}</span>
+            <span className="font-extrabold text-jungle-teal-900 text-base">৳ {(totalPaisa / 100).toFixed(2)}</span>
           </div>
 
           {/* Change Highlight */}
           {changePaisa > 0 && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between">
-              <span className="text-emerald-800 font-bold text-xs font-sans">ফেরত টাকা (Change Return):</span>
+              <span className="text-emerald-800 font-bold text-xs font-sans">Change Returned:</span>
               <span className="text-emerald-900 font-extrabold text-base font-mono">৳ {(changePaisa / 100).toFixed(2)}</span>
             </div>
           )}
 
           {duePaisa > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between">
-              <span className="text-amber-800 font-bold text-xs font-sans">বকেয়া (Customer Due):</span>
+              <span className="text-amber-800 font-bold text-xs font-sans">Customer Due:</span>
               <span className="text-amber-900 font-extrabold text-base font-mono">৳ {(duePaisa / 100).toFixed(2)}</span>
             </div>
           )}
@@ -339,15 +240,39 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
         {/* Printer Status & Re-Print Helper */}
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={handleTriggerPrint}
-              disabled={printStatus === 'printing'}
-              className="flex-1 py-2.5 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 border border-jungle-teal-300 transition-colors active:scale-95"
-            >
-              <Printer className="w-4 h-4 text-jungle-teal-600" />
-              <span>{printStatus === 'printing' ? 'Printing…' : 'Re-Print Receipt (F8)'}</span>
-            </button>
+            {hasPrinter ? (
+              <button
+                type="button"
+                onClick={handleTriggerPrint}
+                disabled={printStatus === 'printing'}
+                className="flex-1 py-2.5 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 border border-jungle-teal-300 transition-colors active:scale-95"
+              >
+                <Printer className="w-4 h-4 text-jungle-teal-600" />
+                <span>{printStatus === 'printing' ? 'Printing…' : 'Re-Print Receipt (F8)'}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSavePdf}
+                disabled={saveStatus === 'saving' || !pdfBase64}
+                className="flex-1 py-2.5 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 border border-jungle-teal-300 transition-colors active:scale-95 disabled:opacity-60"
+              >
+                {saveStatus === 'saved' ? (
+                  <Check className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <Download className="w-4 h-4 text-jungle-teal-600" />
+                )}
+                <span>
+                  {saveStatus === 'saving'
+                    ? 'Saving…'
+                    : saveStatus === 'saved'
+                      ? 'Saved — opened'
+                      : saveStatus === 'failed'
+                        ? 'Could not save — try again'
+                        : 'Save PDF (F8)'}
+                </span>
+              </button>
+            )}
 
             {onViewInvoice && (
               <button
@@ -363,7 +288,15 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
           </div>
 
           <p className="text-[11px] text-jungle-teal-600 text-center font-sans">
-            💡 প্রিন্টারে কোনো সমস্যা হলে <span className="font-bold text-jungle-teal-900">Re-Print</span> চাপুন বা সেলস হিস্ট্রি থেকে যেকোনো সময় প্রিন্ট করুন।
+            {hasPrinter ? (
+              <>
+                💡 If the printer plays up, press <span className="font-bold text-jungle-teal-900">Re-Print</span>, or print again from Transactions at any time.
+              </>
+            ) : (
+              <>
+                💡 Any bill can be viewed or saved again later from <span className="font-bold text-jungle-teal-900">Transactions</span>.
+              </>
+            )}
           </p>
         </div>
 

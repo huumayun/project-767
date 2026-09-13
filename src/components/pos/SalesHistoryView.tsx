@@ -17,6 +17,51 @@ import { InvoiceModal } from './InvoiceModal';
 import { ReturnRefundModal } from './ReturnRefundModal';
 import { useToast } from '../../context/ToastContext';
 
+type DatePreset = 'today' | '7days' | 'this_month' | 'last_month' | 'custom';
+
+/** The quick filter, in the order it is offered. */
+const DATE_PRESETS: Array<{ id: DatePreset; label: string }> = [
+  { id: 'today', label: 'Today' },
+  { id: '7days', label: 'Last 7 Days' },
+  { id: 'this_month', label: 'This Month' },
+  { id: 'last_month', label: 'Last Month' },
+  { id: 'custom', label: 'Custom Range…' },
+];
+
+/**
+ * The local calendar days a preset covers, inclusive at both ends.
+ *
+ * Built from local date parts throughout - toLocalDateString, not toISOString -
+ * because Bangladesh runs six hours ahead of UTC, so a UTC-derived "today"
+ * names yesterday for the first six hours of every trading day.
+ */
+const rangeFor = (preset: DatePreset, customStart: string, customEnd: string) => {
+  const now = new Date();
+  const today = toLocalDateString(now);
+
+  if (preset === '7days') {
+    const past = new Date();
+    past.setDate(now.getDate() - 6); // inclusive of today, so 7 days in all
+    return { start: toLocalDateString(past), end: today };
+  }
+  if (preset === 'this_month') {
+    return { start: toLocalDateString(new Date(now.getFullYear(), now.getMonth(), 1)), end: today };
+  }
+  if (preset === 'last_month') {
+    // The one preset that does not end today: day 0 of this month is the last
+    // day of the previous one, and both constructors roll the year over in
+    // January on their own.
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { start: toLocalDateString(start), end: toLocalDateString(end) };
+  }
+  if (preset === 'custom') {
+    // An unset end must not silently exclude everything.
+    return { start: customStart || '0000-01-01', end: customEnd || '9999-12-31' };
+  }
+  return { start: today, end: today };
+};
+
 interface SalesHistoryViewProps {
   currentSession: UserSession | null;
 }
@@ -25,7 +70,13 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
   const toast = useToast();
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [search, setSearch] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  // Today by default - the till's own day is what a cashier checks first.
+  const [datePreset, setDatePreset] = useState<DatePreset>('today');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [creditOnly, setCreditOnly] = useState(false);
+
+  const { start: rangeStart, end: rangeEnd } = rangeFor(datePreset, customStart, customEnd);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,14 +122,15 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
     }
   };
 
+  const creditSalesCount = sales.filter((s) => (s.due_at_sale_paisa || 0) > 0).length;
+
   const filteredSales = sales.filter((s) => {
     let match = true;
-    if (dateFilter) {
-      const saleDate = toLocalDateString(new Date(s.created_at));
-      if (saleDate !== dateFilter) {
-        match = false;
-      }
-    }
+    if (creditOnly && (s.due_at_sale_paisa || 0) <= 0) return false;
+
+    // String comparison is safe here: YYYY-MM-DD sorts the same way it reads.
+    const saleDate = toLocalDateString(new Date(s.created_at));
+    if (saleDate < rangeStart || saleDate > rangeEnd) return false;
     
     if (match && search.trim()) {
       const q = search.trim().toLowerCase();
@@ -99,7 +151,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
             <ShoppingBag className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-jungle-teal-900">Sales Transactions & Invoice Archive</h2>
+            <h2 className="text-base font-bold text-jungle-teal-900">Transactions & Invoice Archive</h2>
             <p className="text-xs text-jungle-teal-500">Search invoices, process customer returns, and reprint receipts</p>
           </div>
         </div>
@@ -133,23 +185,72 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="w-[140px] bg-jungle-teal-50 border border-jungle-teal-300 rounded-lg px-3 py-2 text-jungle-teal-900 text-xs font-sans focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50 cursor-pointer"
-          />
-          {dateFilter && (
-            <button 
-              onClick={() => setDateFilter('')}
-              className="p-1.5 text-jungle-teal-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
-              title="Clear Date"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-            </button>
+          {/* Quick range, in place of the single-day picker that was here: a
+              shop asks "today", "this month", "last month" far more often than
+              it asks about one particular date. */}
+          <Calendar className="w-3.5 h-3.5 text-jungle-teal-500 shrink-0" />
+          <select
+            value={datePreset}
+            onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+            className="bg-jungle-teal-50 border border-jungle-teal-300 rounded-lg px-3 py-2 text-jungle-teal-900 text-xs font-bold focus:outline-hidden focus:border-azure-mist-600 cursor-pointer"
+          >
+            {DATE_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+
+          {datePreset === 'custom' ? (
+            <div className="flex items-center gap-1.5 bg-jungle-teal-50 border border-jungle-teal-300 rounded-lg px-2 py-1">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="bg-transparent text-jungle-teal-900 text-xs font-semibold focus:outline-hidden cursor-pointer"
+              />
+              <span className="text-jungle-teal-400">→</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="bg-transparent text-jungle-teal-900 text-xs font-semibold focus:outline-hidden cursor-pointer"
+              />
+            </div>
+          ) : (
+            /* What the preset resolves to, so the list is never read against a
+               range the reader has to work out. */
+            <span className="font-mono text-[11px] text-jungle-teal-500 whitespace-nowrap">
+              {rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`}
+            </span>
           )}
+          {/* Which bills went out on credit - the reason to open this screen
+              after a day's trading. */}
+          <button
+            type="button"
+            onClick={() => setCreditOnly((v) => !v)}
+            title="Show only bills that were not paid in full at the counter"
+            className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition-colors whitespace-nowrap ${
+              creditOnly
+                ? 'bg-amber-700 text-white border-amber-800'
+                : 'bg-jungle-teal-50 text-jungle-teal-700 border-jungle-teal-300 hover:bg-jungle-teal-100'
+            }`}
+          >
+            <AlertCircle className="w-3.5 h-3.5" />
+            <span>Credit bills ({creditSalesCount})</span>
+          </button>
         </div>
       </div>
+
+      {/*
+        Says plainly what the column is, because the obvious reading of a "Due"
+        column on an invoice list is "still owed", and that is not what this is.
+      */}
+      <p className="text-[11px] text-jungle-teal-500 font-sans -mt-4 px-1">
+        Paid / Due shows what was settled <span className="font-semibold text-jungle-teal-700">when the bill was cut</span>.
+        Money collected against a baki afterwards is recorded on the customer, not the invoice, so these figures do not
+        change. For what a customer owes today, see <span className="font-semibold text-jungle-teal-700">Reports › Due &amp; Payable</span>.
+      </p>
 
       {/* Sales Table */}
       <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl overflow-hidden shadow-xs">
@@ -162,6 +263,9 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
                 <th className="p-3.5">Customer</th>
                 <th className="p-3.5">Cashier</th>
                 <th className="p-3.5 text-right">Total (৳)</th>
+                <th className="p-3.5 text-right" title="What was collected when the bill was cut. A baki settled later is recorded against the customer, not the invoice, so this does not change.">
+                  Paid / Due at billing
+                </th>
                 <th className="p-3.5 text-center">Status</th>
                 <th className="p-3.5 text-center">Actions</th>
               </tr>
@@ -169,7 +273,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
             <tbody className="divide-y divide-jungle-teal-100 font-mono text-[11.5px]">
               {filteredSales.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-12 text-center text-jungle-teal-500 font-sans">
+                  <td colSpan={8} className="p-12 text-center text-jungle-teal-500 font-sans">
                     {loading ? 'Loading sales history...' : 'No sales records found.'}
                   </td>
                 </tr>
@@ -190,11 +294,28 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
                       {new Date(sale.created_at).toLocaleDateString()} {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="p-3.5 font-sans text-jungle-teal-800">
-                      {sale.customer_name || <span className="text-jungle-teal-400 italic">Walk-in Customer</span>}
+                      {sale.customer_name || <span className="text-jungle-teal-600 italic">Walk-in Customer</span>}
                     </td>
                     <td className="p-3.5 font-sans text-jungle-teal-700">{sale.cashier_name || 'Staff'}</td>
                     <td className="p-3.5 text-right font-bold text-jungle-teal-900">
                       ৳ {(sale.total_paisa / 100).toFixed(2)}
+                    </td>
+                    <td className="p-3.5 text-right">
+                      {(sale.due_at_sale_paisa || 0) > 0 ? (
+                        <>
+                          <span className="block text-muted-teal-800">
+                            ৳ {((sale.paid_at_sale_paisa || 0) / 100).toFixed(2)} paid
+                          </span>
+                          <span className="block font-extrabold text-amber-800">
+                            ৳ {((sale.due_at_sale_paisa || 0) / 100).toFixed(2)} due
+                          </span>
+                        </>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-muted-teal-800 font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Paid in full
+                        </span>
+                      )}
                     </td>
                     <td className="p-3.5 text-center">
                       <span

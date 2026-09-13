@@ -1,6 +1,15 @@
 import React from 'react';
 import { CartItem, Customer } from '../../types/ipc';
-import { Printer, Check, X, Receipt, User, AlertCircle } from 'lucide-react';
+import { Printer, Check, X, Receipt, User, AlertCircle, RefreshCw } from 'lucide-react';
+
+/**
+ * What the paper is called on screen. "80MM" told the cashier the code name of
+ * the setting, not which paper was about to come out of the printer.
+ */
+const PAPER_LABEL: Record<'80mm' | 'a4', string> = {
+  '80mm': '80mm thermal roll',
+  a4: 'A4 — full page',
+};
 
 interface ReceiptPreviewModalProps {
   isOpen: boolean;
@@ -15,9 +24,14 @@ interface ReceiptPreviewModalProps {
   changePaisa: number;
   duePaisa: number;
   paymentMethodSummary: string;
-  invoiceLayout: '80mm' | 'a5';
+  invoiceLayout: '80mm' | 'a4';
   loading?: boolean;
+  /** False at a counter with no printer: there is nothing to "complete & print". */
+  hasPrinter?: boolean;
 }
+
+/** Which of the two confirm buttons started the sale. */
+type PendingAction = 'print' | 'plain';
 
 export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   isOpen,
@@ -34,7 +48,35 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   paymentMethodSummary,
   invoiceLayout,
   loading = false,
+  hasPrinter = true,
 }) => {
+  /*
+   * `loading` says a sale is in flight but not which button sent it, so
+   * "Processing…" always appeared on Complete & print - including when the
+   * cashier had pressed Complete only, leaving the button they actually
+   * pressed looking inert while another one claimed to be working.
+   */
+  const [pending, setPending] = React.useState<PendingAction | null>(null);
+  const busy = (action: PendingAction) => loading && pending === action;
+
+  React.useEffect(() => {
+    if (!isOpen) setPending(null);
+  }, [isOpen]);
+
+  // The parent clears `loading` whether the sale saved or threw; either way the
+  // buttons go back to their resting labels rather than spinning forever.
+  React.useEffect(() => {
+    if (!loading) setPending(null);
+  }, [loading]);
+
+  const confirmSale = React.useCallback(
+    (shouldPrint: boolean) => {
+      setPending(shouldPrint ? 'print' : 'plain');
+      onConfirmSale(shouldPrint);
+    },
+    [onConfirmSale]
+  );
+
   React.useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -50,11 +92,13 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
       if (e.key === 'Enter' || e.key === 'F8') {
         e.preventDefault();
         e.stopPropagation();
-        onConfirmSale(true);
+        // With no printer Enter still finishes the sale - it just does not
+        // send it to a print dialog there is nothing behind.
+        confirmSale(hasPrinter);
       } else if (e.key === 'F7' || e.key === ' ' || e.key === 'n' || e.key === 'N') {
         e.preventDefault();
         e.stopPropagation();
-        onConfirmSale(false);
+        confirmSale(false);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -63,7 +107,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isOpen, onConfirmSale, onClose, duePaisa, customer]);
+  }, [isOpen, confirmSale, onClose, duePaisa, customer, hasPrinter]);
 
   if (!isOpen) return null;
 
@@ -79,22 +123,45 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
               <Receipt className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-jungle-teal-900">Sale Confirmation & Receipt Preview</h3>
-              <p className="text-[11px] text-jungle-teal-500 font-mono">Layout: {invoiceLayout.toUpperCase()}</p>
+              <h3 className="text-ui-base font-bold text-jungle-teal-900">Sale Confirmation & Receipt Preview</h3>
+              <p className="text-ui-2xs text-jungle-teal-500">
+                {hasPrinter ? (
+                  <>
+                    Paper: <span className="font-semibold text-jungle-teal-700">{PAPER_LABEL[invoiceLayout]}</span>
+                  </>
+                ) : (
+                  <span className="font-semibold text-jungle-teal-700">No printer · save the bill as PDF after the sale</span>
+                )}
+                <span className="text-jungle-teal-400"> · Settings › Print Layout</span>
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-jungle-teal-400 hover:text-jungle-teal-700 p-1 rounded-lg"
+            className="text-jungle-teal-600 hover:text-jungle-teal-700 p-1 rounded-lg"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Scrollable Receipt Body */}
-        <div className="flex-1 overflow-y-auto py-4 space-y-4 font-mono text-xs">
+        {/*
+          Body.
+
+          Only the item list scrolls. It used to be the other way round - the
+          list was pinned to max-h-48 (156px, about three rows) inside a body
+          that scrolled as well, so a twenty-line cart was read three rows at a
+          time through two nested scrollbars while the dialog left ~110px of
+          the height it was allowed unused. Capping the list also pushed the
+          totals below the fold, which is the one thing on here that has to
+          stay in view while the cashier confirms.
+
+          `min-h-0` throughout: a flex child defaults to min-height:auto and
+          refuses to shrink under its content, which would push the buttons off
+          the bottom of the dialog rather than scroll.
+        */}
+        <div className="flex-1 min-h-0 flex flex-col gap-4 py-4 font-mono text-ui-sm">
           {/* Customer info */}
-          <div className="bg-jungle-teal-50 p-3 rounded-xl border border-jungle-teal-200 text-[11px]">
+          <div className="shrink-0 bg-jungle-teal-50 p-3 rounded-xl border border-jungle-teal-200 text-ui-xs">
             <div className="flex items-center justify-between">
               <span className="text-jungle-teal-500 font-sans">Customer:</span>
               <span className="font-bold text-jungle-teal-900 font-sans">
@@ -111,24 +178,24 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
 
           {/* Warning Banner when Walk-in Customer has Due */}
           {isDueForbidden && (
-            <div className="p-3 bg-amber-100 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-center gap-2 font-sans">
+            <div className="shrink-0 p-3 bg-amber-100 border border-amber-300 rounded-xl text-amber-900 text-ui-sm flex items-center gap-2 font-sans">
               <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
-              <span>খুচরা (Walk-in) কাস্টমারের জন্য বাকি বিক্রি সম্ভব নয়। বাকি রাখতে কাস্টমার সিলেক্ট করুন অথবা সম্পূর্ণ টাকা পরিশোধ করুন।</span>
+              <span>A walk-in customer cannot be sold on credit. Select a customer, or take the full payment.</span>
             </div>
           )}
 
           {/* Items Summary Table */}
-          <div className="border border-jungle-teal-200 rounded-xl overflow-hidden">
-            <div className="bg-jungle-teal-100 px-3 py-1.5 font-bold text-[10px] uppercase text-jungle-teal-600 border-b border-jungle-teal-200 flex justify-between">
+          <div className="flex-1 min-h-0 flex flex-col border border-jungle-teal-200 rounded-xl overflow-hidden">
+            <div className="shrink-0 bg-jungle-teal-100 px-3 py-1.5 font-bold text-ui-2xs uppercase text-jungle-teal-600 border-b border-jungle-teal-200 flex justify-between">
               <span>Item ({cart.length})</span>
               <span>Total (৳)</span>
             </div>
-            <div className="divide-y divide-jungle-teal-100 max-h-48 overflow-y-auto">
+            <div className="flex-1 min-h-0 divide-y divide-jungle-teal-100 overflow-y-auto">
               {cart.map((item) => (
-                <div key={item.product_id} className="p-2.5 flex justify-between items-center text-[11px]">
+                <div key={item.product_id} className="p-2.5 flex justify-between items-center text-ui-xs">
                   <div className="min-w-0 flex-1 pr-2">
                     <div className="font-bold text-jungle-teal-900 font-sans truncate">{item.name}</div>
-                    <div className="text-[10px] text-jungle-teal-500">
+                    <div className="text-ui-2xs text-jungle-teal-500">
                       {item.qty} {item.unit || 'pcs'} × ৳ {(item.unit_price_paisa / 100).toFixed(2)}
                     </div>
                   </div>
@@ -141,7 +208,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
           </div>
 
           {/* Financial Breakdown */}
-          <div className="bg-jungle-teal-50 p-3 rounded-xl border border-jungle-teal-200 space-y-1.5 text-xs">
+          <div className="shrink-0 bg-jungle-teal-50 p-3 rounded-xl border border-jungle-teal-200 space-y-1.5 text-ui-sm">
             <div className="flex justify-between text-jungle-teal-600">
               <span>Subtotal:</span>
               <span>৳ {(subtotalPaisa / 100).toFixed(2)}</span>
@@ -152,7 +219,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
                 <span>- ৳ {(discountPaisa / 100).toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between text-sm font-extrabold text-jungle-teal-900 border-t border-jungle-teal-200 pt-1.5">
+            <div className="flex justify-between text-ui-base font-extrabold text-jungle-teal-900 border-t border-jungle-teal-200 pt-1.5">
               <span>Net Payable:</span>
               <span className="text-azure-mist-800">৳ {(totalPaisa / 100).toFixed(2)}</span>
             </div>
@@ -175,43 +242,91 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="border-t border-jungle-teal-200 pt-4 flex flex-col sm:flex-row items-center gap-2.5 shrink-0">
+        {/*
+          Action buttons.
+
+          The label sits on one line and the shortcut on a second, rather than
+          both running together. Side by side inside a max-w-md dialog each
+          button gets about 158px, and "Complete and print (F8 / Enter)" wants
+          250px - so both captions wrapped mid-phrase, to different heights,
+          and `items-center` then left the two buttons vertically out of step.
+        */}
+        <div className="border-t border-jungle-teal-200 pt-4 flex items-stretch gap-2.5 shrink-0">
+          {!hasPrinter ? (
+            /* No printer: one way to finish, so one button. Two buttons that
+               both only save the sale would be a choice with no difference. */
+            <button
+              type="button"
+              disabled={loading || isDueForbidden}
+              onClick={() => confirmSale(false)}
+              className={`flex-1 min-w-0 px-2 py-2.5 rounded-2xl text-ui-sm transition-all shadow-md flex flex-col items-center justify-center gap-0.5 ${
+                isDueForbidden
+                  ? 'bg-jungle-teal-100 text-jungle-teal-400 border border-jungle-teal-200 cursor-not-allowed opacity-60'
+                  : 'bg-muted-teal-700 hover:bg-muted-teal-800 text-white shadow-muted-teal-900/20 active:scale-[0.98]'
+              }`}
+              title={isDueForbidden ? 'Cannot confirm due sale for Walk-in customer' : 'Complete the sale (Enter)'}
+            >
+              <span className="flex items-center gap-1.5 font-black whitespace-nowrap">
+                {busy('plain') ? (
+                  <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4 shrink-0" />
+                )}
+                {busy('plain') ? 'Processing…' : isDueForbidden ? 'Customer needed' : 'Complete sale'}
+              </span>
+              <span className="text-ui-2xs font-semibold opacity-70 whitespace-nowrap">Enter</span>
+            </button>
+          ) : (
+          <>
           <button
             type="button"
             disabled={loading || isDueForbidden}
-            onClick={() => onConfirmSale(false)}
-            className={`w-full sm:flex-1 py-3 font-bold rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5 border ${
+            onClick={() => confirmSale(false)}
+            className={`flex-1 min-w-0 px-2 py-2.5 rounded-2xl text-ui-sm transition-colors flex flex-col items-center justify-center gap-0.5 border ${
               isDueForbidden
-                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                ? 'bg-jungle-teal-50 text-jungle-teal-400 border-jungle-teal-200 cursor-not-allowed opacity-60'
                 : 'bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 border-jungle-teal-300 active:scale-[0.98]'
             }`}
             title={isDueForbidden ? 'Cannot confirm due sale for Walk-in customer' : 'Complete the sale without printing (F7)'}
           >
-            <Check className="w-4 h-4 text-jungle-teal-600" />
-            <span>Complete without printing (F7)</span>
+            <span className="flex items-center gap-1.5 font-bold whitespace-nowrap">
+              {busy('plain') ? (
+                <RefreshCw className="w-4 h-4 shrink-0 animate-spin text-jungle-teal-600" />
+              ) : (
+                <Check className="w-4 h-4 shrink-0 text-jungle-teal-600" />
+              )}
+              {busy('plain') ? 'Processing…' : 'Complete only'}
+            </span>
+            <span className="text-ui-2xs font-semibold opacity-70 whitespace-nowrap">no receipt · F7</span>
           </button>
 
           <button
             type="button"
             disabled={loading || isDueForbidden}
-            onClick={() => onConfirmSale(true)}
-            className={`w-full sm:flex-1 py-3 font-black rounded-2xl text-xs transition-all shadow-md flex items-center justify-center gap-1.5 ${
+            onClick={() => confirmSale(true)}
+            className={`flex-[1.2] min-w-0 px-2 py-2.5 rounded-2xl text-ui-sm transition-all shadow-md flex flex-col items-center justify-center gap-0.5 ${
               isDueForbidden
-                ? 'bg-gray-200 text-gray-500 cursor-not-allowed opacity-60'
-                : 'bg-[#283e32] hover:bg-[#141f19] text-white shadow-muted-teal-900/20 active:scale-[0.98]'
+                ? 'bg-jungle-teal-100 text-jungle-teal-400 border border-jungle-teal-200 cursor-not-allowed opacity-60'
+                : 'bg-muted-teal-700 hover:bg-muted-teal-800 text-white shadow-muted-teal-900/20 active:scale-[0.98]'
             }`}
             title={isDueForbidden ? 'Cannot confirm due sale for Walk-in customer' : 'Complete the sale and print the receipt (Enter / F8)'}
           >
-            <Printer className="w-4 h-4" />
-            <span>
-              {loading
+            <span className="flex items-center gap-1.5 font-black whitespace-nowrap">
+              {busy('print') ? (
+                <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
+              ) : (
+                <Printer className="w-4 h-4 shrink-0" />
+              )}
+              {busy('print')
                 ? 'Processing…'
                 : isDueForbidden
-                ? 'Customer Required for Due'
-                : 'Complete and print (F8 / Enter)'}
+                ? 'Customer needed'
+                : 'Complete & print'}
             </span>
+            <span className="text-ui-2xs font-semibold opacity-70 whitespace-nowrap">Enter · F8</span>
           </button>
+          </>
+          )}
         </div>
       </div>
     </div>

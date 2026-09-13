@@ -1,6 +1,6 @@
 {
   "name": "mechanical-shop-pos",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Offline-first Mechanical Shop POS Desktop Application",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "npm run typecheck && npm exec -- vite build && npm exec -- tsc -p tsconfig.electron.json",
     "electron:dev": "node scripts/dev.js",
     "electron:build": "npm run build && npm exec -- electron-builder --win",
-    "postinstall": "npm exec -- electron-builder install-app-deps"
+    "postinstall": "npm exec -- electron-builder install-app-deps",
+    "reset-owner": "npm exec -- electron scripts/reset-owner-password.js"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

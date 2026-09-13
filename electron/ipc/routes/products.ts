@@ -199,7 +199,11 @@ export function registerProductsHandlers() {
           is_serial_tracked = ?, updated_at = ?
         WHERE id = ?
       `).run(
-        data.barcode || existingProduct.barcode, data.name.trim(), data.name_bn?.trim() || null,
+        data.barcode || existingProduct.barcode, data.name.trim(),
+        // Absent means "leave it as it is", not "clear it". The product form no
+        // longer offers a Bangla name, so every ordinary edit would otherwise
+        // wipe one that came in through a CSV import.
+        data.name_bn === undefined ? existingProduct.name_bn : (data.name_bn?.trim() || null),
         data.category_id || null, data.brand?.trim() || null, data.unit,
         data.cost_price_paisa, data.sell_price_paisa, data.low_stock_threshold,
         data.is_serial_tracked ? 1 : 0, now, data.id
@@ -464,6 +468,23 @@ export function registerProductsHandlers() {
                 id, product_id, type, qty_delta, ref_table, ref_id, reason, user_id, created_at, updated_at, unit_cost_paisa
               ) VALUES (?, ?, 'initial', ?, 'products', ?, 'CSV Bulk Import', ?, ?, ?, ?)
             `).run(uuidv7(), productId, row.stock_qty, productId, userId, now, now, row.cost_price_paisa);
+
+            /*
+             * The opening stock needs a batch behind it, exactly as it does when
+             * a product is added by hand.
+             *
+             * Without one the units existed in products.stock_qty and nowhere
+             * else, so the whole imported catalogue showed up in the batch drift
+             * report and the stock valuation had to fall back to the product's
+             * current cost for every one of them - the same estimate the FIFO
+             * pool exists to replace. Selling an imported part costed it against
+             * that fallback too, so its margin was whatever the cost price
+             * happened to say on the day rather than what the shop paid.
+             */
+            db.prepare(`
+              INSERT INTO inventory_batches (id, product_id, initial_qty, remaining_qty, cost_price_paisa, received_at, ref_table, ref_id)
+              VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, 'products', ?)
+            `).run(productId, row.stock_qty, row.stock_qty, row.cost_price_paisa, now, productId);
           }
   
           importedCount++;

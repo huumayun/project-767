@@ -11,9 +11,8 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-// 20 groups, each with 2 children. The schema has no parent_id, so children are
-// stored as ordinary flat categories named "Parent — Child" — the workaround a
-// real shop lands on. 60 rows in total, which is what the till has to cope with.
+// 20 groups, each with 2 children, wired through parent_id the way the schema
+// now stores them. 60 rows in total, which is what the till has to cope with.
 const GROUPS: Array<[string, string, string]> = [
   ['Filters', 'Oil Filters', 'Air Filters'],
   ['Brake System', 'Brake Pads', 'Brake Discs'],
@@ -37,11 +36,11 @@ const GROUPS: Array<[string, string, string]> = [
   ['Tyres & Tubes', 'Tyres', 'Tubes'],
 ];
 
-const CATEGORIES: Array<{ id: string; name: string }> = [];
+const CATEGORIES: Array<{ id: string; name: string; parent_id: string | null }> = [];
 GROUPS.forEach(([parent, a, b], i) => {
-  CATEGORIES.push({ id: `cat-${i}-0`, name: parent });
-  CATEGORIES.push({ id: `cat-${i}-1`, name: `${parent} — ${a}` });
-  CATEGORIES.push({ id: `cat-${i}-2`, name: `${parent} — ${b}` });
+  CATEGORIES.push({ id: `cat-${i}-0`, name: parent, parent_id: null });
+  CATEGORIES.push({ id: `cat-${i}-1`, name: a, parent_id: `cat-${i}-0` });
+  CATEGORIES.push({ id: `cat-${i}-2`, name: b, parent_id: `cat-${i}-0` });
 });
 
 const BRANDS = ['Bosch', 'Denso', 'NGK', 'SKF', 'TVS', 'Gates', 'Mahle', 'Exide', 'Castrol', 'Motul'];
@@ -53,7 +52,7 @@ const PRODUCTS = Array.from({ length: 200 }, (_, i) => {
   const g = i % GROUPS.length;
   const childIdx = i % 3 === 0 ? 0 : (i % 2) + 1; // some sit on the parent
   const cat = CATEGORIES.find((c) => c.id === `cat-${g}-${childIdx}`)!;
-  const leaf = cat.name.includes('—') ? cat.name.split('—')[1].trim() : cat.name;
+  const leaf = cat.name;
   const singular = leaf.endsWith('s') ? leaf.slice(0, -1) : leaf;
   const brand = BRANDS[i % BRANDS.length];
   const sell = 12000 + ((i * 7919) % 480000); // ৳120 – ৳4,920, plus a few big ones

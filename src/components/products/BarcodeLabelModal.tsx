@@ -44,11 +44,28 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({
   const handlePrintLabels = () => {
     const canvas = document.getElementById('barcode-preview-canvas') as HTMLCanvasElement;
     const barcodeDataUrl = canvas ? canvas.toDataURL('image/png') : '';
-  
+
+    /*
+     * The label sheet is built as a string and written into a document, so
+     * anything from the product has to be escaped on the way in - a part called
+     * `Seal 1/2" <A>` closed the div early and threw the rest of the sheet out
+     * of shape. The page CSP stops an injected tag from running anything, but
+     * that is the last line of defence and not a reason to hand it markup.
+     *
+     * The two other places that print built HTML - the customer ledger and the
+     * shift Z-report - already do this.
+     */
+    const esc = (v: unknown) =>
+      String(v ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
     const labelHtml = `
       <div style="border: 1px dashed #ccc; padding: 6px; text-align: center; font-family: sans-serif; width: 180px; page-break-inside: avoid; display: inline-block; margin: 4px; box-sizing: border-box;">
-        <div style="font-size: 10px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${product.name}</div>
-        <img src="${barcodeDataUrl}" style="max-width: 100%; height: auto;" />
+        <div style="font-size: 10px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${esc(product.name)}</div>
+        <img src="${esc(barcodeDataUrl)}" style="max-width: 100%; height: auto;" />
         ${showPrice ? `<div style="font-size: 11px; font-weight: bold; font-family: monospace;">MRP: ৳ ${(product.sell_price_paisa / 100).toFixed(2)}</div>` : ''}
       </div>
     `;
@@ -82,7 +99,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({
     doc.write(`
       <html>
         <head>
-          <title>Barcode Label Sheet - ${product.barcode}</title>
+          <title>Barcode Label Sheet - ${esc(product.barcode)}</title>
           <style>
             @page { size: A4; margin: 10mm; }
             body { margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-wrap: wrap; justify-content: flex-start; }

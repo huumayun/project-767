@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SyncStatusInfo } from '../../types/ipc';
-import { Cloud, CloudOff, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Cloud, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 interface SyncStatusBadgeProps {
   onOpenSyncModal: () => void;
@@ -15,18 +15,15 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ onOpenSyncModa
     cloudConfigured: false,
   });
 
-  const [gdriveConnected, setGdriveConnected] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const checkStatus = async () => {
     if (!window.api?.sync) return;
     try {
-      const [info, gdrive] = await Promise.all([
-        window.api.sync.getStatus(),
-        window.api.gdrive ? window.api.gdrive.status() : Promise.resolve({ isConnected: false })
-      ]);
-      setSyncInfo(info);
-      setGdriveConnected(gdrive.isConnected);
+      // Drive's own connection state was polled here only to label a chip that
+      // is no longer drawn; Settings reports it now, so this ran every ten
+      // seconds for nothing.
+      setSyncInfo(await window.api.sync.getStatus());
     } catch (err) {
       console.error('Failed to get sync status:', err);
     }
@@ -52,30 +49,19 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ onOpenSyncModa
     }
   };
 
+  /**
+   * Only states that ask something of the owner get a chip.
+   *
+   * "Local Only" was shown permanently on any shop without cloud backup, which
+   * is the ordinary way this app runs - a badge for the default state is noise,
+   * and in a 192px rail it crowded out the title beside it. Setting backup up
+   * now lives in Settings, where the rest of the configuration is.
+   *
+   * A healthy Drive connection is likewise not news; it is reported in Settings.
+   */
   const renderBadge = () => {
     if (!syncInfo.cloudConfigured) {
-      if (gdriveConnected) {
-        return (
-          <button
-            onClick={onOpenSyncModal}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 border border-green-300 text-green-700 hover:bg-green-200 text-xs font-mono transition-colors"
-            title="Google Drive backup is active."
-          >
-            <Cloud className="w-3.5 h-3.5 text-green-600" />
-            <span className="font-bold">Cloud Backup Enabled</span>
-          </button>
-        );
-      }
-      return (
-        <button
-          onClick={onOpenSyncModal}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-jungle-teal-100 border border-jungle-teal-300 text-jungle-teal-600 hover:text-jungle-teal-900 hover:bg-jungle-teal-200 text-xs font-mono transition-colors"
-          title="Cloud backup not configured. Click to setup."
-        >
-          <CloudOff className="w-3.5 h-3.5 text-jungle-teal-500" />
-          <span>Local Only</span>
-        </button>
-      );
+      return null;
     }
 
     if (syncInfo.status === 'syncing' || loading) {

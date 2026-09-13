@@ -77,7 +77,7 @@ export const HeldSalesModal: React.FC<HeldSalesModalProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/50 backdrop-blur-xs p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/60 backdrop-blur-xs p-4">
         <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl max-w-4xl w-full shadow-2xl text-jungle-teal-900 font-sans overflow-hidden flex flex-col max-h-[82vh]">
           {/* Header */}
           <div className="shrink-0 flex items-center gap-3 px-5 py-4 border-b border-jungle-teal-200">
@@ -100,7 +100,7 @@ export const HeldSalesModal: React.FC<HeldSalesModalProps> = ({
               onClick={onClose}
               className={`${
                 heldSales.length > 0 ? '' : 'ml-auto'
-              } w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-jungle-teal-400 hover:text-jungle-teal-900 hover:bg-jungle-teal-100 transition-colors`}
+              } w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-jungle-teal-600 hover:text-jungle-teal-900 hover:bg-jungle-teal-100 transition-colors`}
               title="Close"
             >
               <X className="w-4 h-4" />
@@ -113,7 +113,7 @@ export const HeldSalesModal: React.FC<HeldSalesModalProps> = ({
 
           {!loading && heldSales.length === 0 && (
             <div className="p-12 text-center">
-              <div className="w-14 h-14 mx-auto rounded-full bg-jungle-teal-100 text-jungle-teal-400 flex items-center justify-center mb-3">
+              <div className="w-14 h-14 mx-auto rounded-full bg-jungle-teal-100 text-jungle-teal-600 flex items-center justify-center mb-3">
                 <Layers className="w-6 h-6" />
               </div>
               <div className="text-ui-base font-medium text-jungle-teal-900 mb-1">Nothing parked</div>
@@ -146,7 +146,7 @@ export const HeldSalesModal: React.FC<HeldSalesModalProps> = ({
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <User
                           className={`w-3.5 h-3.5 shrink-0 ${
-                            customerName ? 'text-azure-mist-700' : 'text-jungle-teal-400'
+                            customerName ? 'text-azure-mist-700' : 'text-jungle-teal-600'
                           }`}
                         />
                         <span
@@ -158,7 +158,7 @@ export const HeldSalesModal: React.FC<HeldSalesModalProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 font-mono text-ui-2xs text-jungle-teal-600">
-                        <Clock className="w-3 h-3 text-jungle-teal-400 shrink-0" />
+                        <Clock className="w-3 h-3 text-jungle-teal-600 shrink-0" />
                         <span>
                           {new Date(sale.created_at).toLocaleTimeString([], {
                             hour: '2-digit',
@@ -203,7 +203,7 @@ export const HeldSalesModal: React.FC<HeldSalesModalProps> = ({
                         key={`${item.product_id}-${idx}`}
                         className="px-5 py-2 flex items-center gap-3"
                       >
-                        <span className="font-mono text-ui-2xs text-jungle-teal-400 w-5 shrink-0">
+                        <span className="font-mono text-ui-2xs text-jungle-teal-600 w-5 shrink-0">
                           {idx + 1}
                         </span>
                         <span className="flex-1 min-w-0 text-ui-sm text-jungle-teal-900 truncate">

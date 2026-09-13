@@ -301,7 +301,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
             <div>
               <label className="block text-jungle-teal-800 mb-1.5">
-                Cost Price (৳) <span className="text-rose-500">*</span>
+                Last Purchase Cost (৳) <span className="text-rose-500">*</span>
               </label>
               <input
                 type="number"

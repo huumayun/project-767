@@ -11,18 +11,13 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { CategoryFormModal, CategoryFormMode } from './CategoryFormModal';
-import {
-  buildCategoryTree,
-  topLevelCategories,
-  composeCategoryName,
-  splitCategoryName,
-} from '../../utils/categoryTree';
+import { buildCategoryTree, topLevelCategories } from '../../utils/categoryTree';
 
 interface CategoriesViewProps {
   categories: Category[];
   products: Product[];
-  onAddCategory: (name: string) => Promise<Category | null>;
-  onUpdateCategory: (id: string, name: string) => Promise<boolean>;
+  onAddCategory: (name: string, parentId?: string | null) => Promise<Category | null>;
+  onUpdateCategory: (id: string, name: string, parentId?: string | null) => Promise<boolean>;
   onDeleteCategory: (id: string) => Promise<boolean>;
   onOpenProducts: (categoryId: string) => void;
 }
@@ -82,7 +77,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
   const statFor = (id?: string): Stat => (id && stats[id]) || EMPTY;
 
   const rollUp = (node: ReturnType<typeof buildCategoryTree>[number]): Stat =>
-    [node.self?.id, ...node.children.map((c) => c.category.id)].reduce<Stat>(
+    [node.parent.id, ...node.children.map((c) => c.id)].reduce<Stat>(
       (acc, id) => {
         const s = statFor(id);
         return {
@@ -96,8 +91,14 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
     );
 
   const openEdit = (c: Category) => {
-    const { parent, leaf } = splitCategoryName(c.name);
-    setModal({ kind: 'edit', id: c.id, currentName: c.name, parentName: parent, leafName: leaf });
+    const parent = c.parent_id ? categories.find((p) => p.id === c.parent_id) : null;
+    setModal({
+      kind: 'edit',
+      id: c.id,
+      currentName: c.name,
+      parentId: parent?.id ?? null,
+      parentName: parent?.name ?? null,
+    });
   };
 
   const handleSubmit = async (leaf: string) => {
@@ -105,26 +106,30 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
     setBusy(true);
     try {
       if (modal.kind === 'edit') {
-        const full = composeCategoryName(modal.parentName, leaf);
-        if (full === modal.currentName) {
+        if (leaf === modal.currentName) {
           setModal(null);
           return;
         }
-        await onUpdateCategory(modal.id, full);
-        toast.success(`Renamed to “${full}”.`);
+        await onUpdateCategory(modal.id, leaf, modal.parentId);
+        toast.success(`Renamed to “${leaf}”.`);
       } else {
-        const parent = modal.kind === 'child' ? modal.parentName : null;
-        const full = composeCategoryName(parent, leaf);
-        if (categories.some((c) => c.name.toLowerCase() === full.toLowerCase())) {
-          toast.warning(`“${full}” already exists.`);
+        const parentId = modal.kind === 'child' ? modal.parentId : null;
+        const parentName = modal.kind === 'child' ? modal.parentName : null;
+        // The main process enforces this per parent; checking here keeps the
+        // message immediate rather than arriving as a thrown error.
+        const clash = categories.some(
+          (c) => (c.parent_id || null) === parentId && c.name.toLowerCase() === leaf.toLowerCase()
+        );
+        if (clash) {
+          toast.warning(parentName ? `“${leaf}” already exists under ${parentName}.` : `“${leaf}” already exists.`);
           return;
         }
-        const created = await onAddCategory(full);
+        const created = await onAddCategory(leaf, parentId);
         if (!created) {
           toast.error('Could not add that category.');
           return;
         }
-        toast.success(parent ? `Added “${leaf}” under ${parent}.` : `Group “${leaf}” added.`);
+        toast.success(parentName ? `Added “${leaf}” under ${parentName}.` : `Group “${leaf}” added.`);
       }
       setModal(null);
     } catch (err: any) {
@@ -211,29 +216,26 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
           return (
             <div
               key={node.parentName}
-              className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl shadow-xs overflow-hidden group/card"
+              className="bg-white border border-jungle-teal-200 rounded-2xl shadow-xs overflow-hidden group/card"
             >
               {/* Parent */}
-              <div className="px-3.5 py-3 border-b border-jungle-teal-200 bg-jungle-teal-100/60">
+              <div className="px-3.5 py-3 border-b border-jungle-teal-200 bg-jungle-teal-100">
                 <div className="flex items-start gap-2">
                   <button
                     type="button"
-                    disabled={!node.self}
-                    onClick={() => node.self && onOpenProducts(node.self.id)}
+                    onClick={() => onOpenProducts(node.parent.id)}
                     className="flex-1 min-w-0 text-left text-ui-base font-semibold leading-tight break-words hover:text-azure-mist-800 transition-colors disabled:hover:text-jungle-teal-900"
                   >
                     {node.parentName}
                   </button>
-                  {node.self && (
-                    <button
-                      type="button"
-                      onClick={() => openEdit(node.self!)}
-                      title={`Edit ${node.parentName}`}
-                      className="shrink-0 w-6 h-6 rounded flex items-center justify-center text-jungle-teal-400 opacity-0 group-hover/card:opacity-100 hover:text-azure-mist-800 transition-opacity"
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => openEdit(node.parent)}
+                    title={`Edit ${node.parentName}`}
+                    className="shrink-0 w-6 h-6 rounded flex items-center justify-center text-jungle-teal-400 opacity-0 group-hover/card:opacity-100 hover:text-azure-mist-800 transition-opacity"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
                   {chip(total)}
                 </div>
                 <div className="mt-1.5 flex items-center gap-3 text-ui-2xs font-mono text-jungle-teal-600">
@@ -242,6 +244,11 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                     {total.stock} in stock
                   </span>
                   {total.low > 0 && <span className="text-amber-800 font-semibold">{total.low} low</span>}
+                  {node.children.length > 0 && (
+                    <span className="text-jungle-teal-500">
+                      {node.children.length} subcategor{node.children.length === 1 ? 'y' : 'ies'}
+                    </span>
+                  )}
                   <span className="ml-auto text-jungle-teal-900 font-semibold">
                     ৳ {(total.value / 100).toFixed(0)}
                   </span>
@@ -249,16 +256,20 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
               </div>
 
               {/* Children */}
+              {/* Children hang off a rule rather than sitting at the parent's own
+                  indent, where a single small arrow was all that told them apart. */}
               {node.children.length > 0 && (
-                <div className="divide-y divide-jungle-teal-100">
-                  {node.children.map(({ category, leafName }) => {
+                <div className="bg-white pl-5 pr-1 py-1">
+                  <div className="border-l-2 border-jungle-teal-200 divide-y divide-jungle-teal-100">
+                  {node.children.map((category) => {
+                    const leafName = category.name;
                     const s = statFor(category.id);
                     return (
                       <div
                         key={category.id}
-                        className="px-3.5 py-2 flex items-center gap-2 hover:bg-azure-mist-50/60 transition-colors group/row"
+                        className="pl-3 pr-2.5 py-2 flex items-center gap-2 hover:bg-azure-mist-50/60 transition-colors group/row"
                       >
-                        <CornerDownRight className="w-3.5 h-3.5 text-jungle-teal-400 shrink-0" />
+                        <CornerDownRight className="w-3 h-3 text-jungle-teal-300 shrink-0" />
                         <button
                           type="button"
                           onClick={() => onOpenProducts(category.id)}
@@ -286,12 +297,13 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
                       </div>
                     );
                   })}
+                  </div>
                 </div>
               )}
 
               <button
                 type="button"
-                onClick={() => setModal({ kind: 'child', parentName: node.parentName })}
+                onClick={() => setModal({ kind: 'child', parentId: node.parent.id, parentName: node.parentName })}
                 className="w-full px-3.5 py-2 border-t border-jungle-teal-100 flex items-center gap-1.5 text-ui-xs font-medium text-jungle-teal-600 hover:text-azure-mist-800 hover:bg-azure-mist-50/50 transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />

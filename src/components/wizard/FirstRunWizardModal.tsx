@@ -10,6 +10,7 @@ import {
   Check,
   Cloud,
   Database,
+  Download,
 } from 'lucide-react';
 
 interface FirstRunWizardModalProps {
@@ -21,19 +22,38 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
   isOpen,
   onCompleted,
 }) => {
-  const [step, setStep] = useState<0 | 1 | 2 | 3 | 'restore'>(0);
+  const [step, setStep] = useState<0 | 1 | 2 | 3 | 'restore' | 'recovery'>(0);
+  // Shown once, after setup writes it. Held only for as long as it is on screen.
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
+  const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
 
   // Form State
   const [shopName, setShopName] = useState('My Mechanical Workshop');
   const [shopPhone, setShopPhone] = useState('');
   const [shopAddress, setShopAddress] = useState('Dhaka, Bangladesh');
   const [deviceIdPrefix, setDeviceIdPrefix] = useState('REG01');
-  const [defaultInvoiceLayout, setDefaultInvoiceLayout] = useState<'80mm' | 'a5'>('80mm');
+  const [defaultInvoiceLayout, setDefaultInvoiceLayout] = useState<'80mm' | 'a4'>('80mm');
   // Deliberately blank: prefilling the seeded password is what let shops finish
   // setup still using owner/owner123.
   const [ownerPassword, setOwnerPassword] = useState('');
   const [ownerPasswordConfirm, setOwnerPasswordConfirm] = useState('');
-  const [seedDemoData, setSeedDemoData] = useState(true);
+  /*
+   * Off, and offered only in a development build.
+   *
+   * This box used to come ticked, in the installed app as much as anywhere, so
+   * a shop that clicked straight through setup started trading with ten fake
+   * parts, three fake customers and two fake suppliers in its books.
+   */
+  const [seedDemoData, setSeedDemoData] = useState(false);
+  const [sampleDataAvailable, setSampleDataAvailable] = useState(false);
+  React.useEffect(() => {
+    if (!isOpen) return;
+    window.api?.app
+      ?.info?.()
+      .then((info) => setSampleDataAvailable(Boolean(info?.sampleDataAvailable)))
+      .catch(() => setSampleDataAvailable(false));
+  }, [isOpen]);
 
   const ownerPasswordError = (() => {
     if (!ownerPassword) return null;
@@ -67,12 +87,12 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
     setError(null);
     try {
       // 1. Optionally seed demo mechanical parts first, so it doesn't get blocked by auth
-      if (seedDemoData) {
+      if (seedDemoData && sampleDataAvailable) {
         await window.api.demo.seed();
       }
 
       // 2. Complete wizard (this locks the system and requires auth for future calls)
-      await window.api.wizard.completeFirstRun({
+      const res = await window.api.wizard.completeFirstRun({
         shop_name: shopName.trim(),
         shop_address: shopAddress.trim(),
         shop_phone: shopPhone.trim(),
@@ -81,7 +101,12 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
         owner_password: ownerPassword.trim(),
       });
 
-      onCompleted();
+      if (res?.recoveryCodes?.length) {
+        setRecoveryCodes(res.recoveryCodes);
+        setStep('recovery');
+      } else {
+        onCompleted();
+      }
     } catch (err: any) {
       setError(err.message || 'Setup failed.');
     } finally {
@@ -214,6 +239,95 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
                 <p className="text-xs text-jungle-teal-500 mt-1">Select a backup file (.db) from your computer</p>
               </div>
               <ArrowRight className="w-5 h-5 text-jungle-teal-300" />
+            </button>
+          </div>
+        )}
+
+        {/* RECOVERY CODE STEP - setup is already saved by the time this shows,
+            so there is no way back and no way to skip past it unacknowledged. */}
+        {step === 'recovery' && recoveryCodes && (
+          <div className="space-y-4">
+            <div className="text-center space-y-1.5">
+              <CheckCircle2 className="w-10 h-10 text-muted-teal-600 mx-auto" />
+              <h3 className="font-bold text-lg text-jungle-teal-900">Setup complete</h3>
+              <p className="text-xs text-jungle-teal-600 leading-relaxed max-w-sm mx-auto">
+                One last thing. This shop runs entirely on this computer - there is no server that
+                can email you a password reset. If the owner password is ever forgotten, these codes
+                are the way back in. Each one works once.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-800">
+                Recovery codes
+              </p>
+
+              <ol className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {recoveryCodes.map((code, i) => (
+                  <li
+                    key={code}
+                    className="flex items-baseline gap-2 bg-white border border-amber-200 rounded-lg px-2.5 py-1.5"
+                  >
+                    <span className="text-[10px] font-mono text-amber-700 shrink-0">{i + 1}.</span>
+                    <code className="font-mono text-sm font-bold tracking-wider text-jungle-teal-900">
+                      {code}
+                    </code>
+                  </li>
+                ))}
+              </ol>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.api) return;
+                    try {
+                      await window.api.settings.exportRecoveryCodes(recoveryCodes);
+                    } catch {
+                      // Saving is a convenience; the codes are on screen either way.
+                    }
+                  }}
+                  className="flex items-center gap-1.5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white text-[11px] font-semibold py-1.5 px-3 rounded-lg transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download as .txt</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(recoveryCodes.join('\n'));
+                    setRecoveryCopied(true);
+                  }}
+                  className="flex items-center gap-1.5 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-semibold py-1.5 px-3 rounded-lg transition-colors"
+                >
+                  {recoveryCopied ? <Check className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  <span>{recoveryCopied ? 'Copied' : 'Copy all'}</span>
+                </button>
+              </div>
+
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Keep them on paper, away from the counter. They are stored hashed, so this is the
+                only time they can be read - after this screen, nobody can look them up.
+              </p>
+            </div>
+
+            <label className="flex items-start gap-2.5 text-xs text-jungle-teal-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={recoveryAcknowledged}
+                onChange={(e) => setRecoveryAcknowledged(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-azure-mist-700"
+              />
+              <span>I have saved the recovery codes somewhere safe.</span>
+            </label>
+
+            <button
+              type="button"
+              disabled={!recoveryAcknowledged}
+              onClick={onCompleted}
+              className="w-full bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-bold py-3 rounded-xl text-sm transition-colors disabled:opacity-40"
+            >
+              Start using the POS
             </button>
           </div>
         )}
@@ -379,21 +493,21 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
                   </div>
 
                   <div
-                    onClick={() => setDefaultInvoiceLayout('a5')}
+                    onClick={() => setDefaultInvoiceLayout('a4')}
                     className={`p-3.5 rounded-xl border cursor-pointer flex flex-col justify-between transition-all select-none ${
-                      defaultInvoiceLayout === 'a5'
+                      defaultInvoiceLayout === 'a4'
                         ? 'bg-azure-mist-50 border-azure-mist-600 shadow-xs'
                         : 'bg-jungle-teal-50 border-jungle-teal-200 hover:border-jungle-teal-300'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <Printer className="w-4 h-4 text-azure-mist-700" />
-                      {defaultInvoiceLayout === 'a5' && (
+                      {defaultInvoiceLayout === 'a4' && (
                         <Check className="w-4 h-4 text-azure-mist-700" />
                       )}
                     </div>
-                    <span className="font-bold text-xs text-jungle-teal-900">A5 Formal Voucher</span>
-                    <span className="text-[10px] text-jungle-teal-500">Half-page invoice memo</span>
+                    <span className="font-bold text-xs text-jungle-teal-900">A4 Sales Invoice</span>
+                    <span className="text-[10px] text-jungle-teal-500">Full-page memo for trade customers</span>
                   </div>
                 </div>
               </div>
@@ -471,24 +585,26 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
                 </span>
               </div>
 
-              {/* Demo Data Option */}
-              <div className="p-3.5 bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl flex items-start gap-3 mt-2">
-                <input
-                  type="checkbox"
-                  id="seedDemo"
-                  checked={seedDemoData}
-                  onChange={(e) => setSeedDemoData(e.target.checked)}
-                  className="mt-0.5 rounded-sm bg-jungle-teal-100 border-jungle-teal-300 text-azure-mist-700 focus:ring-0"
-                />
-                <div>
-                  <label htmlFor="seedDemo" className="font-bold text-jungle-teal-900 cursor-pointer block">
-                    Load 10 Sample Mechanical Parts & Customers
-                  </label>
-                  <p className="text-[11px] text-jungle-teal-500 mt-0.5">
-                    Pre-fills genuine automotive components (Pistons, Spark Plugs, Brake Pads, Bearings) and 3 workshop clients for instant testing. (Can be cleared anytime from Settings).
-                  </p>
+              {/* Sample data - development builds only */}
+              {sampleDataAvailable && (
+                <div className="p-3.5 bg-jungle-teal-50 border border-dashed border-jungle-teal-300 rounded-xl flex items-start gap-3 mt-2">
+                  <input
+                    type="checkbox"
+                    id="seedDemo"
+                    checked={seedDemoData}
+                    onChange={(e) => setSeedDemoData(e.target.checked)}
+                    className="mt-0.5 rounded-sm bg-jungle-teal-100 border-jungle-teal-300 text-azure-mist-700 focus:ring-0"
+                  />
+                  <div>
+                    <label htmlFor="seedDemo" className="font-bold text-jungle-teal-900 cursor-pointer block">
+                      Load sample data <span className="font-normal text-jungle-teal-500">(development build only)</span>
+                    </label>
+                    <p className="text-[11px] text-jungle-teal-500 mt-0.5">
+                      10 parts with stock, 3 customers and 2 suppliers, for trying the app out. Leave this off for a real shop.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="flex justify-between pt-2">

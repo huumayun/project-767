@@ -1,74 +1,108 @@
 import { Category } from '../types/ipc';
 
 /**
- * Subcategories without a schema change.
+ * Two-level categories, built from `categories.parent_id`.
  *
- * `categories` is a flat table — {id, name}, no parent_id — so the parent is
- * carried in the name: "Batteries — Lead Acid". This module is the single place
- * that convention is understood, so if a parent_id column is ever added only
- * these functions need to change.
+ * This used to carry the parent in the name — "Batteries — Lead Acid" — because
+ * the table had no parent column. That read correctly and did nothing else:
+ * renaming a parent left its children stranded under the old prefix, a category
+ * whose own name held the separator was mistaken for a child, and a global
+ * UNIQUE(name) meant two parents could never share a child name.
  *
- * Caveat worth knowing: it is a convention, not a constraint. Renaming a parent
- * does not move its children, and a category whose own name contains the
- * separator would be read as a child.
+ * The column exists now. The separator is kept only for display, where a child
+ * has to be shown with the parent it belongs to.
  */
 export const SEPARATOR = ' — ';
 
 export interface CategoryNode {
+  /** The top-level category. */
+  parent: Category;
   parentName: string;
-  /** The top-level category itself, when one exists with exactly that name. */
-  self: Category | null;
-  children: Array<{ category: Category; leafName: string }>;
+  children: Category[];
 }
 
-/** "Batteries — Lead Acid" -> { parent: "Batteries", leaf: "Lead Acid" } */
-export function splitCategoryName(name: string): { parent: string | null; leaf: string } {
-  const i = name.indexOf(SEPARATOR);
-  if (i === -1) return { parent: null, leaf: name };
-  return {
-    parent: name.slice(0, i).trim(),
-    leaf: name.slice(i + SEPARATOR.length).trim(),
-  };
-}
-
-/** Categories that are not children of anything — candidates to be a parent. */
+/** Categories with no parent — the ones that can take children. */
 export function topLevelCategories(categories: Category[]): Category[] {
   return categories
-    .filter((c) => splitCategoryName(c.name).parent === null)
+    .filter((c) => !c.parent_id)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Groups a flat list into parents with their children, alphabetically. */
 export function buildCategoryTree(categories: Category[]): CategoryNode[] {
-  const groups = new Map<string, CategoryNode>();
+  const byId = new Map(categories.map((c) => [c.id, c]));
 
-  const nodeFor = (parentName: string): CategoryNode => {
-    let n = groups.get(parentName);
-    if (!n) {
-      n = { parentName, self: null, children: [] };
-      groups.set(parentName, n);
-    }
-    return n;
-  };
+  const nodes = new Map<string, CategoryNode>();
+  for (const category of categories) {
+    if (category.parent_id) continue;
+    nodes.set(category.id, { parent: category, parentName: category.name, children: [] });
+  }
 
-  for (const c of categories) {
-    const { parent, leaf } = splitCategoryName(c.name);
-    if (parent === null) {
-      nodeFor(leaf).self = c;
-    } else {
-      nodeFor(parent).children.push({ category: c, leafName: leaf });
+  for (const category of categories) {
+    if (!category.parent_id) continue;
+    const node = nodes.get(category.parent_id);
+    // A child whose parent is missing — deleted, or not in this list — would
+    // otherwise vanish from the page while its products stayed on the shelf.
+    if (node) {
+      node.children.push(category);
+    } else if (!byId.has(category.parent_id)) {
+      nodes.set(category.id, { parent: category, parentName: category.name, children: [] });
     }
   }
 
-  const out = [...groups.values()];
+  const out = [...nodes.values()];
   out.sort((a, b) => a.parentName.localeCompare(b.parentName));
-  out.forEach((n) => n.children.sort((a, b) => a.leafName.localeCompare(b.leafName)));
+  out.forEach((n) => n.children.sort((a, b) => a.name.localeCompare(b.name)));
   return out;
 }
 
-/** Composes the stored name for a new category. */
-export function composeCategoryName(parent: string | null, leaf: string): string {
-  const l = leaf.trim();
-  const p = (parent || '').trim();
-  return p ? `${p}${SEPARATOR}${l}` : l;
+/** "Brake System — Brake Pads", for anywhere a child is shown out of context. */
+export function categoryPath(category: Category, categories: Category[]): string {
+  if (!category.parent_id) return category.name;
+  const parent = categories.find((c) => c.id === category.parent_id);
+  return parent ? `${parent.name}${SEPARATOR}${category.name}` : category.name;
+}
+
+/** Every category as a flat, sorted list of {id, label} for a dropdown. */
+export function categoryOptions(categories: Category[]): Array<{ id: string; label: string; isChild: boolean }> {
+  return buildCategoryTree(categories).flatMap((node) => [
+    { id: node.parent.id, label: node.parentName, isChild: false },
+    ...node.children.map((child) => ({ id: child.id, label: child.name, isChild: true })),
+  ]);
+}
+
+/**
+ * A category and everything filed beneath it.
+ *
+ * Picking a parent has to mean "and its children too". Stock is filed on the
+ * leaf — a shop puts its oil filters under Filters › Oil Filters, never on
+ * Filters itself — so matching `category_id` against the parent alone selects
+ * the one category that is deliberately empty.
+ */
+export function categoryWithDescendantIds(categoryId: string, categories: Category[]): string[] {
+  return [categoryId, ...categories.filter((c) => c.parent_id === categoryId).map((c) => c.id)];
+}
+
+/**
+ * Products per category, counting a parent's children towards the parent.
+ *
+ * The direct count is kept alongside the rolled-up one: a child row shows what
+ * it holds, while a parent row shows what selecting it would actually list.
+ */
+export function productCategoryCounts(
+  products: Array<{ category_id?: string | null }>,
+  categories: Category[]
+): { direct: Record<string, number>; rollup: Record<string, number> } {
+  const direct: Record<string, number> = {};
+  for (const product of products) {
+    const key = product.category_id || '';
+    direct[key] = (direct[key] || 0) + 1;
+  }
+
+  const rollup: Record<string, number> = { ...direct };
+  for (const category of categories) {
+    if (!category.parent_id) continue;
+    rollup[category.parent_id] = (rollup[category.parent_id] || 0) + (direct[category.id] || 0);
+  }
+  return { direct, rollup };
 }

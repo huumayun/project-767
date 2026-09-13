@@ -27,7 +27,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 }) => {
   const [barcode, setBarcode] = useState('');
   const [name, setName] = useState('');
-  const [nameBn, setNameBn] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [brand, setBrand] = useState('');
   const [unit, setUnit] = useState('pcs');
@@ -52,7 +51,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       if (product) {
         setBarcode(product.barcode || '');
         setName(product.name || '');
-        setNameBn(product.name_bn || '');
         setCategoryId(product.category_id || '');
         setBrand(product.brand || '');
         setUnit(product.unit || 'pcs');
@@ -67,7 +65,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       } else {
         setBarcode(initialBarcode || '');
         setName('');
-        setNameBn('');
         setCategoryId('');
         setBrand('');
         setUnit('pcs');
@@ -179,7 +176,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           id: product.id,
           barcode: barcode.trim() || null,
           name: name.trim(),
-          name_bn: nameBn.trim() || null,
           category_id: categoryId || null,
           brand: brand.trim() || null,
           unit,
@@ -221,7 +217,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         await window.api.products.create({
           barcode: barcode.trim() || null,
           name: name.trim(),
-          name_bn: nameBn.trim() || null,
           category_id: categoryId || null,
           brand: brand.trim() || null,
           unit,
@@ -338,11 +333,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             </div>
           </div>
 
-          {/* Name & Bangla Name */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {/* Name. Full width now the Bangla field has gone - left in the
+              two-column grid it sat at half width against dead space. */}
+          <div>
             <div>
               <label className="block text-jungle-teal-800 mb-1.5">
-                Product Name (English) <span className="text-rose-500">*</span>
+                Product Name <span className="text-rose-500">*</span>
               </label>
               <input
                 ref={nameInputRef}
@@ -355,16 +351,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               />
             </div>
 
-            <div>
-              <label className="block text-jungle-teal-800 mb-1.5">Product Name (Bangla)</label>
-              <input
-                type="text"
-                value={nameBn}
-                onChange={(e) => setNameBn(e.target.value)}
-                placeholder="e.g. স্পার্ক প্লাগ"
-                className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3.5 py-2.5 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all"
-              />
-            </div>
           </div>
 
           {/* Category & Unit */}
@@ -399,7 +385,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           <div className="grid gap-4 pt-2 font-mono grid-cols-2 sm:grid-cols-4">
             <div>
               <label className="block text-jungle-teal-800 font-sans mb-1.5">
-                Cost Price (৳) <span className="text-rose-500">*</span>
+                Last Purchase Cost (৳) <span className="text-rose-500">*</span>
               </label>
               <input
                 type="number"

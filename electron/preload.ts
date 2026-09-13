@@ -1,4 +1,36 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer as electronIpcRenderer } from 'electron';
+
+/**
+ * The message a handler threw, without Electron's wrapping.
+ *
+ * ipcRenderer.invoke rejects with "Error invoking remote method
+ * 'api:sales:create': Error: <the real message>". Every screen in this app
+ * shows err.message straight to the shopkeeper, so a plainly worded refusal
+ * like "open a shift first" arrived buried behind a channel name and two
+ * "Error:" prefixes, reading as a crash rather than an instruction.
+ */
+function unwrapIpcError(err: unknown): Error {
+  const raw = err instanceof Error ? err.message : String(err);
+  const cleaned = raw
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^(Error:\s*)+/, '')
+    .trim();
+  return new Error(cleaned || 'Something went wrong.');
+}
+
+/*
+ * Wrapped once here rather than at each of the ninety-odd call sites below.
+ * `invoke` is the only member of ipcRenderer this bridge uses.
+ */
+const ipcRenderer = {
+  invoke: async (channel: string, ...args: any[]) => {
+    try {
+      return await electronIpcRenderer.invoke(channel, ...args);
+    } catch (err) {
+      throw unwrapIpcError(err);
+    }
+  },
+};
 
 // Expose safe, structured API to renderer process
 contextBridge.exposeInMainWorld('api', {
@@ -8,14 +40,27 @@ contextBridge.exposeInMainWorld('api', {
     pinLogin: (args: { pin: string }) => ipcRenderer.invoke('api:auth:pinLogin', args),
     logout: () => ipcRenderer.invoke('api:auth:logout'),
     getSession: () => ipcRenderer.invoke('api:auth:getSession'),
+    recoveryAvailable: () => ipcRenderer.invoke('api:auth:recoveryAvailable'),
+    resetWithRecoveryCode: (args: { code: string; newPassword: string }) =>
+      ipcRenderer.invoke('api:auth:resetWithRecoveryCode', args),
+  },
+  print: {
+    document: (args: { html: string; marginMm?: number }) => ipcRenderer.invoke('api:print:document', args),
+    pdf: (args: { pdfBase64: string; fileName?: string }) => ipcRenderer.invoke('api:print:pdf', args),
+    toPdf: (args: { html: string; marginMm?: number; fileName?: string }) =>
+      ipcRenderer.invoke('api:print:toPdf', args),
+    listPrinters: () => ipcRenderer.invoke('api:print:listPrinters'),
+    savePdf: (args: { pdfBase64: string; fileName?: string }) => ipcRenderer.invoke('api:print:savePdf', args),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('api:shell:openExternal', url),
   },
   categories: {
     list: () => ipcRenderer.invoke('api:categories:list'),
-    create: (name: string) => ipcRenderer.invoke('api:categories:create', name),
-    update: (id: string, name: string) => ipcRenderer.invoke('api:categories:update', id, name),
+    create: (name: string, parentId?: string | null) =>
+      ipcRenderer.invoke('api:categories:create', name, parentId ?? null),
+    update: (id: string, name: string, parentId?: string | null) =>
+      ipcRenderer.invoke('api:categories:update', id, name, parentId),
     remove: (id: string) => ipcRenderer.invoke('api:categories:delete', id),
   },
   products: {
@@ -68,6 +113,8 @@ contextBridge.exposeInMainWorld('api', {
   purchases: {
     create: (data: any) => ipcRenderer.invoke('api:purchases:create', data),
     list: () => ipcRenderer.invoke('api:purchases:list'),
+    void: (args: { purchase_id: string; reason: string }) =>
+      ipcRenderer.invoke('api:purchases:void', args),
   },
   stockTransactions: {
     list: (productId: string) => ipcRenderer.invoke('api:stockTransactions:list', productId),
@@ -80,7 +127,7 @@ contextBridge.exposeInMainWorld('api', {
     getHeldSales: () => ipcRenderer.invoke('api:sales:getHeldSales'),
     deleteHeldSale: (id: string) => ipcRenderer.invoke('api:sales:deleteHeldSale', id),
     processReturn: (payload: any) => ipcRenderer.invoke('api:sales:processReturn', payload),
-    generatePdf: (args: { invoice_no: string; layout?: '80mm' | 'a5' }) =>
+    generatePdf: (args: { invoice_no: string; layout?: '80mm' | 'a4' }) =>
       ipcRenderer.invoke('api:sales:generatePdf', args),
   },
   customers: {
@@ -103,6 +150,7 @@ contextBridge.exposeInMainWorld('api', {
     getBestSelling: (args?: number | { startDate?: string; endDate?: string; limit?: number }) =>
       ipcRenderer.invoke('api:reports:getBestSelling', args),
     getStockValuation: () => ipcRenderer.invoke('api:reports:getStockValuation'),
+    getDueReport: () => ipcRenderer.invoke('api:reports:getDueReport'),
   },
   users: {
     list: () => ipcRenderer.invoke('api:users:list'),
@@ -122,8 +170,12 @@ contextBridge.exposeInMainWorld('api', {
     getHistory: (limit?: number) => ipcRenderer.invoke('api:shifts:getHistory', limit),
   },
   settings: {
+    previewInvoice: (overrides?: Record<string, any>) =>
+      ipcRenderer.invoke('api:settings:previewInvoice', overrides),
     get: () => ipcRenderer.invoke('api:settings:get'),
     update: (data: any) => ipcRenderer.invoke('api:settings:update', data),
+    generateRecoveryCodes: () => ipcRenderer.invoke('api:settings:generateRecoveryCodes'),
+    exportRecoveryCodes: (codes: string[]) => ipcRenderer.invoke('api:settings:exportRecoveryCodes', codes),
   },
   audit: {
     list: (limit?: number) => ipcRenderer.invoke('api:audit:list', limit),
@@ -145,7 +197,7 @@ contextBridge.exposeInMainWorld('api', {
     selectFile: () => ipcRenderer.invoke('api:backup:selectFile'),
     restoreLocalFile: (filePath: string) => ipcRenderer.invoke('api:backup:restoreLocalFile', filePath),
     list: () => ipcRenderer.invoke('api:backup:list'),
-    createManual: (targetPath?: string) => ipcRenderer.invoke('api:backup:createManual', targetPath),
+    createManual: () => ipcRenderer.invoke('api:backup:createManual'),
     restore: (backupFilePath: string) => ipcRenderer.invoke('api:backup:restore', backupFilePath),
   },
   wizard: {
@@ -154,7 +206,13 @@ contextBridge.exposeInMainWorld('api', {
   },
   demo: {
     seed: () => ipcRenderer.invoke('api:demo:seed'),
-    reset: () => ipcRenderer.invoke('api:demo:reset'),
+  },
+  data: {
+    counts: () => ipcRenderer.invoke('api:data:counts'),
+    erase: (args: { password: string; confirmText: string }) => ipcRenderer.invoke('api:data:erase', args),
+  },
+  app: {
+    info: () => ipcRenderer.invoke('api:app:info'),
   },
 });
 

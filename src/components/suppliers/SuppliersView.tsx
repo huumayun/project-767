@@ -16,6 +16,7 @@ import {
   BookOpen,
   Pencil,
   Check,
+  Undo2,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { SupplierPaymentModal } from './SupplierPaymentModal';
@@ -27,12 +28,20 @@ interface SuppliersViewProps {
   products: Product[];
   onRefreshProducts: () => void;
   userRole?: 'owner' | 'staff';
+  /**
+   * Called when cash moves in or out of the drawer.
+   *
+   * The running shift lives in App; without this the sidebar's cash figure
+   * stays at whatever it was when the till opened.
+   */
+  onShiftChanged?: () => void;
 }
 
 export const SuppliersView: React.FC<SuppliersViewProps> = ({
   products,
   onRefreshProducts,
   userRole,
+  onShiftChanged,
 }) => {
   const toast = useToast();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -54,6 +63,9 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
   const [formBusy, setFormBusy] = useState(false);
 
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [voidingPurchase, setVoidingPurchase] = useState<any | null>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidBusy, setVoidBusy] = useState(false);
   const [purchaseSupplierId, setPurchaseSupplierId] = useState('');
   const [purchaseInvoiceRef, setPurchaseInvoiceRef] = useState('');
   const [purchasePaidTaka, setPurchasePaidTaka] = useState('');
@@ -175,6 +187,56 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
         ];
       }
     });
+  };
+
+  /*
+   * Refills the purchase form from a bill that has just been voided.
+   *
+   * A wrong unit cost cannot be edited in place - it sets the FIFO batch cost,
+   * the product's cost and the vendor's bill total, so the entry has to be
+   * reversed and made again. Doing that by hand means retyping every line, so
+   * the correction starts from what was already entered.
+   */
+  const prefillPurchaseFrom = (bill: any) => {
+    setPurchaseSupplierId(bill.supplier_id || '');
+    setPurchaseInvoiceRef(bill.invoice_ref || '');
+    setPurchasePaidTaka(bill.paid_paisa ? String(bill.paid_paisa / 100) : '');
+    setPurchaseTransportTaka(bill.transport_paisa ? String(bill.transport_paisa / 100) : '');
+    setTransportOnInvoice(!!bill.transport_on_invoice);
+    setPurchaseNote(bill.note || '');
+    setPurchaseItems(
+      (bill.items || []).map((it: any) => ({
+        product_id: it.product_id,
+        qty: it.qty,
+        unit_cost_taka: it.unit_cost_paisa / 100,
+      }))
+    );
+  };
+
+  const runVoid = async (reEnter: boolean) => {
+    if (!window.api || !voidingPurchase) return;
+    const bill = voidingPurchase;
+    setVoidBusy(true);
+    try {
+      await window.api.purchases.void({ purchase_id: bill.id, reason: voidReason.trim() });
+      setVoidingPurchase(null);
+      setExpandedPurchaseId(null);
+      if (reEnter) {
+        prefillPurchaseFrom(bill);
+        setShowPurchaseModal(true);
+        toast.success('Old bill voided. Correct it here and save.');
+      } else {
+        toast.success('Purchase voided. Stock and cash have been put back.');
+      }
+      fetchSuppliers();
+      onRefreshProducts();
+    } catch (err: any) {
+      // The main process refuses with a specific reason - goods already sold, a
+      // closed shift - and that is the whole answer, so it is shown as-is.
+      toast.error(err?.message || 'Could not void this purchase.');
+    } finally {
+      setVoidBusy(false);
+    }
   };
 
   const handlePurchaseSubmit = async (e: React.FormEvent) => {
@@ -383,7 +445,23 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
       {/* Mini Dashboard */}
       {(() => {
         const totalBoughtQty = filteredPurchases.reduce((acc, p) => acc + (p.items?.reduce((s: number, i: any) => s + i.qty, 0) || 0), 0);
-        const totalBoughtTaka = filteredPurchases.reduce((acc, p) => acc + p.total_paisa, 0) / 100;
+
+        /*
+         * purchases.total_paisa is the vendor's bill, and transport joins it
+         * only when the vendor charged it. A van the shop hired itself is real
+         * money out of the till that appeared in no total on this page - so the
+         * three figures are separated: what the goods cost, what it cost to get
+         * them here, and the sum the shop actually spent.
+         */
+        const transportPaisa = filteredPurchases.reduce((acc, p) => acc + (p.transport_paisa || 0), 0);
+        const goodsPaisa = filteredPurchases.reduce(
+          (acc, p) => acc + p.total_paisa - (p.transport_on_invoice ? (p.transport_paisa || 0) : 0),
+          0
+        );
+        const totalSpendPaisa = goodsPaisa + transportPaisa;
+
+        const taka = (paisa: number) =>
+          (paisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -393,13 +471,30 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
               </h3>
               <div className="flex justify-between items-end">
                 <div>
-                  <p className="text-ui-xs text-azure-mist-600 mb-0.5">Total Value</p>
-                  <p className="font-mono text-xl font-bold text-azure-mist-900">৳ {totalBoughtTaka.toFixed(2)}</p>
+                  <p className="text-ui-xs text-azure-mist-600 mb-0.5">Total Spend</p>
+                  <p className="font-mono text-xl font-bold text-azure-mist-900">৳ {taka(totalSpendPaisa)}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-ui-xs text-azure-mist-600 mb-0.5">Items Bought</p>
                   <p className="font-mono text-xl font-bold text-azure-mist-900">{totalBoughtQty} pcs</p>
                 </div>
+              </div>
+              <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-azure-mist-200 text-ui-2xs font-mono">
+                <span className="text-azure-mist-700">
+                  Goods <span className="font-bold text-azure-mist-900">৳ {taka(goodsPaisa)}</span>
+                </span>
+                <span className="text-azure-mist-300">·</span>
+                <span
+                  className="text-azure-mist-700"
+                  title="Freight and delivery on these bills, whether the vendor charged it or the shop paid it separately."
+                >
+                  Transport <span className="font-bold text-azure-mist-900">৳ {taka(transportPaisa)}</span>
+                </span>
+                {transportPaisa > 0 && goodsPaisa > 0 && (
+                  <span className="ml-auto text-azure-mist-600">
+                    {((transportPaisa / goodsPaisa) * 100).toFixed(1)}% of goods
+                  </span>
+                )}
               </div>
             </div>
 
@@ -531,6 +626,27 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                                 </div>
                               ) : (
                                 <div className="text-xs text-jungle-teal-500 italic py-1">No items details available for this invoice.</div>
+                              )}
+
+                              {isOwner && (
+                                <div className="flex items-center justify-between gap-3 mt-3 pt-2.5 border-t border-jungle-teal-200">
+                                  <span className="text-[10.5px] text-jungle-teal-500">
+                                    Wrong quantity or unit cost? Those moved stock and cash, so the bill
+                                    is reversed and entered again rather than edited.
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setVoidReason('');
+                                      setVoidingPurchase(p);
+                                    }}
+                                    className="shrink-0 flex items-center gap-1.5 bg-white hover:bg-rose-50 border border-rose-200 hover:border-rose-300 text-rose-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg transition-colors"
+                                  >
+                                    <Undo2 className="w-3.5 h-3.5" />
+                                    <span>Correct or void</span>
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </td>
@@ -922,6 +1038,8 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
               );
               setPayTarget(null);
               fetchSuppliers();
+              // A cash payment to a supplier comes out of the till.
+              onShiftChanged?.();
             } catch (err: any) {
               toast.error(err?.message || 'Could not record that payment.');
             } finally {
@@ -936,6 +1054,80 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
           supplier={ledgerTarget}
           onClose={() => setLedgerTarget(null)}
         />
+      )}
+
+      {voidingPurchase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl max-w-md w-full p-6 shadow-2xl text-jungle-teal-900 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="p-3 rounded-2xl shrink-0 bg-rose-100 text-rose-600 border border-rose-200">
+                <Undo2 className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold mb-1.5">Correct this purchase</h3>
+                <p className="text-xs text-jungle-teal-600 leading-relaxed">
+                  {voidingPurchase.supplier_name || 'Generic Vendor'} ·{' '}
+                  {voidingPurchase.invoice_ref || 'no invoice ref'} · ৳{' '}
+                  {(voidingPurchase.total_paisa / 100).toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            <ul className="text-[11px] text-jungle-teal-700 bg-white border border-jungle-teal-200 rounded-xl p-3 space-y-1 mb-4">
+              <li>· Stock added by this bill comes back out</li>
+              <li>· ৳ {(voidingPurchase.paid_paisa / 100).toFixed(2)} returns to the drawer</li>
+              <li>
+                · ৳{' '}
+                {Math.max(0, (voidingPurchase.total_paisa - voidingPurchase.paid_paisa) / 100).toFixed(2)}{' '}
+                comes off this vendor&rsquo;s due
+              </li>
+              <li>· The bill stays in the audit log, marked voided</li>
+            </ul>
+
+            <label className="block text-xs font-medium text-jungle-teal-700 mb-1.5">
+              Why is it being voided?
+            </label>
+            <input
+              type="text"
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+              autoFocus
+              placeholder="Wrong quantity entered"
+              className="w-full bg-white border border-jungle-teal-200 text-jungle-teal-900 rounded-xl px-3.5 py-2.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-azure-mist-500 focus:border-transparent transition-all placeholder:text-jungle-teal-400"
+            />
+
+            <div className="space-y-2.5 pt-4">
+              <button
+                type="button"
+                disabled={voidBusy || voidReason.trim().length < 3}
+                onClick={() => runVoid(true)}
+                className="w-full bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50"
+              >
+                {voidBusy ? 'Working…' : 'Void and re-enter it'}
+              </button>
+              <p className="text-[11px] text-jungle-teal-500 text-center leading-relaxed">
+                Reopens the purchase form on this bill&rsquo;s lines so you only fix what was wrong.
+              </p>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setVoidingPurchase(null)}
+                  className="flex-1 bg-white hover:bg-jungle-teal-100 border border-jungle-teal-200 text-jungle-teal-700 font-semibold py-2.5 rounded-xl text-sm transition-colors"
+                >
+                  Keep it
+                </button>
+                <button
+                  type="button"
+                  disabled={voidBusy || voidReason.trim().length < 3}
+                  onClick={() => runVoid(false)}
+                  className="flex-1 bg-white hover:bg-rose-50 border border-rose-200 text-rose-700 font-semibold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50"
+                >
+                  Void only
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmModal

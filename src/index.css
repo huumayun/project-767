@@ -193,6 +193,23 @@
   }
 }
 
+/*
+  Tailwind v3's preflight gave buttons `cursor: pointer`; v4 dropped it to match
+  the browser default, so every button in this app went back to an arrow. That
+  is why `cursor-pointer` had been pasted onto 44 elements by hand.
+
+  Restored here rather than per-button. Disabled controls are excluded, so the
+  submit button stops looking clickable while a login is in flight.
+*/
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled),
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+}
+
 @layer base {
   html {
     /* Was clamp(10px, 0.72vw + 0.38vh, 15px). That made every rem-based size

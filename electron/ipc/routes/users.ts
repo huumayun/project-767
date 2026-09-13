@@ -41,9 +41,9 @@ export function registerUsersHandlers() {
       }
   
       if (data.pin_code) {
-        const takenBy = pinTakenBy(db, data.pin_code);
-        if (takenBy) {
-          throw new Error(`That PIN is already assigned to user "${takenBy}". Choose a unique PIN.`);
+        const pinProblem = pinTakenBy(db, data.pin_code);
+        if (pinProblem) {
+          throw new Error(pinProblem);
         }
       }
   
@@ -87,9 +87,9 @@ export function registerUsersHandlers() {
       const now = new Date().toISOString();
   
       if (data.pin_code) {
-        const takenBy = pinTakenBy(db, data.pin_code, data.id);
-        if (takenBy) {
-          throw new Error(`That PIN is already assigned to user "${takenBy}". Choose a different one.`);
+        const pinProblem = pinTakenBy(db, data.pin_code, data.id);
+        if (pinProblem) {
+          throw new Error(pinProblem);
         }
       }
   
@@ -114,6 +114,24 @@ export function registerUsersHandlers() {
         `).run(data.name.trim(), data.role, data.is_active ? 1 : 0, now, data.id);
       }
   
+      /*
+       * Keep the live session in step with the row it came from.
+       *
+       * activeSession is a copy taken at login and nothing refreshed it, so
+       * editing your own account left the main process holding the old values
+       * - the sidebar kept the previous name because getSession still returned
+       * it, and, more to the point, requireRole was still answering from the
+       * old role: an owner demoted to staff kept owner powers until they
+       * happened to log out.
+       */
+      if (activeSession?.id === data.id) {
+        setActiveSession({
+          ...activeSession,
+          name: data.name.trim(),
+          role: data.role,
+        });
+      }
+
       logAudit('UPDATE_USER', 'users', data.id, { name: data.name, role: data.role, is_active: data.is_active });
       return { success: true };
     });
@@ -133,9 +151,9 @@ export function registerUsersHandlers() {
       }
   
       const db = getDb();
-      const takenBy = pinTakenBy(db, pin_code, userId);
-      if (takenBy) {
-        throw new Error(`That PIN is already taken by ${takenBy}. Choose a different one.`);
+      const pinProblem = pinTakenBy(db, pin_code, userId);
+      if (pinProblem) {
+        throw new Error(pinProblem);
       }
   
       const now = new Date().toISOString();

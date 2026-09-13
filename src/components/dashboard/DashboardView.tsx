@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Product, UserSession, SalesReportData, ProfitReportData, StockValuationData, BestSellingProduct } from '../../types/ipc';
 import {
   TrendingUp,
@@ -20,14 +20,14 @@ import {
   Boxes,
   ArrowUpRight,
 } from 'lucide-react';
-import { Language, translations } from '../../i18n/translations';
+import { translations } from '../../i18n/translations';
 import { InvoiceModal } from '../pos/InvoiceModal';
+import { DailySalesChart } from './DailySalesChart';
 
 interface DashboardViewProps {
   currentSession: UserSession | null;
   products: Product[];
   onNavigateTab: (tab: 'pos' | 'sales' | 'customers' | 'products' | 'suppliers' | 'reports' | 'dashboard') => void;
-  lang: Language;
 }
 
 type DatePreset = 'today' | '7days' | '15days' | '30days' | 'custom';
@@ -107,9 +107,9 @@ export const formatCompactTaka = (paisa: number): { compact: string; full: strin
   return { compact, full };
 };
 
-export const formatCompactUnits = (units: number, lang: Language): { compact: string; full: string } => {
+export const formatCompactUnits = (units: number): { compact: string; full: string } => {
   const abs = Math.abs(units || 0);
-  const unitWord = lang === 'bn' ? 'পিস' : 'units';
+  const unitWord = 'units';
   const full = `${(units || 0).toLocaleString('en-US')} ${unitWord}`;
 
   let compact = '';
@@ -128,16 +128,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   currentSession,
   products,
   onNavigateTab,
-  lang,
 }) => {
-  const t = translations[lang];
+  const t = translations;
   const isOwner = currentSession?.role === 'owner';
 
   // Date Filter State
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
   const todayStr = useMemo(() => formatDateToISO(new Date()), []);
+  // What the date boxes show. They follow whichever preset is chosen, and are
+  // only a draft while being edited - nothing is fetched until Apply.
   const [customStartDate, setCustomStartDate] = useState(todayStr);
   const [customEndDate, setCustomEndDate] = useState(todayStr);
+  // The custom range last applied - what Refresh repeats, rather than
+  // whatever half-edited dates happen to be in the boxes.
+  const [appliedCustom, setAppliedCustom] = useState({ start: todayStr, end: todayStr });
+  /*
+   * Numbers each fetch so only the newest one may fill the screen. Switching
+   * Today -> Last 7 Days quickly left two requests in flight, and whichever
+   * answered last won - so "Last 7 Days" could sit over today's figures.
+   */
+  const requestSeq = useRef(0);
 
   // Dashboard Data State
   const [salesReport, setSalesReport] = useState<SalesReportData | null>(null);
@@ -161,8 +171,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setShowInvoiceModal(true);
   };
 
-  const fetchDashboardData = async (preset = datePreset, cStart = customStartDate, cEnd = customEndDate) => {
+  /*
+   * Staff are pinned to today wherever the range is read, not just where the
+   * buttons are drawn. Hiding a control is a presentation choice; this is the
+   * one place the figures are actually fetched, so it is the one that decides
+   * what a cashier can see.
+   */
+  const fetchDashboardData = async (preset = datePreset, cStart = appliedCustom.start, cEnd = appliedCustom.end) => {
+    if (!isOwner) {
+      preset = 'today';
+      cStart = '';
+      cEnd = '';
+    }
     if (!window.api) return;
+    const seq = ++requestSeq.current;
     setLoading(true);
     try {
       const { startDate, endDate } = getRangeDates(preset, cStart, cEnd);
@@ -185,6 +207,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           safeCall(() => window.api.customers.list(), [] as any),
           safeCall(() => window.api.sales.list(200), [] as any),
         ]);
+
+      // A newer range was asked for while this one was loading.
+      if (seq !== requestSeq.current) return;
 
       if (salesList && salesList.length > 0) {
         setRecentSales(salesList.slice(0, 10));
@@ -316,35 +341,60 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     } catch (err) {
       console.error('Failed to load dashboard metrics:', err);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      // Only the newest request settles the spinner; an older one finishing
+      // would otherwise hide it while the real answer is still on its way.
+      if (seq === requestSeq.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
+  /*
+   * Fetches on first show and when the role changes. Choosing a range fetches
+   * from its own handler below - this effect used to run on every preset
+   * change as well, so each click asked for the same figures twice.
+   */
   useEffect(() => {
-    fetchDashboardData(datePreset, customStartDate, customEndDate);
-  }, [datePreset, currentSession?.role]);
+    fetchDashboardData(datePreset, appliedCustom.start, appliedCustom.end);
+  }, [currentSession?.role]);
+
+  const choosePreset = (preset: DatePreset) => {
+    // The date boxes show the range being looked at. They kept whatever was in
+    // them before, so "Last 30 Days" sat beside 13/09 – 13/09.
+    const range = getRangeDates(preset);
+    setCustomStartDate(range.startDate);
+    setCustomEndDate(range.endDate);
+    setDatePreset(preset);
+    fetchDashboardData(preset);
+  };
 
   const handleApplyCustomDate = (e: React.FormEvent) => {
     e.preventDefault();
     if (customStartDate && customEndDate) {
+      // A range typed backwards is still a range; reports filter start..end,
+      // so the wrong way round simply came back empty.
+      const [start, end] = customStartDate <= customEndDate ? [customStartDate, customEndDate] : [customEndDate, customStartDate];
+      setCustomStartDate(start);
+      setCustomEndDate(end);
+      setAppliedCustom({ start, end });
       setDatePreset('custom');
-      fetchDashboardData('custom', customStartDate, customEndDate);
+      fetchDashboardData('custom', start, end);
     }
   };
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchDashboardData(datePreset, customStartDate, customEndDate);
+    fetchDashboardData(datePreset, appliedCustom.start, appliedCustom.end);
   };
 
   // Stock calculations from products if valuation not loaded yet
   const calculatedStockBuyValuePaisa = useMemo(() => {
-    if (stockValuation?.total_cost_valuation_paisa !== undefined) {
-      return stockValuation.total_cost_valuation_paisa;
-    }
-    return products.reduce((sum, p) => sum + (p.cost_price_paisa || 0) * (p.stock_qty || 0), 0);
-  }, [stockValuation, products]);
+    // Only the main process can value stock, since only it can read the FIFO
+    // batches. Showing a products-table estimate until it answers would flash
+    // the very number this KPI stopped reporting.
+    return stockValuation?.total_cost_valuation_paisa;
+  }, [stockValuation]);
 
   const totalStockUnits = useMemo(() => {
     if (stockValuation?.total_stock_units !== undefined) {
@@ -357,22 +407,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return products.filter((p) => p.stock_qty <= (p.low_stock_threshold ?? 5));
   }, [products]);
 
-  // Max daily trend value for relative progress bar
-  const maxDailySalesPaisa = useMemo(() => {
-    if (!salesReport?.daily_trends || salesReport.daily_trends.length === 0) return 1;
-    return Math.max(...salesReport.daily_trends.map((d) => d.sales_paisa), 1);
-  }, [salesReport]);
-
-  const presetLabels: Record<DatePreset, { bn: string; en: string }> = {
-    today: { bn: 'আজকে', en: 'Today' },
-    '7days': { bn: 'গত ৭ দিন', en: 'Last 7 Days' },
-    '15days': { bn: 'গত ১৫ দিন', en: 'Last 15 Days' },
-    '30days': { bn: 'গত ৩০ দিন', en: 'Last 30 Days' },
-    custom: { bn: 'কাস্টম রেঞ্জ', en: 'Custom Range' },
+  const presetLabels: Record<DatePreset, string> = {
+    today: 'Today',
+    '7days': 'Last 7 Days',
+    '15days': 'Last 15 Days',
+    '30days': 'Last 30 Days',
+    custom: 'Custom Range',
   };
 
   const getActiveDateRangeTitle = () => {
-    const { startDate, endDate } = getRangeDates(datePreset, customStartDate, customEndDate);
+    // The applied range, not the boxes: while dates are being typed the title
+    // still describes the figures actually on screen.
+    const { startDate, endDate } = getRangeDates(
+      isOwner ? datePreset : 'today',
+      appliedCustom.start,
+      appliedCustom.end
+    );
     if (startDate === endDate) {
       return `${startDate}`;
     }
@@ -386,16 +436,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-ui-xl font-bold text-jungle-teal-900 tracking-tight">
-              {lang === 'bn' ? 'দোকানের ড্যাশবোর্ড ও বিক্রয় বিশ্লেষণ' : 'Shop Overview & Live Analytics'}
+              {'Shop Overview & Live Analytics'}
             </h2>
             <span className="font-mono text-ui-2xs font-semibold px-2 py-0.5 rounded-full bg-azure-mist-100 text-azure-mist-800 border border-azure-mist-200">
-              {presetLabels[datePreset][lang]}
+              {presetLabels[isOwner ? datePreset : 'today']}
             </span>
           </div>
           <p className="text-ui-xs text-jungle-teal-600 mt-1 font-mono flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-azure-mist-700" />
             <span>
-              {new Date().toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', {
+              {new Date().toLocaleDateString('en-US', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
@@ -404,7 +454,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
             <span className="text-jungle-teal-300">•</span>
             <span className="text-jungle-teal-500 font-bold">
-              {lang === 'bn' ? `তারিখ পরিসীমা: ${getActiveDateRangeTitle()}` : `Range: ${getActiveDateRangeTitle()}`}
+              {`Range: ${getActiveDateRangeTitle()}`}
             </span>
           </p>
         </div>
@@ -419,7 +469,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             title="Refresh Data"
           >
             <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>{lang === 'bn' ? 'রিফ্রেশ' : 'Refresh'}</span>
+            <span>{'Refresh'}</span>
           </button>
 
           <button
@@ -427,17 +477,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             className="inline-flex items-center justify-center gap-2 bg-linear-to-r from-azure-mist-700 to-azure-mist-600 hover:from-azure-mist-600 hover:to-azure-mist-400 text-white font-semibold px-5 h-[40px] rounded-xl shadow-sm text-ui-sm transition-colors active:scale-95"
           >
             <ShoppingCart className="w-4 h-4" />
-            <span>{lang === 'bn' ? 'নতুন বিক্রি শুরু করুন (POS)' : 'Launch POS Terminal'}</span>
+            <span>{'Launch POS Terminal'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Date Filter Bar & Shortcuts */}
+      {/*
+        Date Filter Bar.
+
+        Owner only. A cashier's dashboard answers "how is my day going" - the
+        shop's month is the owner's business, and the range buttons handed it
+        over: profit and stock value are already hidden from staff here, but a
+        staff member could still switch to 30 days and read the takings.
+      */}
+      {!isOwner ? (
+        <div className="bg-jungle-teal-50 p-4 rounded-2xl border border-jungle-teal-200 shadow-xs flex items-center gap-2">
+          <Calendar className="w-3.5 h-3.5 text-azure-mist-700 shrink-0" />
+          <span className="text-ui-2xs font-bold uppercase tracking-wider text-jungle-teal-600 font-sans">
+            Showing:
+          </span>
+          <span className="px-3 py-1.5 rounded-xl text-ui-xs font-semibold bg-azure-mist-700 text-white border border-azure-mist-800">
+            Today
+          </span>
+          <span className="text-ui-xs text-jungle-teal-500 font-sans">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </span>
+        </div>
+      ) : (
       <div className="bg-jungle-teal-50 p-4 rounded-2xl border border-jungle-teal-200 shadow-xs flex flex-row items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-ui-2xs font-bold uppercase tracking-wider text-jungle-teal-600 font-sans mr-1">
-            {lang === 'bn' ? 'ফিল্টার:' : 'Filter:'}
+            {'Filter:'}
           </span>
 
           {(['today', '7days', '15days', '30days'] as DatePreset[]).map((preset) => {
@@ -446,17 +517,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <button
                 key={preset}
                 type="button"
-                onClick={() => {
-                  setDatePreset(preset);
-                  fetchDashboardData(preset);
-                }}
+                onClick={() => choosePreset(preset)}
                 className={`px-3 py-1.5 rounded-xl text-ui-xs font-semibold transition-all border ${
                   isActive
                     ? 'bg-azure-mist-700 text-white border-azure-mist-800 shadow-xs'
                     : 'bg-jungle-teal-100/70 hover:bg-jungle-teal-200 text-jungle-teal-800 border-jungle-teal-200'
                 }`}
               >
-                {presetLabels[preset][lang]}
+                {presetLabels[preset]}
               </button>
             );
           })}
@@ -482,11 +550,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               type="submit"
               className="px-3 py-1 bg-azure-mist-700 hover:bg-azure-mist-600 text-white rounded-lg text-ui-xs font-semibold transition-colors shadow-2xs"
             >
-              {lang === 'bn' ? 'তারিখ দেখুন' : 'Apply'}
+              {'Apply'}
             </button>
           </div>
         </form>
       </div>
+      )}
 
       {/* Main KPI Cards Grid */}
       <div className="grid grid-cols-5 gap-4">
@@ -495,7 +564,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <div className="flex items-center justify-between">
               <span className="text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 font-sans">
-                {datePreset === 'today' ? t.todaySales : (lang === 'bn' ? 'মোট বিক্রি' : 'Net Sales')}
+                {!isOwner || datePreset === 'today' ? t.todaySales : ('Net Sales')}
               </span>
               <div className="p-2 bg-muted-teal-50 text-muted-teal-700 rounded-xl">
                 <TrendingUp className="w-4 h-4" />
@@ -513,10 +582,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     {compact}
                   </div>
                   <div className="text-ui-2xs text-jungle-teal-600 mt-1 font-sans flex items-center justify-between">
-                    <span>{salesReport?.total_orders ?? 0} {lang === 'bn' ? 'টি মেমো' : 'invoices'}</span>
+                    <span>{salesReport?.total_orders ?? 0} {'invoices'}</span>
                     {(salesReport?.discount_paisa ?? 0) > 0 && (
                       <span className="text-amber-700 font-mono font-semibold" title={discountObj.full}>
-                        -{discountObj.compact} ছাড়
+                        -{discountObj.compact} discount
                       </span>
                     )}
                   </div>
@@ -532,7 +601,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <div className="flex items-center justify-between">
               <span className="text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 font-sans">
-                {lang === 'bn' ? 'নগদ ও ডিজিটাল আদায়' : 'Cash & Digital'}
+                {'Cash & Digital'}
               </span>
               <div className="p-2 bg-azure-mist-50 text-azure-mist-700 rounded-xl">
                 <Wallet className="w-4 h-4" />
@@ -557,10 +626,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     {totalObj.compact}
                   </div>
                   <div className="text-[10px] text-jungle-teal-600 mt-1 font-mono flex items-center gap-1.5 flex-wrap">
-                    <span title={cashObj.full}>ক্যাশ: {cashObj.compact}</span>
+                    <span title={cashObj.full}>Cash: {cashObj.compact}</span>
                     {(bkash + nagad + card > 0) && (
                       <span className="text-azure-mist-700 font-bold" title={digitalObj.full}>
-                        ডিজিটাল: {digitalObj.compact}
+                        Digital: {digitalObj.compact}
                       </span>
                     )}
                   </div>
@@ -577,8 +646,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 font-sans">
                 {isOwner
-                  ? (lang === 'bn' ? 'অর্জিত মোট লাভ' : 'Gross Profit')
-                  : (lang === 'bn' ? 'মোট সফল মেমো' : 'Completed Invoices')}
+                  ? ('Gross Profit')
+                  : ('Completed Invoices')}
               </span>
               <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl">
                 <DollarSign className="w-4 h-4" />
@@ -602,9 +671,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className={`text-ui-2xs mt-1 font-sans font-semibold flex items-center justify-between ${
                       isNeg ? 'text-rose-600' : 'text-emerald-700'
                     }`}>
-                      <span>{profitReport?.profit_margin_percent ?? 0}% {lang === 'bn' ? 'মার্জিন' : 'margin'}</span>
+                      <span>{profitReport?.profit_margin_percent ?? 0}% {'margin'}</span>
                       <span className="text-jungle-teal-500 font-normal">
-                        {lang === 'bn' ? 'আসল বিক্রয়মূল্যে' : 'At sold price'}
+                        {'At sold price'}
                       </span>
                     </div>
                   </div>
@@ -616,7 +685,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {salesReport?.total_orders ?? 0}
                 </div>
                 <div className="text-ui-2xs text-jungle-teal-600 mt-1 font-sans">
-                  {lang === 'bn' ? 'সফল বিক্রয় অর্ডার' : 'Sales orders recorded'}
+                  {'Sales orders recorded'}
                 </div>
               </div>
             )}
@@ -630,8 +699,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 font-sans">
                 {isOwner
-                  ? (lang === 'bn' ? 'স্টকের মোট কেনা দাম' : 'Stock @ Buy Price')
-                  : (lang === 'bn' ? 'মোট মজুত আইটেম' : 'Catalog In-Stock')}
+                  ? ('Stock @ Buy Price')
+                  : ('Catalog In-Stock')}
               </span>
               <div className="p-2 bg-amber-50 text-amber-700 rounded-xl">
                 <Boxes className="w-4 h-4" />
@@ -639,30 +708,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             {isOwner ? (
               (() => {
-                const { compact, full } = formatCompactTaka(calculatedStockBuyValuePaisa);
-                const unitsObj = formatCompactUnits(totalStockUnits, lang);
+                const loaded = calculatedStockBuyValuePaisa !== undefined;
+                const { compact, full } = formatCompactTaka(calculatedStockBuyValuePaisa ?? 0);
+                const unitsObj = formatCompactUnits(totalStockUnits);
+                const drift = stockValuation?.drift_product_count ?? 0;
                 return (
                   <div className="mt-2.5">
                     <div
                       className="text-ui-2xl font-bold text-amber-900 font-mono tracking-tight whitespace-nowrap truncate"
-                      title={full}
+                      title={loaded ? `${full} — what was actually paid for the stock on hand` : undefined}
                     >
-                      {compact}
+                      {loaded ? compact : '—'}
                     </div>
                     <div className="text-ui-2xs text-jungle-teal-600 mt-1 font-sans flex items-center justify-between">
-                      <span>{products.length} {lang === 'bn' ? 'টি আইটেম' : 'products'}</span>
+                      <span>{products.length} {'products'}</span>
                       <span className="font-mono" title={unitsObj.full}>{unitsObj.compact}</span>
                     </div>
+                    {drift > 0 && (
+                      <div
+                        className="mt-1.5 flex items-center gap-1 text-ui-2xs text-amber-800"
+                        title={`${drift} product${drift === 1 ? '' : 's'} whose counted stock does not match its purchase batches. Their share of this figure is an estimate.`}
+                      >
+                        <AlertTriangle className="w-3 h-3 shrink-0" />
+                        <span>{drift} product{drift === 1 ? '' : 's'} unreconciled</span>
+                      </div>
+                    )}
                   </div>
                 );
               })()
             ) : (
               <div className="mt-2.5">
                 <div className="text-ui-2xl font-bold text-amber-900 font-mono tracking-tight">
-                  {formatCompactUnits(totalStockUnits, lang).compact}
+                  {formatCompactUnits(totalStockUnits).compact}
                 </div>
                 <div className="text-ui-2xs text-jungle-teal-600 mt-1 font-sans">
-                  {products.length} {lang === 'bn' ? 'টি সক্রিয় প্রোডাক্ট' : 'active products'}
+                  {products.length} {'active products'}
                 </div>
               </div>
             )}
@@ -675,7 +755,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <div className="flex items-center justify-between">
               <span className="text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 font-sans">
-                {lang === 'bn' ? 'মোট বকেয়া পাওনা' : 'Customer Due'}
+                {'Customer Due'}
               </span>
               <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
                 <Users className="w-4 h-4" />
@@ -692,7 +772,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     {compact}
                   </div>
                   <div className="text-ui-2xs text-jungle-teal-600 mt-1 font-sans">
-                    {customersWithDueCount} {lang === 'bn' ? 'জন গ্রাহকের নিকট বাকী' : 'customers with balance'}
+                    {customersWithDueCount} {'customers with balance'}
                   </div>
                 </div>
               );
@@ -709,12 +789,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <BarChart3 className="w-5 h-5 text-azure-mist-700" />
             <div>
               <h3 className="text-ui-sm font-bold text-jungle-teal-900">
-                {lang === 'bn' ? 'তারিখ অনুযায়ী বিক্রির তালিকা ও পরিসংখ্যান' : 'Date-Wise Sales Breakdown & Trends'}
+                {'Date-Wise Sales Breakdown & Trends'}
               </h3>
               <p className="text-ui-2xs text-jungle-teal-600 font-mono">
-                {lang === 'bn'
-                  ? `${getActiveDateRangeTitle()} এর দৈনিক বিক্রির হিসাব`
-                  : `Daily sales ledger for ${getActiveDateRangeTitle()}`}
+                {`Daily sales ledger for ${getActiveDateRangeTitle()}`}
               </p>
             </div>
           </div>
@@ -723,7 +801,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             className="text-ui-xs font-mono font-bold text-jungle-teal-800 bg-jungle-teal-100 px-3 py-1 rounded-xl border border-jungle-teal-200 self-auto"
             title={formatCompactTaka(salesReport?.net_sales_paisa ?? 0).full}
           >
-            {lang === 'bn' ? 'মোট বিক্রি:' : 'Period Total:'} {formatCompactTaka(salesReport?.net_sales_paisa ?? 0).compact}
+            {'Period Total:'} {formatCompactTaka(salesReport?.net_sales_paisa ?? 0).compact}
           </div>
         </div>
 
@@ -731,81 +809,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="p-8 text-center bg-jungle-teal-100/40 rounded-xl border border-jungle-teal-100 text-jungle-teal-500 text-ui-sm">
             <Calendar className="w-8 h-8 mx-auto text-jungle-teal-400 mb-2" />
             <p className="font-semibold text-jungle-teal-800">
-              {lang === 'bn' ? 'নির্বাচিত তারিখে কোনো বিক্রির রেকর্ড পাওয়া যায়নি।' : 'No sales recorded in this date range.'}
+              {'No sales recorded in this date range.'}
             </p>
             <p className="text-ui-2xs text-jungle-teal-500 mt-1 mb-3">
-              {lang === 'bn'
-                ? 'বিগত দিনের বিক্রয় ও ইনভয়েস দেখতে "গত ৭ দিন" বাটনে চাপুন অথবা নতুন বিক্রি শুরু করুন।'
-                : 'Click "Last 7 Days" to view recent past sales and trends, or launch POS to start a sale.'}
+              {isOwner
+                ? 'Click "Last 7 Days" to view recent past sales and trends, or launch POS to start a sale.'
+                : 'Launch POS to record the first sale of the day.'}
             </p>
             <div className="flex items-center justify-center gap-2">
+              {/* Offering staff a jump to last week would set a range the fetch
+                  then overrides, leaving the button lit and the figures on
+                  today. */}
+              {isOwner && (
               <button
                 type="button"
-                onClick={() => {
-                  setDatePreset('7days');
-                  fetchDashboardData('7days');
-                }}
+                onClick={() => choosePreset('7days')}
                 className="px-3.5 py-1.5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
               >
-                {lang === 'bn' ? '📊 গত ৭ দিনের হিসাব দেখুন' : '📊 View Last 7 Days'}
+                {'📊 View Last 7 Days'}
               </button>
+              )}
               <button
                 type="button"
                 onClick={() => onNavigateTab('pos')}
                 className="px-3.5 py-1.5 bg-jungle-teal-200 hover:bg-jungle-teal-300 text-jungle-teal-900 rounded-xl text-xs font-semibold transition-colors"
               >
-                {lang === 'bn' ? '🛒 নতুন বিক্রি (POS)' : '🛒 Launch POS'}
+                {'🛒 Launch POS'}
               </button>
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
-              {salesReport.daily_trends.map((item) => {
-                const ratio = Math.min(100, Math.round((item.sales_paisa / maxDailySalesPaisa) * 100));
-                const dateObj = new Date(item.date);
-                const formattedDate = dateObj.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', {
-                  day: 'numeric',
-                  month: 'short',
-                  weekday: 'short',
-                });
-                const itemSalesObj = formatCompactTaka(item.sales_paisa || 0);
-
-                return (
-                  <div
-                    key={item.date}
-                    className="p-3.5 bg-jungle-teal-100/50 hover:bg-jungle-teal-100 border border-jungle-teal-200/80 rounded-xl transition-all flex flex-col justify-between"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <span className="text-ui-xs font-bold text-jungle-teal-900 font-mono">{item.date}</span>
-                        <div className="text-[11px] text-jungle-teal-600 font-sans">{formattedDate}</div>
-                      </div>
-                      <div className="text-right">
-                        <div
-                          className="text-ui-sm font-bold font-mono text-azure-mist-900 whitespace-nowrap"
-                          title={itemSalesObj.full}
-                        >
-                          {itemSalesObj.compact}
-                        </div>
-                        <div className="text-[10px] text-jungle-teal-600 font-mono">
-                          {item.orders_count} {lang === 'bn' ? 'টি মেমো' : 'invoices'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Visual relative bar */}
-                    <div className="w-full bg-jungle-teal-200/80 h-1.5 rounded-full overflow-hidden mt-1">
-                      <div
-                        className="bg-linear-to-r from-azure-mist-600 to-muted-teal-600 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${ratio}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <DailySalesChart trends={salesReport.daily_trends} formatTaka={formatCompactTaka} />
         )}
       </div>
 
@@ -824,7 +858,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div>
               <div className="text-ui-sm font-semibold text-jungle-teal-900">{t.newSale}</div>
-              <div className="text-ui-2xs text-jungle-teal-600">{lang === 'bn' ? 'কাউন্টার বিক্রি' : 'Point of Sale'}</div>
+              <div className="text-ui-2xs text-jungle-teal-600">{'Point of Sale'}</div>
             </div>
           </button>
 
@@ -837,7 +871,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div>
               <div className="text-ui-sm font-semibold text-jungle-teal-900">{t.addStock}</div>
-              <div className="text-ui-2xs text-jungle-teal-600">{lang === 'bn' ? 'মহাজন থেকে কেনা' : 'Purchase from vendor'}</div>
+              <div className="text-ui-2xs text-jungle-teal-600">{'Purchase from vendor'}</div>
             </div>
           </button>
 
@@ -850,7 +884,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div>
               <div className="text-ui-sm font-semibold text-jungle-teal-900">{t.addCustomer}</div>
-              <div className="text-ui-2xs text-jungle-teal-600">{lang === 'bn' ? 'বাকীর হিসাব খাতা' : 'Manage balances'}</div>
+              <div className="text-ui-2xs text-jungle-teal-600">{'Manage balances'}</div>
             </div>
           </button>
 
@@ -863,7 +897,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div>
               <div className="text-ui-sm font-semibold text-jungle-teal-900">{t.viewReports}</div>
-              <div className="text-ui-2xs text-jungle-teal-600">{lang === 'bn' ? 'লাভ ও পূর্ণাঙ্গ রিপোর্ট' : 'Sales & profit stats'}</div>
+              <div className="text-ui-2xs text-jungle-teal-600">{'Sales & profit stats'}</div>
             </div>
           </button>
         </div>
@@ -879,21 +913,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-amber-600" />
                 <h3 className="text-ui-2xs font-semibold text-jungle-teal-600 uppercase tracking-wider font-sans">
-                  {lang === 'bn' ? 'সর্বোচ্চ বিক্রিত পণ্য' : 'Top Selling Products'}
+                  {'Top Selling Products'}
                 </h3>
               </div>
               <button
                 onClick={() => onNavigateTab('reports')}
                 className="text-ui-xs text-azure-mist-700 hover:text-azure-mist-800 font-medium flex items-center gap-1"
               >
-                <span>{lang === 'bn' ? 'বিস্তারিত' : 'Reports'}</span>
+                <span>{'Reports'}</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
             {bestSelling.length === 0 ? (
               <div className="p-6 text-center text-jungle-teal-500 text-ui-sm bg-jungle-teal-100/40 rounded-xl border border-jungle-teal-100">
-                {lang === 'bn' ? 'এখনো কোনো বিক্রিত পণ্যের ডেটা নেই।' : 'No sales records available yet.'}
+                {'No sales records available yet.'}
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -907,7 +941,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {item.product_name}
                       </div>
                       <div className="text-ui-2xs text-jungle-teal-600 font-mono">
-                        {item.category_name || (lang === 'bn' ? 'সাধারণ' : 'General')} · {item.barcode || 'N/A'}
+                        {item.category_name || ('General')} · {item.barcode || 'N/A'}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -915,7 +949,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {formatCompactTaka(item.revenue_paisa).compact}
                       </div>
                       <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted-teal-100 text-muted-teal-800 font-bold">
-                        {item.qty_sold} {lang === 'bn' ? 'পিস বিক্রি' : 'sold'}
+                        {item.qty_sold} {'sold'}
                       </span>
                     </div>
                   </div>
@@ -930,14 +964,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-rose-500" />
                 <h3 className="text-ui-2xs font-semibold text-jungle-teal-600 uppercase tracking-wider font-sans">
-                  {lang === 'bn' ? 'স্টক সংকট সতর্কতা' : 'Low Stock Items Warning'}
+                  {'Low Stock Items Warning'}
                 </h3>
               </div>
               <button
                 onClick={() => onNavigateTab('products')}
                 className="text-ui-xs text-azure-mist-700 hover:text-azure-mist-800 font-medium flex items-center gap-1"
               >
-                <span>{lang === 'bn' ? 'সব পণ্য' : 'View all'}</span>
+                <span>{'View all'}</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -946,7 +980,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="p-6 text-center bg-jungle-teal-100/40 rounded-xl border border-jungle-teal-100 text-jungle-teal-500 text-ui-sm">
                 <Package className="w-7 h-7 text-muted-teal-600 mx-auto mb-1.5" />
                 <span className="font-semibold text-jungle-teal-700 block">
-                  {lang === 'bn' ? 'সব পণ্যে পর্যাপ্ত স্টক আছে!' : 'Inventory is well-stocked!'}
+                  {'Inventory is well-stocked!'}
                 </span>
               </div>
             ) : (
@@ -958,7 +992,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   >
                     <div className="min-w-0 flex-1 pr-2">
                       <div className="text-ui-sm font-semibold text-jungle-teal-900 truncate">
-                        {lang === 'bn' && item.name_bn ? item.name_bn : item.name}
+                        {item.name}
                       </div>
                       <div className="text-ui-2xs text-jungle-teal-600 font-mono">
                         Barcode: {item.barcode || 'N/A'} · Alert at: {item.low_stock_threshold ?? 5}
@@ -972,7 +1006,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         onClick={() => onNavigateTab('suppliers')}
                         className="text-ui-2xs bg-jungle-teal-50 hover:bg-jungle-teal-100 border border-jungle-teal-200 text-jungle-teal-700 font-medium px-2 py-1 rounded-lg transition-colors"
                       >
-                        {lang === 'bn' ? 'মাল তুলুন' : 'Restock'}
+                        {'Restock'}
                       </button>
                     </div>
                   </div>
@@ -996,7 +1030,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => onNavigateTab('sales')}
                 className="text-ui-xs text-azure-mist-700 hover:text-azure-mist-800 font-medium flex items-center gap-1"
               >
-                <span>{lang === 'bn' ? 'সব মেমো' : 'View all'}</span>
+                <span>{'View all'}</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>
@@ -1005,7 +1039,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="p-8 text-center bg-jungle-teal-100/40 rounded-xl border border-jungle-teal-100 text-jungle-teal-500 text-ui-sm">
                 <Receipt className="w-8 h-8 text-jungle-teal-300 mx-auto mb-2" />
                 <span className="font-semibold text-jungle-teal-600">
-                  {lang === 'bn' ? 'সাম্প্রতিক কোনো লেনদেন পাওয়া যায়নি।' : 'No sales recorded yet today.'}
+                  {'No sales recorded yet today.'}
                 </span>
               </div>
             ) : (
@@ -1025,8 +1059,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <ArrowUpRight className="w-3.5 h-3.5 text-azure-mist-600 opacity-0 group-hover/item:opacity-100 transition-opacity" />
                         </div>
                         <div className="text-ui-2xs text-jungle-teal-600">
-                          {sale.customer_name || (lang === 'bn' ? 'খুচরা গ্রাহক' : 'Walking Customer')} ·{' '}
-                          {new Date(sale.created_at).toLocaleTimeString(lang === 'bn' ? 'bn-BD' : 'en-US', {
+                          {sale.customer_name || ('Walking Customer')} ·{' '}
+                          {new Date(sale.created_at).toLocaleTimeString('en-US', {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}

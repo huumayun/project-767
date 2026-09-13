@@ -4,6 +4,7 @@ import fs from 'fs';
 import { setupSecurityPolicies } from './security';
 import { getDb } from './db';
 import { registerIpcHandlers } from './ipc/handlers';
+import { startSyncEngine, stopSyncEngine } from './services/syncEngine';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -75,6 +76,20 @@ ${err instanceof Error ? err.message : String(err)}`
   // Register IPC handlers
   registerIpcHandlers();
 
+  /*
+   * Start the background push to the cloud.
+   *
+   * The engine was written, the interval was written, and nothing ever called
+   * it - so a shop that had filled in its Supabase details in Settings was
+   * shown a sync badge and a pending count that only ever moved when someone
+   * pressed "Sync now" by hand. The rest of the time the counter sat there
+   * climbing, and the copy the owner believed was in the cloud was not.
+   *
+   * Unconditional: executeDeltaSync returns immediately when no cloud is
+   * configured, so an offline-only shop pays for one settings read a minute.
+   */
+  startSyncEngine();
+
   // Load URL
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -99,4 +114,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// A timer holding the loop open would keep the process alive after the window
+// has gone, leaving a till that looks closed still running in the background.
+app.on('before-quit', () => {
+  stopSyncEngine();
 });

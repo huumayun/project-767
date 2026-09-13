@@ -16,9 +16,16 @@ import { useToast } from '../../context/ToastContext';
 
 interface UsersViewProps {
   currentSession: UserSession | null;
+  /**
+   * Called after an edit that changed the signed-in user's own row.
+   *
+   * The session App holds is a copy made at login; renaming yourself here
+   * leaves the sidebar showing the old name until the next sign-in.
+   */
+  onOwnAccountChanged?: () => void;
 }
 
-export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
+export const UsersView: React.FC<UsersViewProps> = ({ currentSession, onOwnAccountChanged }) => {
   const toast = useToast();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -95,6 +102,25 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
     e.preventDefault();
     if (!window.api) return;
 
+    /*
+     * Checked here so the rule is stated where it is broken. These same limits
+     * live in the handler's schema, and reaching them meant the shopkeeper got
+     * the raw parser output back - so a three-digit PIN read as a page of JSON
+     * rather than "PIN must be 4 to 6 digits".
+     */
+    const pin = formPinCode.trim();
+    const problem =
+      !formName.trim() ? 'Enter the full name.'
+      : !editingUser && formUsername.trim().length < 3 ? 'Username must be at least 3 characters.'
+      : !editingUser && formPassword.length < 4 ? 'Password must be at least 4 characters.'
+      : pin && (pin.length < 4 || pin.length > 6) ? 'PIN must be 4 to 6 digits, or leave it blank.'
+      : null;
+    if (problem) {
+      toast.error(problem);
+      setError(problem);
+      return;
+    }
+
     try {
       if (editingUser) {
         await window.api.users.update({
@@ -105,6 +131,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
           pin_code: formPinCode.trim() || undefined,
         });
         toast.success(`User "${formName}" updated successfully.`);
+        if (editingUser.id === currentSession?.id) onOwnAccountChanged?.();
       } else {
         await window.api.users.create({
           username: formUsername,
@@ -295,7 +322,8 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
                   disabled={Boolean(editingUser)}
                   value={formUsername}
                   onChange={(e) => setFormUsername(e.target.value)}
-                  placeholder="e.g. hasan_staff"
+                  minLength={3}
+                  placeholder="At least 3 characters, e.g. hasan_staff"
                   className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50 disabled:opacity-50"
                 />
               </div>
@@ -308,7 +336,8 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
                     required
                     value={formPassword}
                     onChange={(e) => setFormPassword(e.target.value)}
-                    placeholder="Min 4 characters"
+                    minLength={4}
+                    placeholder="At least 4 characters"
                     className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
                   />
                 </div>
@@ -316,19 +345,19 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession }) => {
 
               <div>
                 <label className="block text-jungle-teal-700 font-semibold mb-1">
-                  Quick Login PIN (৪ ডিজিট পিন কোড)
+                  Quick Login PIN (4–6 digits, optional)
                 </label>
                 <input
                   type="text"
                   maxLength={6}
                   value={formPinCode}
                   onChange={(e) => setFormPinCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder={editingUser ? 'Leave blank to keep the current PIN' : 'e.g. 1234 (4-6 numbers)'}
+                  placeholder={editingUser ? 'Leave blank to keep the current PIN' : 'e.g. 1234 — or leave blank'}
                   className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono font-bold tracking-widest focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
                 />
                 <p className="text-[11px] text-jungle-teal-500 mt-0.5">
-                  POS স্ক্রিনে দ্রুত লগইনের জন্য একক পিন কোড।
-                  {editingUser && ' PIN কোড সংরক্ষিত থাকে — বদলাতে চাইলে নতুন পিন লিখুন।'}
+                  A single PIN for fast sign-in at the POS screen.
+                  {editingUser && ' The existing PIN is kept - type a new one to change it.'}
                 </p>
               </div>
 

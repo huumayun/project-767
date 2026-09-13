@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Wrench,
   Shield,
@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 
 import { UserSession, Product, Category, ShiftSummaryData } from './types/ipc';
-import { AuthBanner } from './components/AuthBanner';
 import { LoginView } from './components/auth/LoginView';
 import { PinLoginScreen } from './components/auth/PinLoginScreen';
 import { ShiftModal } from './components/shifts/ShiftModal';
@@ -43,7 +42,7 @@ import { SyncStatusBadge } from './components/sync/SyncStatusBadge';
 import { SyncSettingsModal } from './components/sync/SyncSettingsModal';
 import { FirstRunWizardModal } from './components/wizard/FirstRunWizardModal';
 import { ToastProvider } from './context/ToastContext';
-import { Language, translations } from './i18n/translations';
+import { translations } from './i18n/translations';
 import { BrandLogoIcon, StaffAvatarIcon } from './components/pos/PosIcons';
 
 export default function App() {
@@ -53,6 +52,16 @@ export default function App() {
       <MainApp />
     </ToastProvider>
   );
+}
+
+/**
+ * Settings stores every value as text. An unset or unreadable field falls back
+ * to the same 15 minutes the settings handler defaults to, rather than to zero -
+ * which would read as "locking switched off" and quietly undo the setting.
+ */
+function readIdleLockMinutes(value: string | number | undefined | null): number {
+  const parsed = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 15;
 }
 
 function MainApp() {
@@ -68,15 +77,63 @@ function MainApp() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showWizardModal, setShowWizardModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  /*
+   * Dismiss the account menu on a click anywhere else, and on Escape.
+   *
+   * Without it the panel stayed open over whatever the user went on to do -
+   * it could only be closed by pressing the same badge again, which is not
+   * where anyone looks after deciding they meant to click something else.
+   *
+   * Bound on pointerdown rather than click so the menu is gone before the
+   * thing underneath reacts, and listening in the capture phase so a handler
+   * that stops propagation cannot leave it stuck open.
+   */
+  useEffect(() => {
+    if (!showUserMenu) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!userMenuRef.current?.contains(event.target as Node)) setShowUserMenu(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowUserMenu(false);
+    };
+
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [showUserMenu]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [lang, setLang] = useState<Language>('en');
 
   // Shift & Quick Lock State
   const [activeShift, setActiveShift] = useState<ShiftSummaryData | null>(null);
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [shiftModalMode, setShiftModalMode] = useState<'view' | 'open' | 'close'>('view');
+  /*
+   * Set when the sidebar badge is used to look at the running shift. Shift
+   * History picks it up and opens that shift's report.
+   *
+   * The badge used to open a modal holding the same figures plus every bill of
+   * the shift, which on a busy day was a dialog you scrolled for a page and a
+   * half. The report already has a page of its own; there is no reason for a
+   * second copy in a box.
+   */
+  const [shiftToOpen, setShiftToOpen] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState(false);
+  /*
+   * Minutes of no input before the counter locks itself, from Settings. Zero
+   * switches it off. Held here rather than read inside the timer so changing it
+   * in Settings takes effect without a restart.
+   */
+  const [idleLockMinutes, setIdleLockMinutes] = useState(15);
   const [authMode, setAuthMode] = useState<'pin' | 'password'>('password'); // Password login by default!
+  // Read before login from wizard.checkStatus, so the PIN screen can greet the
+  // shop by the name its owner set rather than a placeholder.
+  const [shopName, setShopName] = useState<string | undefined>(undefined);
   const [nowTicker, setNowTicker] = useState(Date.now());
 
   useEffect(() => {
@@ -113,7 +170,7 @@ function MainApp() {
 
   const isElectron = Boolean(window.api && window.api.ping);
 
-  const t = translations[lang];
+  const t = translations;
 
   const fetchCatalog = async () => {
     if (!window.api) return;
@@ -157,6 +214,9 @@ function MainApp() {
         if (res.isFirstRun) {
           setShowWizardModal(true);
         }
+        if (res.shopName) {
+          setShopName(res.shopName);
+        }
       });
 
       // Check current session WITHOUT auto-login
@@ -169,6 +229,7 @@ function MainApp() {
             const s = await window.api.settings.get();
             shiftsEnabled = s.enable_shifts ?? true;
             setEnableShifts(shiftsEnabled);
+            setIdleLockMinutes(readIdleLockMinutes(s.idle_lock_minutes));
           }
           const currShift = await fetchActiveShift();
           if (sess.role === 'staff') {
@@ -196,6 +257,46 @@ function MainApp() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentSession, isLocked]);
 
+  /*
+   * Locks the counter after a spell with no input.
+   *
+   * Settings has always carried this field and said outright that it "switches
+   * to locked state when idle". It was stored and never read back, so a till
+   * left at lunch stayed open on whoever was signed in - an owner session with
+   * cost prices, reports and the users list on it. F1 locked on purpose; this
+   * locks when nobody remembered to.
+   *
+   * Activity lands in a plain variable rather than state, so a moving mouse
+   * cannot re-render the app, and the deadline is checked on a slow interval
+   * rather than by rearming a timer on every event.
+   */
+  useEffect(() => {
+    if (!currentSession || isLocked) return;
+    if (!Number.isFinite(idleLockMinutes) || idleLockMinutes <= 0) return; // 0 = off
+
+    const idleMs = idleLockMinutes * 60000;
+    let lastActivity = Date.now();
+    const noteActivity = () => {
+      lastActivity = Date.now();
+    };
+
+    const events = ['pointerdown', 'keydown', 'wheel', 'mousemove', 'touchstart'] as const;
+    for (const name of events) {
+      window.addEventListener(name, noteActivity, { passive: true });
+    }
+
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivity < idleMs) return;
+      setAuthMode(currentSession.has_pin ? 'pin' : 'password');
+      setIsLocked(true);
+    }, 5000);
+
+    return () => {
+      clearInterval(timer);
+      for (const name of events) window.removeEventListener(name, noteActivity);
+    };
+  }, [currentSession, isLocked, idleLockMinutes]);
+
   const handleLoginSuccess = async (sess: UserSession) => {
     setCurrentSession(sess);
     setIsLocked(false);
@@ -205,6 +306,8 @@ function MainApp() {
       const s = await window.api.settings.get();
       shiftsEnabled = s.enable_shifts ?? true;
       setEnableShifts(shiftsEnabled);
+      setShopName(s.shop_name || undefined);
+      setIdleLockMinutes(readIdleLockMinutes(s.idle_lock_minutes));
     }
     const currShift = await fetchActiveShift();
     if (sess.role === 'staff') {
@@ -239,13 +342,18 @@ function MainApp() {
     if (window.api && window.api.settings) {
       const s = await window.api.settings.get();
       setEnableShifts(s.enable_shifts ?? true);
+      setShopName(s.shop_name || undefined);
+      setIdleLockMinutes(readIdleLockMinutes(s.idle_lock_minutes));
     }
   };
 
-  const handleAddCategory = async (name: string): Promise<Category | null> => {
+  const handleAddCategory = async (
+    name: string,
+    parentId?: string | null
+  ): Promise<Category | null> => {
     if (!window.api) return null;
     try {
-      const cat = await window.api.categories.create(name);
+      const cat = await window.api.categories.create(name, parentId ?? null);
       setCategories((prev) => [...prev, cat]);
       return cat;
     } catch (err: any) {
@@ -254,11 +362,17 @@ function MainApp() {
     }
   };
 
-  const handleUpdateCategory = async (id: string, name: string): Promise<boolean> => {
+  const handleUpdateCategory = async (
+    id: string,
+    name: string,
+    parentId?: string | null
+  ): Promise<boolean> => {
     if (!window.api) return false;
     try {
-      const updated = await window.api.categories.update(id, name);
-      setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name: updated.name } : c)));
+      const updated = await window.api.categories.update(id, name, parentId);
+      setCategories((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, name: updated.name, parent_id: updated.parent_id } : c))
+      );
       return true;
     } catch (err: any) {
       console.error("Failed to rename category:", err);
@@ -279,16 +393,13 @@ function MainApp() {
     }
   };
 
-  const toggleLanguage = () => {
-    setLang((prev) => (prev === 'bn' ? 'en' : 'bn'));
-  };
-
   // If user is not authenticated or counter is locked, render Lock / PIN Screen
   if (!currentSession || isLocked) {
     if (authMode === 'pin') {
       return (
         <>
           <PinLoginScreen
+            shopName={shopName}
             onLoginSuccess={handleLoginSuccess}
             onSwitchToPasswordLogin={() => setAuthMode('password')}
           />
@@ -306,9 +417,8 @@ function MainApp() {
     return (
       <>
         <LoginView
+          shopName={shopName}
           onLoginSuccess={handleLoginSuccess}
-          lang={lang}
-          onLanguageToggle={toggleLanguage}
           onSwitchToPinLogin={() => setAuthMode('pin')}
         />
         <FirstRunWizardModal
@@ -461,11 +571,13 @@ function MainApp() {
               type="button"
               onClick={() => {
                 if (activeShift) {
-                  setShiftModalMode('view');
+                  // Straight to the report page for the shift that is running.
+                  setShiftToOpen(activeShift.shift_id);
+                  setActiveTab('shifts');
                 } else {
                   setShiftModalMode('open');
+                  setShowShiftModal(true);
                 }
-                setShowShiftModal(true);
               }}
               className={`${sidebarOpen ? 'w-full' : 'w-10'} px-2.5 py-1.5 rounded-lg border flex items-center gap-2 transition-colors text-left overflow-hidden whitespace-nowrap mb-1.5 ${
                 activeShift
@@ -544,45 +656,29 @@ function MainApp() {
           ))}
         </nav>
 
-        {/* Sidebar Footer Tools (Language, Theme, User Profile) */}
+        {/* Sidebar Footer */}
         <div className="shrink-0 border-t border-jungle-teal-200 p-2 space-y-2">
-          {sidebarOpen && (
-            <div className="flex items-center gap-2">
-              {/* Language Selector Button */}
-              <button
-                onClick={toggleLanguage}
-                className="flex-1 min-w-0 px-2.5 py-1.5 rounded-xl bg-jungle-teal-50 hover:bg-jungle-teal-100 border border-jungle-teal-200 text-ui-xs font-semibold text-jungle-teal-700 transition-colors flex items-center gap-1.5 shadow-xs"
-              >
-                <span>🌐</span>
-                <span className="truncate">{lang === 'bn' ? 'বাংলা' : 'English'}</span>
-                <span className="ml-auto text-ui-2xs text-jungle-teal-400">▾</span>
-              </button>
-
-              {/* Theme Toggle Button (Light/Sun) */}
-              <div className="p-1.5 rounded-xl bg-jungle-teal-50 border border-jungle-teal-200 text-amber-500 shadow-xs flex items-center justify-center shrink-0">
-                <span className="text-ui-sm">☀️</span>
-              </div>
-            </div>
-          )}
-
           {/* User Profile Badge with Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => (sidebarOpen ? setShowUserMenu(!showUserMenu) : setSidebarOpen(true))}
               className={`${
                 sidebarOpen ? 'w-full pr-3' : 'w-10 pr-2'
               } pl-2 py-1.5 rounded-xl bg-jungle-teal-50 hover:bg-jungle-teal-100 border border-jungle-teal-200 text-ui-xs font-semibold text-jungle-teal-800 transition-colors flex items-center gap-2 shadow-xs text-left overflow-hidden whitespace-nowrap`}
-              title={sidebarOpen ? undefined : currentSession.name}
+              title={`${currentSession.name} (@${currentSession.username}) · ${currentSession.role}`}
             >
               <StaffAvatarIcon className="w-6 h-6 shrink-0" />
-              <span className="font-bold truncate">
-                {currentSession.role === 'owner'
-                  ? lang === 'bn'
-                    ? 'মালিক (OWNER)'
-                    : 'OWNER'
-                  : lang === 'bn'
-                  ? 'স্টাফ (STAFF)'
-                  : 'STAFF'}
+              {/*
+                Who is signed in, not what they are. On a till with two or three
+                staff sharing a machine, "STAFF" is the same badge for all of
+                them - it cannot answer "is this still my shift?". The role has
+                not gone: it is a line down in the menu, next to the username.
+              */}
+              <span className="min-w-0 flex flex-col leading-tight">
+                <span className="font-bold truncate">{currentSession.name}</span>
+                <span className="text-[10px] font-mono font-normal text-jungle-teal-500 truncate">
+                  @{currentSession.username}
+                </span>
               </span>
               <span className="ml-auto w-2 h-2 rounded-full bg-muted-teal-600 inline-block animate-pulse shrink-0" />
               <span className="text-[10px] text-jungle-teal-400 shrink-0">▴</span>
@@ -632,7 +728,6 @@ function MainApp() {
             currentSession={currentSession}
             products={products}
             onNavigateTab={(tab) => setActiveTab(tab as any)}
-            lang={lang}
           />
         )}
 
@@ -641,12 +736,22 @@ function MainApp() {
             products={products}
             currentSession={currentSession}
             onRefreshProducts={fetchCatalog}
+            onShiftChanged={fetchActiveShift}
+            /* Shifts switched off in Settings means there is no drawer to
+               reconcile, so nothing to gate on. */
+            canTakeMoney={!enableShifts || Boolean(activeShift)}
+            onOpenShift={() => {
+              setShiftModalMode('open');
+              setShowShiftModal(true);
+            }}
           />
         )}
 
         {activeTab === 'sales' && <SalesHistoryView currentSession={currentSession} />}
 
-        {activeTab === 'customers' && <CustomersView currentSession={currentSession} />}
+        {activeTab === 'customers' && (
+          <CustomersView currentSession={currentSession} onShiftChanged={fetchActiveShift} />
+        )}
 
         {activeTab === 'products' && (
           <ProductsView
@@ -675,6 +780,7 @@ function MainApp() {
             products={products}
             onRefreshProducts={fetchCatalog}
             userRole={currentSession?.role}
+            onShiftChanged={fetchActiveShift}
           />
         )}
 
@@ -684,6 +790,12 @@ function MainApp() {
         {activeTab === 'shifts' && (
           <ShiftsHistoryView
             currentSession={currentSession}
+            autoOpenShiftId={shiftToOpen}
+            onAutoOpenHandled={() => setShiftToOpen(null)}
+            onCloseShift={() => {
+              setShiftModalMode('close');
+              setShowShiftModal(true);
+            }}
             onOpenShiftModal={() => {
               setShiftModalMode(activeShift ? 'view' : 'open');
               setShowShiftModal(true);
@@ -691,9 +803,17 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'users' && isOwner && <UsersView currentSession={currentSession} />}
+        {activeTab === 'users' && isOwner && (
+          <UsersView
+            currentSession={currentSession}
+            onOwnAccountChanged={async () => {
+              const fresh = await window.api?.auth.getSession().catch(() => null);
+              if (fresh) setCurrentSession(fresh);
+            }}
+          />
+        )}
 
-        {activeTab === 'settings' && isOwner && <SettingsView currentSession={currentSession} onSettingsChanged={handleSettingsChanged} />}
+        {activeTab === 'settings' && isOwner && <SettingsView currentSession={currentSession} onSettingsChanged={handleSettingsChanged} onOpenSyncModal={() => setShowSyncModal(true)} />}
 
         {activeTab === 'audit' && isOwner && <AuditLogView currentSession={currentSession} />}
       </main>

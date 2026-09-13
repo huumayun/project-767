@@ -8,7 +8,10 @@
   "files": [
     "dist/**/*",
     "dist-electron/**/*",
-    "build/icon.*"
+    "build/icon.*",
+    // Git-ignored, so a build made without it simply ships with Drive backup
+    // switched off rather than failing.
+    "google-oauth.json"
   ],
   "asar": true,
   "win": {

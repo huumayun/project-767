@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy this file to google-oauth.json and fill it in. google-oauth.json is git-ignored on purpose - the credential it holds must never be committed. See RELEASE.md, 'Google Drive credentials'.",
+  "clientId": "YOUR-CLIENT-ID.apps.googleusercontent.com",
+  "clientSecret": "YOUR-CLIENT-SECRET",
+  "redirectUri": "http://localhost"
+}

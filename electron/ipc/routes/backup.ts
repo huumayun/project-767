@@ -14,10 +14,17 @@ export function registerBackupHandlers() {
       return listBackups();
     });
 
-  ipcMain.handle('api:backup:createManual', async (_event, rawTargetPath) => {
+  /*
+   * Always into the backups folder, which Settings chooses.
+   *
+   * This took a file path from the screen and handed it to createDatabaseBackup,
+   * which deletes whatever already sits at that path before writing. Nothing on
+   * screen ever passed one, but the door let any path through - any file the
+   * app's Windows user could reach. The folder is a setting; the name is ours.
+   */
+  ipcMain.handle('api:backup:createManual', async () => {
       requireRole(['owner']);
-      const targetPath = typeof rawTargetPath === 'string' && rawTargetPath.trim() ? rawTargetPath.trim() : undefined;
-      return createDatabaseBackup(targetPath, false);
+      return createDatabaseBackup(undefined, false);
     });
 
   ipcMain.handle('api:backup:restore', async (_event, rawBackupFilePath) => {

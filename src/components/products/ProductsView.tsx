@@ -18,6 +18,11 @@ import {
   Layers,
 } from 'lucide-react';
 import { ProductFormModal } from './ProductFormModal';
+import {
+  buildCategoryTree,
+  categoryWithDescendantIds,
+  productCategoryCounts,
+} from '../../utils/categoryTree';
 import { BarcodeLabelModal } from './BarcodeLabelModal';
 import { CsvImportModal } from './CsvImportModal';
 import { StockHistoryModal } from './StockHistoryModal';
@@ -26,6 +31,7 @@ import { useToast } from '../../context/ToastContext';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { playScanSuccess } from '../../utils/audio';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
+
 
 interface ProductsViewProps {
   currentSession: UserSession | null;
@@ -83,8 +89,36 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
   const isOwner = currentSession?.role === 'owner';
 
+  // Picking a parent in the filter means its subcategories too. Matching
+  // `category_id` alone selected the parent row itself, which holds nothing:
+  // stock is filed on the leaf, so the filter came back empty.
+  const categoryParentName = (categoryId?: string | null): string | null => {
+    const own = categories.find((c) => c.id === categoryId);
+    if (!own?.parent_id) return null;
+    return categories.find((c) => c.id === own.parent_id)?.name || null;
+  };
+
+  const { direct: directCategoryCounts, rollup: rollupCategoryCounts } =
+    productCategoryCounts(products, categories);
+
+  // The group the current filter sits in — a subcategory reports its parent, so
+  // the two dropdowns stay in step when the value is set from either of them.
+  const categoryTree = buildCategoryTree(categories);
+  const selectedCategoryRecord = categories.find((c) => c.id === selectedCategory) || null;
+  const filterGroupId = selectedCategoryRecord
+    ? selectedCategoryRecord.parent_id || selectedCategoryRecord.id
+    : '';
+  const filterNode = categoryTree.find((n) => n.parent.id === filterGroupId) || null;
+
+  const categorySelectClass =
+    'bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-1.5 text-xs text-jungle-teal-700 focus:outline-hidden focus:border-azure-mist-600 disabled:opacity-50';
+
+  const selectedCategoryIds = selectedCategory
+    ? categoryWithDescendantIds(selectedCategory, categories)
+    : [];
+
   const filteredProducts = products.filter((p) => {
-    if (selectedCategory && p.category_id !== selectedCategory) return false;
+    if (selectedCategory && !selectedCategoryIds.includes(p.category_id || '')) return false;
     if (showLowStockOnly && p.stock_qty > (p.low_stock_threshold ?? 5)) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
@@ -264,15 +298,46 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/*
+            Group first, then subcategory - the same two-step CategoryPicker
+            uses, and for the same reason: at 30 groups and 100 subcategories a
+            single list is 131 entries deep. Picking the group leaves a handful.
+
+            The flat list it replaces also broke a native <select>'s type-ahead
+            for every child. Indenting with non-breaking spaces put them at the
+            front of the option's label, and the label is what type-ahead
+            matches - so typing "oil" no longer found "Oil Filters", which is
+            how anyone navigates a list that long.
+          */}
+          <select
+            value={filterGroupId}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className={categorySelectClass}
+          >
+            <option value="">All Categories ({products.length})</option>
+            {categoryTree.map((node) => (
+              <option key={node.parent.id} value={node.parent.id}>
+                {node.parentName} ({rollupCategoryCounts[node.parent.id] || 0})
+              </option>
+            ))}
+          </select>
+
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-1.5 text-xs text-jungle-teal-700 focus:outline-hidden focus:border-azure-mist-600"
+            disabled={!filterNode || filterNode.children.length === 0}
+            title={filterNode ? undefined : 'Pick a group first'}
+            className={categorySelectClass}
           >
-            <option value="">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
+            {!filterNode && <option value="">—</option>}
+            {filterNode && (
+              <option value={filterNode.parent.id}>
+                All of {filterNode.parentName} ({rollupCategoryCounts[filterNode.parent.id] || 0})
+              </option>
+            )}
+            {filterNode?.children.map((child) => (
+              <option key={child.id} value={child.id}>
+                {child.name} ({directCategoryCounts[child.id] || 0})
               </option>
             ))}
           </select>
@@ -300,7 +365,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 <th className="px-3 py-2">Product Name</th>
                 <th className="px-3 py-2">Category</th>
                 <th className="px-3 py-2 text-center">Stock</th>
-                {isOwner && <th className="px-3 py-2 text-right">Cost (৳)</th>}
+                {isOwner && <th className="px-3 py-2 text-right" title="Latest purchase cost. Stock is valued from the purchase batches, not this.">Last Cost (৳)</th>}
                 <th className="px-3 py-2 text-right">Sell Price (৳)</th>
                 <th className="px-3 py-2 text-center">Actions</th>
               </tr>
@@ -343,8 +408,26 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                               </span>
                             )}
                           </td>
+                          {/*
+                            A leaf name on its own - "Oil Filters" - does not
+                            say which group it belongs to, and two groups may
+                            legitimately hold a subcategory of the same name.
+                            The parent is shown above it, muted, so the column
+                            stays scannable at a glance.
+                          */}
                           <td className="px-3 font-sans text-ui-sm text-jungle-teal-600">
-                            {product.category_name || '—'}
+                            {product.category_name ? (
+                              <>
+                                {categoryParentName(product.category_id) && (
+                                  <span className="block text-ui-2xs text-jungle-teal-400 leading-tight">
+                                    {categoryParentName(product.category_id)}
+                                  </span>
+                                )}
+                                <span className="leading-tight">{product.category_name}</span>
+                              </>
+                            ) : (
+                              '—'
+                            )}
                           </td>
                           <td className="px-3 text-center">
                             <span
@@ -447,7 +530,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                                           </span>
                                         </div>
                                         <div className="flex flex-col items-end">
-                                          <span className="text-[10px] text-jungle-teal-500 mb-0.5">Cost Price</span>
+                                          <span className="text-[10px] text-jungle-teal-500 mb-0.5">Last Purchase Cost</span>
                                           <span className="font-mono text-sm font-bold text-emerald-700">
                                             ৳ {(batch.cost_price_paisa / 100).toFixed(2)}
                                           </span>

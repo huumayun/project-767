@@ -49,11 +49,39 @@ export interface ShiftRecord {
   total_bkash_sales_paisa: number;
   total_nagad_sales_paisa: number;
   total_card_sales_paisa: number;
+  /** Non-cash taken on the merged "Other payment method" button. */
+  total_other_sales_paisa?: number;
+  /** Goods that came back, and the sales figure net of them. */
+  total_returned_paisa?: number;
+  net_sales_paisa?: number;
+  /** What those goods cost, at the FIFO cost captured on each sale line. */
+  total_cogs_paisa?: number;
+  gross_profit_paisa?: number;
+  /** Credit given during this shift, and how many bills carry it. */
+  total_due_sales_paisa?: number;
+  due_sales_count?: number;
+  /** Old balances settled at the counter - money in, but not a sale. */
+  total_cash_due_collected_paisa?: number;
+  total_other_due_collected_paisa?: number;
+  sale_transactions?: ShiftSaleRow[];
   total_cash_in_paisa: number;
   total_cash_out_paisa: number;
   note?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ShiftSaleRow {
+  id: string;
+  invoice_no: string;
+  total_paisa: number;
+  paid_paisa: number;
+  due_paisa: number;
+  returned_paisa: number;
+  status: string;
+  created_at: string;
+  customer_id: string | null;
+  customer_name: string;
 }
 
 export interface ShiftSummaryData {
@@ -75,7 +103,24 @@ export interface ShiftSummaryData {
   total_bkash_sales_paisa: number;
   total_nagad_sales_paisa: number;
   total_card_sales_paisa: number;
+  /** Non-cash taken on the merged "Other payment method" button. */
+  total_other_sales_paisa?: number;
+  /** Goods that came back, and the sales figure net of them. */
+  total_returned_paisa?: number;
+  net_sales_paisa?: number;
+  /** What those goods cost, at the FIFO cost captured on each sale line. */
+  total_cogs_paisa?: number;
+  gross_profit_paisa?: number;
+  /** Credit given during this shift, and how many bills carry it. */
+  total_due_sales_paisa?: number;
+  due_sales_count?: number;
+  /** Old balances settled at the counter - money in, but not a sale. */
+  total_cash_due_collected_paisa?: number;
+  total_other_due_collected_paisa?: number;
+  sale_transactions?: ShiftSaleRow[];
   total_cash_refund_paisa: number;
+  /** Every note that left the drawer - refunds and vendor payments alike. */
+  total_cash_paid_out_paisa?: number;
   total_cash_in_paisa: number;
   total_cash_out_paisa: number;
   cash_transactions: ShiftCashTransaction[];
@@ -96,6 +141,8 @@ export interface ShiftSummaryData {
 export interface Category {
   id: string;
   name: string;
+  /** null for a top-level category; two levels is the limit. */
+  parent_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -188,7 +235,7 @@ export interface CartItem {
 }
 
 export interface PaymentItem {
-  method: 'cash' | 'bkash' | 'nagad' | 'card';
+  method: 'cash' | 'bkash' | 'nagad' | 'card' | 'other';
   amount_paisa: number;
   trx_id?: string;
 }
@@ -208,7 +255,7 @@ export interface SalePayload {
   payments: PaymentItem[];
   total_paid_paisa: number;
   change_paisa?: number;
-  layout?: '80mm' | 'a5';
+  layout?: '80mm' | 'a4';
 }
 
 export interface SaleRecord {
@@ -228,6 +275,15 @@ export interface SaleRecord {
   items?: any[];
   payments?: any[];
   returns?: any[];
+  /**
+   * Collected when the bill was cut. NOT the invoice's balance today: a baki
+   * settled later is recorded against the customer, not the invoice, so this
+   * figure never moves once the sale is made. For what a customer owes now,
+   * use the Due & Payable report.
+   */
+  paid_at_sale_paisa?: number;
+  /** total_paisa minus paid_at_sale_paisa, floored at zero. Same caveat. */
+  due_at_sale_paisa?: number;
 }
 
 export interface HeldSale {
@@ -263,7 +319,12 @@ export interface CustomerDueSummary {
 
 export interface CustomerHistoryItem {
   id: string;
-  type: 'sale' | 'payment';
+  /**
+   * `return` is a credit note (goods back, balance down) and `refund` is cash
+   * handed over the counter (balance back up). Both are needed for the
+   * statement to close on the same figure v_customer_due reports.
+   */
+  type: 'sale' | 'payment' | 'return' | 'refund';
   date: string;
   ref_no: string;
   description: string;
@@ -276,7 +337,7 @@ export interface CustomerHistoryItem {
 export interface DueCollectionPayload {
   customer_id: string;
   amount_taka: number;
-  method: 'cash' | 'bkash' | 'nagad' | 'card';
+  method: 'cash' | 'bkash' | 'nagad' | 'card' | 'other';
   trx_id?: string | null;
   note?: string | null;
 }
@@ -309,6 +370,7 @@ export interface SalesReportData {
     bkash_paisa: number;
     nagad_paisa: number;
     card_paisa: number;
+    other_paisa?: number;
   };
   daily_trends: Array<{
     date: string;
@@ -354,6 +416,51 @@ export interface StockValuationData {
   total_retail_valuation_paisa: number;
   potential_gross_profit_paisa: number;
   potential_margin_percent: number;
+  /** Products whose stock_qty disagrees with their open batches. 0 when clean. */
+  drift_product_count?: number;
+  /** Units carrying stock that no batch accounts for, valued at product cost. */
+  unbacked_units?: number;
+}
+
+export interface CustomerReceivable {
+  id: string;
+  name: string;
+  phone?: string | null;
+  total_sales_paisa: number;
+  total_paid_paisa: number;
+  due_paisa: number;
+  /** Last non-held sale, so an owner can see how long a balance has sat. */
+  last_sale_at?: string | null;
+}
+
+export interface SupplierPayable {
+  id: string;
+  name: string;
+  phone?: string | null;
+  contact_person?: string | null;
+  payment_terms_days?: number | null;
+  payable_paisa: number;
+}
+
+/**
+ * Money owed to and by the shop.
+ *
+ * A balance, not a range: `as_of` is the moment it was read, and the report
+ * takes no start/end date because "what was outstanding between two dates" has
+ * no answer.
+ */
+export interface DueReportData {
+  as_of: string;
+  total_receivable_paisa: number;
+  total_payable_paisa: number;
+  /** Receivable minus payable. Positive means more is owed to the shop. */
+  net_position_paisa: number;
+  customers_with_due_count: number;
+  total_customers_count: number;
+  suppliers_with_payable_count: number;
+  total_suppliers_count: number;
+  receivables: CustomerReceivable[];
+  payables: SupplierPayable[];
 }
 
 export interface AuditLogRecord {
@@ -374,13 +481,48 @@ export interface ShopSettings {
   shop_name: string;
   shop_address: string;
   shop_phone: string;
+  /** Footer contacts. Empty means the line is left off the invoice entirely. */
+  shop_web?: string;
+  shop_email?: string;
   invoice_footer: string;
   device_id?: string;
   device_id_prefix?: string;
   idle_lock_minutes: string | number;
   default_invoice_layout: string;
+  /** Print layout, resolved against per-paper defaults by the main process. */
+  invoice_margin_mm?: number;
+  invoice_font_pt?: number;
+  invoice_show_address?: boolean;
+  invoice_show_phone?: boolean;
+  invoice_show_qr?: boolean;
+  invoice_show_cashier?: boolean;
+  invoice_show_name_bn?: boolean;
+  invoice_show_footer?: boolean;
+  /** PNG data URI, downscaled on import. Empty when no logo is set. */
+  invoice_logo?: string;
+  invoice_show_logo?: boolean;
+  invoice_logo_height_mm?: number;
+  invoice_title?: string;
+  invoice_header_note?: string;
+  invoice_terms?: string;
+  invoice_show_signature?: boolean;
+  /** A second signature line on the customer's side of the memo. */
+  invoice_show_customer_signature?: boolean;
 
   enable_shifts?: boolean;
+  /**
+   * False at a counter with no printer: the till stops offering to print and
+   * offers to save the invoice as a PDF instead.
+   */
+  has_printer?: boolean;
+  /** Send receipts straight to receipt_printer_name instead of opening the dialog. */
+  silent_print?: boolean;
+  /** Windows device name of the receipt printer; blank means "ask every time". */
+  receipt_printer_name?: string;
+  /** Counts only - the codes are stored hashed and never leave the main process. */
+  recovery_codes_total?: number;
+  recovery_codes_remaining?: number;
+  recovery_set_at?: string;
   barcode_scanner_mode?: 'speed' | 'prefix';
   barcode_scanner_prefix?: string;
   supabase_url?: string;
@@ -416,14 +558,42 @@ export interface IElectronApi {
     pinLogin: (args: { pin: string }) => Promise<{ success: boolean; session?: UserSession; error?: string }>;
     logout: () => Promise<boolean>;
     getSession: () => Promise<UserSession | null>;
+    recoveryAvailable: () => Promise<{ available: boolean; remaining: number; total: number }>;
+    resetWithRecoveryCode: (args: { code: string; newPassword: string }) => Promise<{
+      success: boolean;
+      username?: string;
+      codesRemaining?: number;
+      error?: string;
+    }>;
+  };
+  print: {
+    /** Prints an already-generated PDF, so the paper matches the preview. */
+    pdf: (args: { pdfBase64: string; fileName?: string }) => Promise<{ success: boolean; cancelled?: boolean }>;
+    /** Opens the system print dialog for a standalone HTML document. */
+    document: (args: { html: string; marginMm?: number }) => Promise<{ success: boolean; cancelled?: boolean }>;
+    /** Writes the document to a PDF in Downloads and opens it. */
+    toPdf: (args: { html: string; marginMm?: number; fileName?: string }) => Promise<{ success: boolean; filePath: string }>;
+    /** Installed printers, for choosing which one receipts go to. */
+    listPrinters: () => Promise<{ name: string; displayName: string; isDefault: boolean }[]>;
+    /** Asks where to save an invoice PDF, writes it, and opens it. */
+    savePdf: (args: { pdfBase64: string; fileName?: string }) => Promise<{
+      success: boolean;
+      canceled?: boolean;
+      filePath?: string;
+      opened?: boolean;
+    }>;
   };
   shell: {
     openExternal: (url: string) => Promise<boolean>;
   };
   categories: {
     list: () => Promise<Category[]>;
-    create: (name: string) => Promise<Category>;
-    update: (id: string, name: string) => Promise<{ id: string; name: string }>;
+    create: (name: string, parentId?: string | null) => Promise<Category>;
+    update: (
+      id: string,
+      name: string,
+      parentId?: string | null
+    ) => Promise<{ id: string; name: string; parent_id: string | null }>;
     remove: (id: string) => Promise<{ id: string; detachedProducts: number }>;
   };
   products: {
@@ -447,6 +617,8 @@ export interface IElectronApi {
     create: (data: { name: string; phone?: string | null; address?: string | null; contact_person?: string | null; opening_balance_taka?: number; payment_terms_days?: number | null; note?: string | null }) => Promise<Supplier>;
   };
   purchases: {
+    /** Owner only. Refused once any of the goods have been sold. */
+    void: (args: { purchase_id: string; reason: string }) => Promise<{ success: boolean }>;
     create: (data: PurchasePayload) => Promise<{ success: boolean; purchaseId: string }>;
     list: () => Promise<any[]>;
   };
@@ -463,10 +635,10 @@ export interface IElectronApi {
     processReturn: (payload: {
       sale_id: string;
       reason: string;
-      refund_method?: 'cash' | 'bkash' | 'nagad' | 'card';
+      refund_method?: 'cash' | 'bkash' | 'nagad' | 'card' | 'other';
       items: Array<{ sale_item_id: string; product_id: string; qty: number; amount_paisa: number }>;
     }) => Promise<{ success: boolean; returnId: string }>;
-    generatePdf: (args: { invoice_no: string; layout?: '80mm' | 'a5' }) => Promise<{ success: boolean; pdfBase64: string }>;
+    generatePdf: (args: { invoice_no: string; layout?: '80mm' | 'a4' }) => Promise<{ success: boolean; pdfBase64: string }>;
   };
   customers: {
     list: (search?: string) => Promise<Customer[]>;
@@ -483,6 +655,8 @@ export interface IElectronApi {
     getProfitReport: (args: { startDate: string; endDate: string }) => Promise<ProfitReportData>;
     getBestSelling: (args?: number | { startDate?: string; endDate?: string; limit?: number }) => Promise<BestSellingProduct[]>;
     getStockValuation: () => Promise<StockValuationData>;
+    /** Outstanding balances as of now. Takes no date range - see DueReportData. */
+    getDueReport: () => Promise<DueReportData>;
   };
   users: {
     list: () => Promise<UserRecord[]>;
@@ -503,8 +677,13 @@ export interface IElectronApi {
     getHistory: (limit?: number) => Promise<ShiftSummaryData[]>;
   };
   settings: {
+    /** A sample invoice rendered by the real generator, for the Settings preview. */
+    previewInvoice: (overrides?: Record<string, any>) =>
+      Promise<{ pdfBase64: string; paper: '80mm' | 'a4'; isRoll: boolean }>;
     get: () => Promise<ShopSettings>;
     update: (data: Partial<ShopSettings>) => Promise<{ success: boolean }>;
+    generateRecoveryCodes: () => Promise<{ codes: string[] }>;
+    exportRecoveryCodes: (codes: string[]) => Promise<{ success: boolean; canceled?: boolean; filePath?: string }>;
   };
   audit: {
     list: (limit?: number) => Promise<AuditLogRecord[]>;
@@ -516,34 +695,59 @@ export interface IElectronApi {
   };
   backup: {
     list: () => Promise<BackupFileInfo[]>;
-    createManual: (targetPath?: string) => Promise<BackupFileInfo>;
+    /** Always written into the backups folder chosen in Settings. */
+    createManual: () => Promise<BackupFileInfo>;
     restore: (filePath: string) => Promise<{ success: boolean }>;
     selectFolder: () => Promise<string | null>;
     selectFile: () => Promise<string | null>;
     restoreLocalFile: (filePath: string) => Promise<{ success: boolean }>;
   };
   gdrive: {
-    status: () => Promise<{ isConnected: boolean }>;
+    /** isConfigured is false when this build shipped without OAuth credentials. */
+    status: () => Promise<{ isConnected: boolean; isConfigured?: boolean }>;
     getAuthUrl: () => Promise<{ success: boolean }>;
     authorize: (code: string) => Promise<{ success: boolean }>;
     disconnect: () => Promise<{ success: boolean }>;
     restoreLatest: () => Promise<{ success: boolean }>;
   };
   wizard: {
-    checkStatus: () => Promise<{ isFirstRun: boolean }>;
+    checkStatus: () => Promise<{ isFirstRun: boolean; shopName: string }>;
     completeFirstRun: (payload: {
       shop_name: string;
       shop_address?: string | null;
       shop_phone?: string | null;
       device_id_prefix?: string;
-      default_invoice_layout?: '80mm' | 'a5';
+      default_invoice_layout?: '80mm' | 'a4';
       owner_password?: string | null;
-    }) => Promise<{ success: boolean }>;
+    }) => Promise<{ success: boolean; recoveryCodes?: string[] | null }>;
   };
+  /** Development builds only, and only into an empty shop. */
   demo: {
     seed: () => Promise<{ success: boolean; count: number }>;
-    reset: () => Promise<{ success: boolean }>;
   };
+  data: {
+    /** What erasing would remove right now. */
+    counts: () => Promise<BusinessDataCounts & { cloudSyncConfigured: boolean }>;
+    /** Owner password + the word ERASE; writes a full backup before deleting anything. */
+    erase: (args: { password: string; confirmText: string }) => Promise<{
+      success: boolean;
+      erased: BusinessDataCounts;
+      backupFile: string;
+      backupPath: string;
+    }>;
+  };
+  app: {
+    info: () => Promise<{ version: string; isPackaged: boolean; sampleDataAvailable: boolean }>;
+  };
+}
+
+export interface BusinessDataCounts {
+  sales: number;
+  purchases: number;
+  products: number;
+  customers: number;
+  suppliers: number;
+  shifts: number;
 }
 
 export interface BulkImportResult {

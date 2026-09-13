@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, requireOpenShift } from '../shared';
 
 
 export function registerSuppliersHandlers() {
@@ -133,10 +133,11 @@ export function registerSuppliersHandlers() {
 
   ipcMain.handle('api:suppliers:payDue', async (_event, rawPayload) => {
       requireRole(['owner']);
+      requireOpenShift(getDb(), 'Paying a supplier');
       const schema = z.object({
         supplier_id: z.string().min(1),
         amount_taka: z.number().positive(),
-        method: z.enum(['cash', 'bkash', 'nagad', 'card']).default('cash'),
+        method: z.enum(['cash', 'bkash', 'nagad', 'card', 'other']).default('cash'),
         note: z.string().optional().nullable(),
       });
   

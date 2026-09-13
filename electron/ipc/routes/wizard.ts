@@ -4,15 +4,30 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit } from '../shared';
+import {
+  activeSession,
+  setActiveSession,
+  requireRole,
+  getDeviceId,
+  logAudit,
+  generateRecoveryCodes,
+  storeRecoveryCodes,
+} from '../shared';
 
 
 export function registerWizardHandlers() {
   // --- FIRST-RUN WIZARD & ONBOARDING ---
+  // Unauthenticated on purpose - the login and PIN screens call this before
+  // anyone has a session. It returns only what those screens need to draw
+  // themselves; the shop name is already printed on every receipt.
   ipcMain.handle('api:wizard:checkStatus', async () => {
       const db = getDb();
       const setting = db.prepare("SELECT value FROM settings WHERE key = 'first_run_completed'").get() as any;
-      return { isFirstRun: !setting || setting.value !== '1' };
+      const shop = db.prepare("SELECT value FROM settings WHERE key = 'shop_name'").get() as any;
+      return {
+        isFirstRun: !setting || setting.value !== '1',
+        shopName: shop?.value || '',
+      };
     });
 
   ipcMain.handle('api:wizard:completeFirstRun', async (_event, rawPayload) => {
@@ -27,7 +42,7 @@ export function registerWizardHandlers() {
         shop_address: z.string().optional().nullable(),
         shop_phone: z.string().optional().nullable(),
         device_id_prefix: z.string().default('REG01'),
-        default_invoice_layout: z.enum(['80mm', 'a5']).default('80mm'),
+        default_invoice_layout: z.enum(['80mm', 'a4']).default('80mm'),
         owner_password: z.string().min(4).optional().nullable(),
       });
   
@@ -53,6 +68,11 @@ export function registerWizardHandlers() {
         data.owner_password = chosen;
       }
   
+      // Issued as part of setup rather than left for the owner to find later:
+      // the moment they are told to pick a password is the moment to tell them
+      // what happens if they forget it.
+      const recoveryCodes = isFirstRun ? generateRecoveryCodes() : null;
+
       db.transaction(() => {
         const upsertSetting = db.prepare(`
           INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -71,10 +91,14 @@ export function registerWizardHandlers() {
           const hash = bcrypt.hashSync(data.owner_password, salt);
           db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE username = ?').run(hash, now, 'owner');
         }
+
+        if (recoveryCodes) {
+          storeRecoveryCodes(db, recoveryCodes);
+        }
       })();
   
       logAudit('FIRST_RUN_WIZARD_COMPLETED', 'settings', undefined, { shopName: data.shop_name });
-      return { success: true };
+      return { success: true, recoveryCodes };
     });
 
 }

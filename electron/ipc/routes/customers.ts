@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, requireOpenShift } from '../shared';
 
 
 export function registerCustomersHandlers() {
@@ -143,10 +143,11 @@ export function registerCustomersHandlers() {
 
   ipcMain.handle('api:customers:collectDue', async (_event, rawPayload) => {
       requireRole(['owner', 'staff']);
+      requireOpenShift(getDb(), 'Collecting a due');
       const schema = z.object({
         customer_id: z.string().min(1),
         amount_taka: z.number().positive(),
-        method: z.enum(['cash', 'bkash', 'nagad', 'card']).default('cash'),
+        method: z.enum(['cash', 'bkash', 'nagad', 'card', 'other']).default('cash'),
         trx_id: z.string().optional().nullable(),
         note: z.string().optional().nullable(),
       });
@@ -204,22 +205,45 @@ export function registerCustomersHandlers() {
       requireRole(['owner', 'staff']);
       const customerId = z.string().min(1).parse(rawCustomerId);
       const db = getDb();
-  
+
+      /*
+       * The statement has to close on the same figure v_customer_due reports,
+       * or the header of the modal and the last line of its table disagree and
+       * neither can be trusted.
+       *
+       * v_customer_due is:  (sales - returns) - (payments in - payments out)
+       *
+       * so all four terms have to appear here. Two of them did not: returns
+       * were missing entirely, and the payments query filtered direction='in',
+       * which dropped every refund. A customer who had returned goods saw a
+       * statement whose running balance drifted from their real due, with
+       * nothing on it to explain the gap.
+       */
       const sales = db.prepare(`
         SELECT id, invoice_no as ref_no, total_paisa, created_at
         FROM sales
         WHERE customer_id = ? AND deleted_at IS NULL AND status != 'held'
       `).all(customerId) as any[];
-  
-      const payments = db.prepare(`
-        SELECT id, type, method, amount_paisa, created_at, sale_id
-        FROM payments
-        WHERE customer_id = ? AND deleted_at IS NULL AND direction = 'in'
+
+      const returns = db.prepare(`
+        SELECT ri.id, s.invoice_no as ref_no, ri.amount_paisa, r.created_at
+        FROM returns r
+        JOIN return_items ri ON ri.return_id = r.id
+        JOIN sales s ON s.id = r.sale_id
+        WHERE s.customer_id = ? AND ri.deleted_at IS NULL AND s.deleted_at IS NULL
       `).all(customerId) as any[];
-  
+
+      const payments = db.prepare(`
+        SELECT p.id, p.type, p.method, p.amount_paisa, p.created_at, p.sale_id, p.direction,
+               s.invoice_no
+        FROM payments p
+        LEFT JOIN sales s ON s.id = p.sale_id
+        WHERE p.customer_id = ? AND p.deleted_at IS NULL
+      `).all(customerId) as any[];
+
       const history: Array<{
         id: string;
-        type: 'sale' | 'payment';
+        type: 'sale' | 'payment' | 'return' | 'refund';
         date: string;
         ref_no: string;
         description: string;
@@ -227,8 +251,10 @@ export function registerCustomersHandlers() {
         debit_paisa: number;
         credit_paisa: number;
         running_balance_paisa?: number;
+        /** Ties rows sharing a timestamp into a readable order. */
+        seq?: number;
       }> = [];
-  
+
       sales.forEach(s => {
         history.push({
           id: s.id,
@@ -238,32 +264,103 @@ export function registerCustomersHandlers() {
           description: `Invoice ${s.ref_no}`,
           debit_paisa: s.total_paisa,
           credit_paisa: 0,
+          seq: 0,
         });
       });
-  
+
+      // Goods came back, so the customer owes less.
+      returns.forEach(r => {
+        history.push({
+          id: r.id,
+          type: 'return',
+          date: r.created_at,
+          ref_no: r.ref_no,
+          description: `Return / credit note on ${r.ref_no}`,
+          debit_paisa: 0,
+          credit_paisa: r.amount_paisa,
+          seq: 1,
+        });
+      });
+
+      /*
+       * A reference someone can act on.
+       *
+       * Every payment row used to print a slice of its own uuid - "01A0848A" -
+       * which matches nothing on any bill, receipt or screen. Cash taken at the
+       * counter belongs to the invoice it settled, so it carries that invoice
+       * number and sits directly under it; money collected against the balance
+       * later belongs to no single bill, so it gets a receipt reference of its
+       * own, marked as one.
+       */
+      const paymentRef = (p: any) =>
+        p.invoice_no || `RCPT-${String(p.id).slice(0, 8).toUpperCase()}`;
+      const against = (p: any) => (p.invoice_no ? ` against ${p.invoice_no}` : '');
+
       payments.forEach(p => {
-        const desc = p.type === 'due_collection' ? 'Due / Baki Collection Payment' : 'Sale Payment at POS';
+        if (p.direction === 'out') {
+          // Cash handed back over the counter. It leaves the drawer, so it
+          // raises the balance again exactly as v_customer_due does.
+          history.push({
+            id: p.id,
+            type: 'refund',
+            date: p.created_at,
+            ref_no: paymentRef(p),
+            description: `Refund paid out (${String(p.method).toUpperCase()})${against(p)}`,
+            method: p.method,
+            debit_paisa: p.amount_paisa,
+            credit_paisa: 0,
+            seq: 3,
+          });
+          return;
+        }
+
+        const desc =
+          p.type === 'due_collection'
+            ? 'Due / baki collection'
+            : 'Payment received at counter';
         history.push({
           id: p.id,
           type: 'payment',
           date: p.created_at,
-          ref_no: p.id.slice(0, 8).toUpperCase(),
-          description: `${desc} (${p.method.toUpperCase()})`,
+          ref_no: paymentRef(p),
+          description: `${desc} (${String(p.method).toUpperCase()})${against(p)}`,
           method: p.method,
           debit_paisa: 0,
           credit_paisa: p.amount_paisa,
+          seq: 2,
         });
       });
-  
-      history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  
+
+      /*
+       * Oldest first, and a sale ahead of the payment that settles it.
+       *
+       * A POS sale and its payment are written in the same statement and carry
+       * the identical created_at, so ordering on the timestamp alone left their
+       * order to chance - a statement could show the money before the bill it
+       * paid. `seq` fixes that: invoice, then credit note, then payment, then
+       * refund.
+       */
+      history.sort((a, b) => {
+        const byDate = new Date(a.date).getTime() - new Date(b.date).getTime();
+        return byDate !== 0 ? byDate : (a.seq || 0) - (b.seq || 0);
+      });
+
       let runningBalance = 0;
       history.forEach(item => {
         runningBalance += (item.debit_paisa - item.credit_paisa);
         item.running_balance_paisa = runningBalance;
       });
-  
-      return history.reverse();
+
+      /*
+       * Returned oldest first, and NOT reversed.
+       *
+       * A running balance only reads in the direction it accumulates. Newest
+       * first, the column ran 100, 150, 100, 200 down the page - every figure
+       * correct as of its own row, and the whole column nonsense to read, with
+       * an old 200 sitting at the bottom next to a header saying 100 was due.
+       * Oldest first, the last line is the closing balance and matches it.
+       */
+      return history;
     });
 
   ipcMain.handle('api:customers:getDueSummary', async () => {

@@ -22,6 +22,11 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# The Google OAuth client for Drive backup. Never commit this - it used to live
+# in electron/services/googleDrive.ts, which published it. google-oauth.example.json
+# is the template that is safe to track.
+google-oauth.json
+
 # IDE & OS files
 .DS_Store
 Thumbs.db

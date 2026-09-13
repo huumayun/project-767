@@ -4,8 +4,15 @@ import { SEPARATOR } from '../../utils/categoryTree';
 
 export type CategoryFormMode =
   | { kind: 'group' }
-  | { kind: 'child'; parentName: string }
-  | { kind: 'edit'; id: string; currentName: string; parentName: string | null; leafName: string };
+  | { kind: 'child'; parentId: string; parentName: string }
+  | {
+      kind: 'edit';
+      id: string;
+      currentName: string;
+      /** The parent it sits under, or null at the top level. */
+      parentId: string | null;
+      parentName: string | null;
+    };
 
 interface CategoryFormModalProps {
   mode: CategoryFormMode;
@@ -28,7 +35,8 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
   onDelete,
   onClose,
 }) => {
-  const [name, setName] = useState(mode.kind === 'edit' ? mode.leafName : '');
+  // The stored name is the leaf now; the parent is a column, not a prefix.
+  const [name, setName] = useState(mode.kind === 'edit' ? mode.currentName : '');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 

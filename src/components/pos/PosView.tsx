@@ -32,6 +32,9 @@ import {
   FileText,
   ShoppingCart,
   Keyboard,
+  ChevronRight,
+  ChevronDown,
+  Clock,
 } from 'lucide-react';
 
 import { InvoiceModal } from './InvoiceModal';
@@ -46,12 +49,36 @@ import { useToast } from '../../context/ToastContext';
 import { audio, soundFx } from '../../utils/audio';
 import { BkashIcon, NagadIcon, CashIcon, CardBankIcon } from './PosIcons';
 import {
+  buildCategoryTree,
+  categoryPath,
+  categoryWithDescendantIds,
+  productCategoryCounts,
+  type CategoryNode,
+} from '../../utils/categoryTree';
+import {
   getShortcuts,
   matchesBinding,
   bindingLabel,
   SHORTCUTS_CHANGED_EVENT,
 } from '../../utils/shortcuts';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
+
+type NonCashMethod = 'bkash' | 'nagad' | 'card' | 'other';
+
+/** The non-cash choices offered under the Other button, in the order shown. */
+const NON_CASH_METHODS: Array<{ id: NonCashMethod; label: string; hint: string }> = [
+  { id: 'bkash', label: 'bKash', hint: 'bKash wallet transfer' },
+  { id: 'nagad', label: 'Nagad', hint: 'Nagad wallet transfer' },
+  { id: 'card', label: 'Card', hint: 'Card or bank POS machine' },
+  { id: 'other', label: 'Other', hint: 'Rocket, Upay, bank transfer or anything else' },
+];
+
+const NonCashIcon: React.FC<{ method: NonCashMethod; className?: string }> = ({ method, className = 'w-3.5 h-3.5' }) => {
+  if (method === 'bkash') return <BkashIcon className={className} />;
+  if (method === 'nagad') return <NagadIcon className={className} />;
+  if (method === 'card') return <CardBankIcon className={className} />;
+  return <Smartphone className={`${className} shrink-0`} />;
+};
 
 interface CartPriceInputProps {
   unitPricePaisa: number;
@@ -124,12 +151,33 @@ interface PosViewProps {
   products: Product[];
   currentSession: UserSession | null;
   onRefreshProducts: () => void;
+  /**
+   * Called whenever a sale or a refund moves the drawer.
+   *
+   * The running shift is held in App and was only re-read on login and from
+   * the cash-drawer dialog, so the sidebar's cash figure sat at whatever it was
+   * when the till opened - the one number a cashier glances at all day.
+   */
+  onShiftChanged: () => void;
+  /**
+   * False when shifts are in use and none is open.
+   *
+   * The main process refuses a sale in that state, because its cash would fall
+   * outside every shift window and land in no Z-report. Knowing it here means
+   * saying so before a cart is built, rather than after.
+   */
+  canTakeMoney: boolean;
+  /** Opens the shift dialog, so the refusal comes with its own way out. */
+  onOpenShift: () => void;
 }
 
 export const PosView: React.FC<PosViewProps> = ({
   products,
   currentSession,
   onRefreshProducts,
+  onShiftChanged,
+  canTakeMoney,
+  onOpenShift,
 }) => {
   const toast = useToast();
 
@@ -157,9 +205,24 @@ export const PosView: React.FC<PosViewProps> = ({
   const [cashAmount, setCashAmount] = useState<string>('');
   const [bkashAmount, setBkashAmount] = useState<string>('');
   const [nagadAmount, setNagadAmount] = useState<string>('');
+  /*
+   * Non-cash is chosen by name again: bKash, Nagad, Card, or Other for anything
+   * else (Rocket, Upay, a bank transfer).
+   *
+   * These were merged into a single "Other" button on the grounds that the shop
+   * did not care which wallet money arrived on. It does - the bKash and Nagad
+   * statements have to be matched against the till - and the merged button gave
+   * no way to say which, so every transfer was recorded as "other" and the
+   * per-wallet lines in Reports stayed at zero.
+   */
+  const [otherAmount, setOtherAmount] = useState<string>('');
   const [cardAmount, setCardAmount] = useState<string>('');
+  const [showNonCashPicker, setShowNonCashPicker] = useState(false);
   const [discountTaka, setDiscountTaka] = useState<string>('0');
-  const [invoiceLayout, setInvoiceLayout] = useState<'80mm' | 'a5'>('80mm');
+  const [invoiceLayout, setInvoiceLayout] = useState<'80mm' | 'a4'>('80mm');
+  // From Settings › Receipt Printer. Assumed true until read, so a counter with
+  // a printer never briefly loses its print button while settings load.
+  const [hasPrinter, setHasPrinter] = useState(true);
   const [isDueSaleMode, setIsDueSaleMode] = useState(false);
 
 
@@ -211,6 +274,14 @@ export const PosView: React.FC<PosViewProps> = ({
   // Browse panel — presentational filter state only.
   const [categoryFilter, setCategoryFilter] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  /*
+   * Which group is open in the rail. One at a time, like an accordion.
+   *
+   * Every group expanded is fine for the handful a new shop has and unusable
+   * for a stocked one: 30 groups holding 100 subcategories is a 3,300px rail,
+   * about seven screens of scrolling to reach the end. Kept to one, it is two.
+   */
+  const [expandedCategoryId, setExpandedCategoryId] = useState<string>('');
   const [selectedBrand, setSelectedBrand] = useState<string>('');
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -243,9 +314,14 @@ export const PosView: React.FC<PosViewProps> = ({
       ]);
       setCustomers(custList);
       setCategories(catList);
-      if (shopSettings?.default_invoice_layout === 'a5' || shopSettings?.default_invoice_layout === '80mm') {
-        setInvoiceLayout(shopSettings.default_invoice_layout);
+      // Every paper Settings offers, not just two of them: the A4 case fell
+      // through here, so a shop set to A4 was quietly billed on an 80mm roll
+      // and the confirmation modal insisted the layout was 80mm.
+      const savedLayout = shopSettings?.default_invoice_layout;
+      if (savedLayout === '80mm' || savedLayout === 'a4') {
+        setInvoiceLayout(savedLayout);
       }
+      if (shopSettings) setHasPrinter(shopSettings.has_printer ?? true);
     } catch (err) {
       console.error('Failed to load initial data:', err);
     }
@@ -482,6 +558,8 @@ export const PosView: React.FC<PosViewProps> = ({
     setBkashAmount('');
     setNagadAmount('');
     setCardAmount('');
+    setOtherAmount('');
+    setShowNonCashPicker(false);
     setDiscountTaka('0');
     // Due is a property of the bill being built, not a standing preference.
     // Without this it stayed armed after a sale and quietly put the next
@@ -502,9 +580,21 @@ export const PosView: React.FC<PosViewProps> = ({
   const bkashPaisa = Math.round((parseFloat(bkashAmount) || 0) * 100);
   const nagadPaisa = Math.round((parseFloat(nagadAmount) || 0) * 100);
   const cardPaisa = Math.round((parseFloat(cardAmount) || 0) * 100);
+  const otherPaisa = Math.round((parseFloat(otherAmount) || 0) * 100);
 
-  const totalPaidPaisa = cashPaisa + bkashPaisa + nagadPaisa + cardPaisa;
-  const isFullDue = isDueSaleMode && Boolean(selectedCustomerId);
+  const totalPaidPaisa = cashPaisa + bkashPaisa + nagadPaisa + cardPaisa + otherPaisa;
+  /*
+   * A full due is a sale where nothing at all is collected.
+   *
+   * It used to mean only that the Due sale chip was lit, and the checkout below
+   * then posted a single zero payment - so a cashier who lit the chip and took
+   * ৳2,000 against a ৳3,000 bill had the ৳2,000 thrown away and the customer
+   * was billed the whole ৳3,000. Money in the drawer, and the ledger denying it.
+   *
+   * The moment any amount is entered the sale is a part payment, whatever the
+   * chip says, and the remainder becomes the due on its own.
+   */
+  const isFullDue = isDueSaleMode && Boolean(selectedCustomerId) && totalPaidPaisa === 0;
   const effectiveCashPaisa = (!isFullDue && totalPaidPaisa === 0) ? totalPaisa : cashPaisa;
   const effectivePaidPaisa = isFullDue ? 0 : (totalPaidPaisa === 0 ? totalPaisa : totalPaidPaisa);
   const effectiveChangePaisa = Math.max(0, effectivePaidPaisa - totalPaisa);
@@ -513,12 +603,27 @@ export const PosView: React.FC<PosViewProps> = ({
   const changePaisa = Math.max(0, totalPaidPaisa - totalPaisa);
   const duePaisa = Math.max(0, totalPaisa - totalPaidPaisa);
 
+  // Every method that took money, by name. The old chain knew only "Cash +
+  // bKash" and "Cash + Other", so a bill paid partly in cash and partly on
+  // Nagad or Card was labelled plain "Cash".
+  const nonCashPaisa: Record<NonCashMethod, number> = {
+    bkash: bkashPaisa,
+    nagad: nagadPaisa,
+    card: cardPaisa,
+    other: otherPaisa,
+  };
+  const selectedNonCash = NON_CASH_METHODS.find((m) => nonCashPaisa[m.id] > 0) || null;
+
   let paymentSummaryStr = 'Cash';
-  if (isFullDue) paymentSummaryStr = 'Full Due';
-  else if (bkashPaisa > 0 && cashPaisa > 0) paymentSummaryStr = 'Cash + bKash';
-  else if (bkashPaisa > 0) paymentSummaryStr = 'bKash';
-  else if (nagadPaisa > 0) paymentSummaryStr = 'Nagad';
-  else if (cardPaisa > 0) paymentSummaryStr = 'Card';
+  if (isFullDue) {
+    paymentSummaryStr = 'Full Due';
+  } else {
+    const used = [
+      ...(cashPaisa > 0 ? ['Cash'] : []),
+      ...NON_CASH_METHODS.filter((m) => nonCashPaisa[m.id] > 0).map((m) => m.label),
+    ];
+    if (used.length > 0) paymentSummaryStr = used.join(' + ');
+  }
 
   // Quick Cash Fill (F4)
   const handleQuickCash = () => {
@@ -528,6 +633,8 @@ export const PosView: React.FC<PosViewProps> = ({
     setBkashAmount('');
     setNagadAmount('');
     setCardAmount('');
+    setOtherAmount('');
+    setShowNonCashPicker(false);
     toast.info(`Exact cash ৳${(totalPaisa / 100).toFixed(2)} applied.`);
   };
 
@@ -546,6 +653,8 @@ export const PosView: React.FC<PosViewProps> = ({
     setBkashAmount('');
     setNagadAmount('');
     setCardAmount('');
+    setOtherAmount('');
+    setShowNonCashPicker(false);
     toast.info(`Due sale: ৳${(totalPaisa / 100).toFixed(2)} — press Complete Sale to record it.`);
     // Deliberately does NOT open the receipt preview. This only arms the mode;
     // the sale is still confirmed through Complete Sale, so a credit sale can
@@ -572,6 +681,15 @@ export const PosView: React.FC<PosViewProps> = ({
   };
 
   const handleStartCheckout = () => {
+    // Guarded here rather than only on the button: the checkout shortcut and
+    // the payment panel both reach this, and either would otherwise walk into
+    // the main process's refusal with a full cart already rung up.
+    if (!canTakeMoney) {
+      toast.warning('No shift is open. Open one before taking money.');
+      onOpenShift();
+      return;
+    }
+
     if (cart.length === 0) {
       toast.warning('Cart is empty. Scan or select products first.');
       return;
@@ -593,7 +711,7 @@ export const PosView: React.FC<PosViewProps> = ({
     // A due sale is already a deliberate choice, so asking "paid in cash?" both
     // contradicts it and used to cancel it (isDueSaleMode was cleared below
     // before this check ran). Confirm the credit instead, and keep the mode.
-    if (isDueSaleMode && selectedCustomerId) {
+    if (isFullDue) {
       const customerName =
         customers.find((c) => c.id === selectedCustomerId)?.name || 'this customer';
       setConfirmModalConfig({
@@ -629,7 +747,7 @@ export const PosView: React.FC<PosViewProps> = ({
 
     // Strict Validation: If there is remaining due on a walk-in customer, block checkout!
     if (duePaisa > 0 && !selectedCustomerId) {
-      toast.error('খুচরা / Walk-in কাস্টমারের কাছে বাকি বিক্রি গ্রহণযোগ্য নয়। বাকি রাখতে হলে উপরে কাস্টমার নির্বাচন করুন অথবা পূর্ণ টাকা পরিশোধ করুন।');
+      toast.error('A walk-in customer cannot be sold on credit. Select a customer above, or take the full payment.');
       return;
     }
 
@@ -644,7 +762,7 @@ export const PosView: React.FC<PosViewProps> = ({
 
   const executeFinalCheckout = async (shouldPrint: boolean) => {
     if (effectiveDuePaisa > 0 && !selectedCustomerId) {
-      toast.error('খুচরা / Walk-in কাস্টমারের কাছে বাকি বিক্রি গ্রহণযোগ্য নয়। অনুগ্রহ করে কাস্টমার নির্বাচন করুন।');
+      toast.error('A walk-in customer cannot be sold on credit. Please select a customer.');
       return;
     }
 
@@ -660,6 +778,7 @@ export const PosView: React.FC<PosViewProps> = ({
       if (bkashPaisa > 0) payments.push({ method: 'bkash', amount_paisa: bkashPaisa });
       if (nagadPaisa > 0) payments.push({ method: 'nagad', amount_paisa: nagadPaisa });
       if (cardPaisa > 0) payments.push({ method: 'card', amount_paisa: cardPaisa });
+      if (otherPaisa > 0) payments.push({ method: 'other', amount_paisa: otherPaisa });
     }
 
     try {
@@ -696,7 +815,7 @@ export const PosView: React.FC<PosViewProps> = ({
           duePaisa: effectiveDuePaisa,
           paymentMethodSummary: paymentSummaryStr,
           customer: currentCustomer,
-          autoPrint: shouldPrint,
+          autoPrint: shouldPrint && hasPrinter,
         });
         setShowSuccessModal(true);
 
@@ -706,6 +825,8 @@ export const PosView: React.FC<PosViewProps> = ({
         // so a manual Clear (a mis-scan) keeps the customer in place.
         setSelectedCustomerId('');
         onRefreshProducts();
+        // Cash taken at the till changes the shift's expected drawer total.
+        onShiftChanged();
         // The sale just moved this customer's balance. `customers` was loaded
         // once at mount, so without this the picker keeps showing the old due.
         fetchData();
@@ -768,45 +889,119 @@ export const PosView: React.FC<PosViewProps> = ({
   // bKash / Nagad / Card are transfers of the exact amount — there is no
   // change to hand back — so choosing one assigns it the whole payable and
   // clears the others, rather than asking staff to retype a figure.
-  const payExactBy = (method: 'bkash' | 'nagad' | 'card') => {
-    const current =
-      method === 'bkash' ? bkashPaisa : method === 'nagad' ? nagadPaisa : cardPaisa;
-    const setAmount =
-      method === 'bkash'
-        ? setBkashAmount
-        : method === 'nagad'
-        ? setNagadAmount
-        : setCardAmount;
+  const nonCashSetters: Record<NonCashMethod, (v: string) => void> = {
+    bkash: setBkashAmount,
+    nagad: setNagadAmount,
+    card: setCardAmount,
+    other: setOtherAmount,
+  };
 
-    // Tapping a chip that is already carrying an amount clears it, so a
-    // mis-tap is undoable without reaching for the keyboard.
+  const payByMethod = (method: NonCashMethod) => {
+    const current = nonCashPaisa[method];
+    const setAmount = nonCashSetters[method];
+    // Money arriving by transfer is still money collected.
+    if (current === 0) setIsDueSaleMode(false);
+    // The choice is made; the row of chips has done its job.
+    setShowNonCashPicker(false);
+
+    // Tapping the chip that already holds the amount clears it, so a mis-tap is
+    // undoable without reaching for the keyboard.
     if (current > 0) {
       setAmount('');
       return;
     }
 
-    // Fill only what is still outstanding. Anything already entered — cash, or
-    // another transfer — stays put, so a bill can still be split across
-    // methods (e.g. ৳1,000 cash then bKash for the rest).
-    const outstandingPaisa = totalPaisa - totalPaidPaisa;
+    // Tapping a different one moves the bill to it. Leaving the old amount in
+    // place meant the outstanding was already nil, so the new chip filled with
+    // nothing and the till looked broken - staff had to clear the first chip
+    // before the second would take. A customer changing their mind between
+    // wallets is one tap, not two.
+    for (const m of NON_CASH_METHODS) {
+      if (m.id !== method) nonCashSetters[m.id]('');
+    }
+
+    /*
+     * Cash keeps its place so a part-cash bill can still be finished on a
+     * wallet - ৳1,000 in notes, the rest on bKash.
+     *
+     * Unless cash already covers the whole bill, which is what tapping Exact
+     * leaves behind. A customer who then says "I'll send it instead" left the
+     * outstanding at nil, so the chip filled with nothing and appeared dead.
+     * Taking the bill off cash is plainly what the tap meant.
+     */
+    if (cashPaisa >= totalPaisa) {
+      setCashAmount('');
+      setAmount((totalPaisa / 100).toFixed(2));
+      return;
+    }
+
+    const outstandingPaisa = totalPaisa - cashPaisa;
     setAmount(outstandingPaisa > 0 ? (outstandingPaisa / 100).toFixed(2) : '');
   };
+
+  /*
+   * What a customer plausibly hands over for this bill.
+   *
+   * Fixed ৳500/1000/2000/5000 keys are no help on a ৳2,850 sale - none of them
+   * is what anyone would offer. Rounding the actual total up to the next 10,
+   * 50, 100, 500 and 1,000 gives the notes people really reach for, and the
+   * exact figure is already on its own button. Anything equal to the total is
+   * dropped, since Exact covers it, and ৳1,000 is the largest note here so
+   * nothing above the next thousand is worth offering.
+   */
+  const quickCashOptions = (() => {
+    if (totalPaisa <= 0) return [] as number[];
+    const totalTaka = totalPaisa / 100;
+    const steps = [10, 50, 100, 500, 1000];
+    const seen = new Set<number>();
+    const out: number[] = [];
+    for (const step of steps) {
+      const up = Math.ceil(totalTaka / step) * step;
+      if (up <= totalTaka || seen.has(up)) continue;
+      seen.add(up);
+      out.push(up);
+      if (out.length === 4) break;
+    }
+    return out;
+  })();
 
   // ── Browse lists ───────────────────────────────────────────────────
   // `filteredProducts` above stays search-only (it returns nothing while the
   // search box is empty). These drive the browse panel instead.
-  const productCountByCategory = products.reduce<Record<string, number>>((acc, p) => {
-    const key = p.category_id || '';
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
+  // A parent's count includes its children's stock. Counting only direct
+  // `category_id` matches showed a parent as 0 whenever its products were
+  // filed on a subcategory - which is where a shop files them.
+  const { direct: directCountByCategory, rollup: rollupCountByCategory } =
+    productCategoryCounts(products, categories);
 
-  const visibleCategories = categories
-    .filter((c) => c.name.toLowerCase().includes(categoryFilter.trim().toLowerCase()))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  /*
+   * The rail as parents with their children, not one flat alphabetical list.
+   *
+   * The filter matches either level. Typing a child's name keeps its parent on
+   * screen as the heading it belongs under, and typing a parent's name keeps
+   * all of its children, so a match is never shown without its context.
+   */
+  const categoryQuery = categoryFilter.trim().toLowerCase();
+  // A filter is already a narrowing, so its matches open regardless: hiding
+  // children behind a closed group would hide the very rows being searched for.
+  const expandAllGroups = categoryQuery.length > 0;
+  const visibleCategoryTree = buildCategoryTree(categories)
+    .map((node) => {
+      if (!categoryQuery) return node;
+      const parentMatches = node.parentName.toLowerCase().includes(categoryQuery);
+      if (parentMatches) return node;
+      const children = node.children.filter((c) => c.name.toLowerCase().includes(categoryQuery));
+      return children.length ? { ...node, children } : null;
+    })
+    .filter((node): node is CategoryNode => node !== null);
 
+  // Selecting a parent lists everything beneath it, so tapping a group at the
+  // till shows its stock rather than an empty grid.
+  const selectedCategoryIds = selectedCategoryId
+    ? categoryWithDescendantIds(selectedCategoryId, categories)
+    : [];
   const categoryProducts = products.filter(
-    (p) => !selectedCategoryId || p.category_id === selectedCategoryId
+    (p) => !selectedCategoryId || selectedCategoryIds.includes(p.category_id || '')
   );
 
   const brandsInCategory = Array.from(
@@ -823,8 +1018,12 @@ export const PosView: React.FC<PosViewProps> = ({
       return a.name.localeCompare(b.name);
     });
 
-  const selectedCategoryName =
-    categories.find((c) => c.id === selectedCategoryId)?.name || 'All products';
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+  // A child on its own says "Oil Filters" and leaves the cashier guessing which
+  // group they are in; the path says where they are.
+  const selectedCategoryName = selectedCategory
+    ? categoryPath(selectedCategory, categories)
+    : 'All products';
 
   const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
 
@@ -868,7 +1067,7 @@ export const PosView: React.FC<PosViewProps> = ({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
                 placeholder="Scan a barcode or type a part name..."
-                className={`w-full bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl pl-10 py-2 text-xs text-jungle-teal-900 focus:outline-hidden focus:border-muted-teal-700 font-mono font-semibold placeholder:font-sans placeholder:text-jungle-teal-400 ${
+                className={`w-full bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl pl-10 py-2 text-xs text-jungle-teal-900 focus:outline-hidden focus:border-muted-teal-700 font-mono font-semibold placeholder:font-sans placeholder:text-jungle-teal-600 ${
                   showShortcuts ? 'pr-12' : 'pr-4'
                 }`}
               />
@@ -926,7 +1125,7 @@ export const PosView: React.FC<PosViewProps> = ({
               title={`${showShortcuts ? 'Hide' : 'Show'} keyboard shortcuts (${bindingLabel(keys.toggleHints)})`}
               className={`w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center transition-colors ${
                 showShortcuts
-                  ? 'bg-jungle-teal-800 border-jungle-teal-800 text-white'
+                  ? 'bg-jungle-teal-100 border-jungle-teal-200 text-jungle-teal-900'
                   : 'bg-jungle-teal-50 border-jungle-teal-200 text-jungle-teal-600 hover:bg-jungle-teal-100'
               }`}
             >
@@ -970,8 +1169,10 @@ export const PosView: React.FC<PosViewProps> = ({
       
         {/* ===================================================================== */}
         {/* BROWSE — CATEGORY COLUMN                                              */}
-        {/* Categories are flat in the schema ({id, name}, no parent_id), so the  */}
-        {/* list is narrowed by a filter box and a brand axis, not a tree.        */}
+        {/* Two levels, from `categories.parent_id`: a parent row with its       */}
+        {/* subcategories indented under it. The comment here used to say the     */}
+        {/* schema was flat - it gained parent_id, and this rail had not caught   */}
+        {/* up, so parents read 0 and listed nothing.                             */}
         {/* ===================================================================== */}
         <div className="w-[150px] min-[1180px]:w-[168px] shrink-0 bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl shadow-xs flex flex-col overflow-hidden min-h-0">
           <div className="shrink-0 p-2 border-b border-jungle-teal-200">
@@ -1000,30 +1201,91 @@ export const PosView: React.FC<PosViewProps> = ({
               <span className="font-mono text-ui-2xs opacity-70 shrink-0">{products.length}</span>
             </button>
       
-            {visibleCategories.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => { setSelectedCategoryId(c.id); setSelectedBrand(''); }}
-                title={c.name}
-                className={`w-full min-h-8 px-2.5 py-1.5 rounded-lg flex items-start gap-2 text-left text-ui-sm transition-colors ${
-                  selectedCategoryId === c.id
-                    ? 'bg-muted-teal-800 text-white font-semibold'
-                    : 'text-jungle-teal-700 hover:bg-jungle-teal-100'
-                }`}
-              >
-                <span className="flex-1 leading-tight break-words">{c.name}</span>
-                <span
-                  className={`font-mono text-ui-2xs shrink-0 ${
-                    (productCountByCategory[c.id] || 0) === 0 ? "opacity-35" : "opacity-70"
-                  }`}
-                >
-                  {productCountByCategory[c.id] || 0}
-                </span>
-              </button>
-            ))}
+            {visibleCategoryTree.map((node) => {
+              const parentCount = rollupCountByCategory[node.parent.id] || 0;
+              const parentSelected = selectedCategoryId === node.parent.id;
+              const holdsSelection = node.children.some((c) => c.id === selectedCategoryId);
+              const expanded =
+                expandAllGroups || holdsSelection || expandedCategoryId === node.parent.id;
+              return (
+                <div key={node.parent.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategoryId(node.parent.id);
+                      setSelectedBrand('');
+                      // Selecting a group opens it, so its subcategories are one
+                      // tap away rather than two. Tapping the open group again
+                      // closes it.
+                      setExpandedCategoryId((current) =>
+                        current === node.parent.id ? '' : node.parent.id
+                      );
+                    }}
+                    title={`${node.parentName} — ${parentCount} product${parentCount === 1 ? '' : 's'}`}
+                    className={`w-full min-h-8 px-2.5 py-1.5 rounded-lg flex items-start gap-2 text-left text-ui-sm transition-colors ${
+                      parentSelected
+                        ? 'bg-muted-teal-800 text-white font-semibold'
+                        : 'text-jungle-teal-700 hover:bg-jungle-teal-100 font-semibold'
+                    }`}
+                  >
+                    {node.children.length > 0 && (
+                      <ChevronRight
+                        className={`w-3 h-3 mt-0.5 shrink-0 transition-transform ${
+                          expanded ? 'rotate-90' : ''
+                        }`}
+                      />
+                    )}
+                    <span className="flex-1 leading-tight break-words">{node.parentName}</span>
+                    <span
+                      className={`font-mono text-ui-2xs shrink-0 ${
+                        parentCount === 0 ? 'opacity-35' : 'opacity-70'
+                      }`}
+                    >
+                      {parentCount}
+                    </span>
+                  </button>
+
+                  {/*
+                    Children sit in a hairline-ruled indent rather than carrying
+                    the parent's name in their own label. A 150px rail has no
+                    room for "Filters — Oil Filters", and the rule makes the
+                    nesting readable at a glance from a step back.
+                  */}
+                  {node.children.length > 0 && expanded && (
+                    <div className="ml-2.5 pl-1.5 border-l border-jungle-teal-200 space-y-0.5 mt-0.5">
+                      {node.children.map((child) => {
+                        const childCount = directCountByCategory[child.id] || 0;
+                        const childSelected = selectedCategoryId === child.id;
+                        return (
+                          <button
+                            key={child.id}
+                            type="button"
+                            onClick={() => { setSelectedCategoryId(child.id); setSelectedBrand(''); }}
+                            title={`${node.parentName} — ${child.name}`}
+                            className={`w-full min-h-7 px-2 py-1 rounded-lg flex items-start gap-2 text-left text-ui-xs transition-colors ${
+                              childSelected
+                                ? 'bg-muted-teal-800 text-white font-semibold'
+                                : 'text-jungle-teal-600 hover:bg-jungle-teal-100'
+                            }`}
+                          >
+                            <span className="flex-1 leading-tight break-words">{child.name}</span>
+                            <span
+                              className={`font-mono text-ui-2xs shrink-0 ${
+                                childCount === 0 ? 'opacity-35' : 'opacity-70'
+                              }`}
+                            >
+                              {childCount}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
       
-            {visibleCategories.length === 0 && (
+            {visibleCategoryTree.length === 0 && (
               <div className="px-2.5 py-8 text-center text-ui-xs text-jungle-teal-500">
                 No category matches that filter.
               </div>
@@ -1118,7 +1380,7 @@ export const PosView: React.FC<PosViewProps> = ({
                         <span className={`shrink-0 font-mono text-ui-2xs font-semibold border rounded px-1.5 py-px ${stockClass}`}>
                           {stockLabel}
                         </span>
-                        <span className="font-mono text-ui-2xs text-jungle-teal-400 truncate">
+                        <span className="font-mono text-ui-2xs text-jungle-teal-600 truncate">
                           {p.barcode || '—'}
                         </span>
                       </div>
@@ -1131,7 +1393,7 @@ export const PosView: React.FC<PosViewProps> = ({
                     <div
                       className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
                         outOfStock
-                          ? 'border border-jungle-teal-200 text-jungle-teal-300'
+                          ? 'border border-jungle-teal-200 text-jungle-teal-700'
                           : 'bg-azure-mist-700 text-white group-hover:bg-azure-mist-800'
                       }`}
                     >
@@ -1181,7 +1443,7 @@ export const PosView: React.FC<PosViewProps> = ({
                 </button>
                 <button
                   onClick={() => setUnrecognizedBarcode(null)}
-                  className="p-1 text-jungle-teal-400 hover:text-jungle-teal-700 rounded-lg"
+                  className="p-1 text-jungle-teal-600 hover:text-jungle-teal-700 rounded-lg"
                   title="Dismiss"
                 >
                   <X className="w-4 h-4" />
@@ -1210,7 +1472,7 @@ export const PosView: React.FC<PosViewProps> = ({
                   className="px-2.5 py-1 bg-jungle-teal-50 hover:bg-amber-50 hover:text-amber-800 text-jungle-teal-600 border border-jungle-teal-200 rounded-lg text-ui-xs font-medium flex items-center gap-1 transition-colors disabled:opacity-40"
                   title="Park / hold this bill (F9)"
                 >
-                  <PauseCircle className="w-3.5 h-3.5 text-jungle-teal-400" />
+                  <PauseCircle className="w-3.5 h-3.5 text-jungle-teal-600" />
                   <span>Hold{showShortcuts ? ` (${bindingLabel(keys.holdCart)})` : ''}</span>
                 </button>
               </div>
@@ -1234,7 +1496,7 @@ export const PosView: React.FC<PosViewProps> = ({
                       due ৳ {((selectedCustomer.due_paisa || 0) / 100).toFixed(2)}
                     </span>
                   )}
-                  <svg className="w-3.5 h-3.5 text-jungle-teal-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <svg className="w-3.5 h-3.5 text-jungle-teal-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M6 9l6 6 6-6" />
                   </svg>
                 </button>
@@ -1342,7 +1604,7 @@ export const PosView: React.FC<PosViewProps> = ({
 
             <div className="flex-1 overflow-y-auto min-h-0">
               {cart.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-jungle-teal-400 text-xs py-12 px-4 text-center">
+                <div className="h-full flex flex-col items-center justify-center text-jungle-teal-600 text-xs py-12 px-4 text-center">
                   <div className="w-20 h-20 rounded-full bg-muted-teal-50 text-muted-teal-700 flex items-center justify-center mb-3 border border-muted-teal-100/60 shadow-inner">
                     <ShoppingCart className="w-9 h-9" />
                   </div>
@@ -1425,7 +1687,7 @@ export const PosView: React.FC<PosViewProps> = ({
                   <button
                     type="button"
                     onClick={() => removeFromCart(item.product_id)}
-                    className="w-5 h-5 shrink-0 flex items-center justify-center rounded text-jungle-teal-400 opacity-0 group-hover:opacity-100 hover:text-rose-600 transition-opacity"
+                    className="w-5 h-5 shrink-0 flex items-center justify-center rounded text-jungle-teal-600 opacity-0 group-hover:opacity-100 hover:text-rose-600 transition-opacity"
                     title="Remove from bill"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1480,8 +1742,8 @@ export const PosView: React.FC<PosViewProps> = ({
 
 
             {/* Big Highlighted Payable Box */}
-            <div className="flex items-center bg-jungle-teal-900 text-white px-3.5 py-2 rounded-xl mt-1">
-              <span className="text-ui-xs text-jungle-teal-300 font-sans">Payable</span>
+            <div className="flex items-center bg-white text-jungle-teal-900 px-3.5 py-2 rounded-xl mt-1">
+              <span className="text-ui-xs text-jungle-teal-700 font-sans">Payable</span>
               <span className="ml-auto text-ui-2xl font-semibold font-mono tracking-tight leading-none">
                 ৳ {(totalPaisa / 100).toFixed(2)}
               </span>
@@ -1523,7 +1785,14 @@ export const PosView: React.FC<PosViewProps> = ({
                   type="number"
                   min="0"
                   value={cashAmount}
-                  onChange={(e) => setCashAmount(e.target.value)}
+                  onChange={(e) => {
+                    setCashAmount(e.target.value);
+                    // Taking money is the opposite of "collect nothing now", so
+                    // the chip lets go rather than sitting lit and misleading.
+                    if (Math.round((parseFloat(e.target.value) || 0) * 100) > 0) {
+                      setIsDueSaleMode(false);
+                    }
+                  }}
                   onWheel={(e) => e.currentTarget.blur()}
                   onFocus={(e) => e.target.select()}
                   onKeyDown={(e) => {
@@ -1532,7 +1801,7 @@ export const PosView: React.FC<PosViewProps> = ({
                       handleStartCheckout();
                     }
                   }}
-                  placeholder="Cash"
+                  placeholder="Cash received"
                   className={`w-full h-[40px] bg-jungle-teal-50 border border-muted-teal-300 focus:border-muted-teal-700 rounded-xl pl-8 text-ui-base font-mono font-semibold text-jungle-teal-900 focus:outline-hidden transition-colors ${
                     showShortcuts ? 'pr-[74px]' : 'pr-[52px]'
                   }`}
@@ -1541,59 +1810,98 @@ export const PosView: React.FC<PosViewProps> = ({
                   type="button"
                   onClick={handleQuickCash}
                   title="Fill in the exact payable as cash (F4)"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 px-2 rounded-lg text-ui-2xs font-semibold text-muted-teal-800 hover:bg-muted-teal-100 transition-colors"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 px-2.5 rounded-lg border border-muted-teal-300 bg-white hover:bg-muted-teal-50 text-ui-2xs font-bold text-muted-teal-800 shadow-2xs transition-colors"
                 >
                   Exact{showShortcuts ? ` (${bindingLabel(keys.exactCash)})` : ''}
                 </button>
               </div>
             
+              {/* Opens the choice of wallet or card. Once one holds money the
+                  button carries its name, so the cashier can see at a glance
+                  how the bill is being paid. */}
               <button
                 type="button"
-                onClick={() => payExactBy('bkash')}
-                title="bKash — fills the outstanding balance; tap again to clear"
-                className={`h-[40px] px-2.5 rounded-xl border flex items-center gap-1.5 text-ui-xs font-medium shrink-0 transition-colors ${
-                  Number(bkashAmount) > 0
-                    ? 'border-[#D12053] bg-[#D12053]/10 text-[#D12053]'
-                    : 'border-jungle-teal-200 text-jungle-teal-700 hover:bg-jungle-teal-100'
+                onClick={() => setShowNonCashPicker((open) => !open)}
+                aria-expanded={showNonCashPicker}
+                title="Pay by bKash, Nagad, card or another method"
+                className={`h-[40px] px-3 rounded-xl border flex items-center gap-1.5 text-ui-xs font-semibold shrink-0 transition-colors ${
+                  selectedNonCash
+                    ? 'border-azure-mist-600 bg-azure-mist-50 text-azure-mist-800'
+                    : showNonCashPicker
+                      ? 'border-jungle-teal-400 bg-jungle-teal-100 text-jungle-teal-800'
+                      : 'border-jungle-teal-200 text-jungle-teal-700 hover:bg-jungle-teal-100'
                 }`}
               >
-                <span className="w-2 h-2 rounded-full bg-[#D12053] shrink-0" />
-                <span>bKash</span>
-              </button>
-            
-              <button
-                type="button"
-                onClick={() => payExactBy('nagad')}
-                title="Nagad — fills the outstanding balance; tap again to clear"
-                className={`h-[40px] px-2.5 rounded-xl border flex items-center gap-1.5 text-ui-xs font-medium shrink-0 transition-colors ${
-                  Number(nagadAmount) > 0
-                    ? 'border-[#F7941D] bg-[#F7941D]/10 text-amber-800'
-                    : 'border-jungle-teal-200 text-jungle-teal-700 hover:bg-jungle-teal-100'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full bg-[#F7941D] shrink-0" />
-                <span>Nagad</span>
-              </button>
-            
-              <button
-                type="button"
-                onClick={() => payExactBy('card')}
-                title="Card / bank — fills the outstanding balance; tap again to clear"
-                className={`h-[40px] px-2.5 rounded-xl border flex items-center gap-1.5 text-ui-xs font-medium shrink-0 transition-colors ${
-                  Number(cardAmount) > 0
-                    ? 'border-blue-600 bg-blue-600/10 text-blue-700'
-                    : 'border-jungle-teal-200 text-jungle-teal-700 hover:bg-jungle-teal-100'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
-                <span>Card</span>
+                {selectedNonCash ? (
+                  <NonCashIcon method={selectedNonCash.id} />
+                ) : (
+                  <Smartphone className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>{selectedNonCash ? selectedNonCash.label : 'Other'}</span>
+                {/* Marks it as a button that opens a list, so the "Other" among
+                    the choices below does not read as the same control twice. */}
+                <ChevronDown
+                  className={`w-3 h-3 shrink-0 transition-transform ${showNonCashPicker ? 'rotate-180' : ''}`}
+                />
               </button>
             </div>
+
+            {showNonCashPicker && (
+              <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Non-cash payment method">
+                {NON_CASH_METHODS.map((m) => {
+                  const active = nonCashPaisa[m.id] > 0;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => payByMethod(m.id)}
+                      aria-pressed={active}
+                      title={active ? `${m.label} holds ৳${(nonCashPaisa[m.id] / 100).toFixed(2)} — tap to clear` : m.hint}
+                      className={`h-9 px-2 rounded-lg border flex items-center justify-center gap-1.5 text-ui-xs font-semibold transition-colors ${
+                        active
+                          ? 'border-azure-mist-600 bg-azure-mist-50 text-azure-mist-800'
+                          : 'border-jungle-teal-200 bg-white text-jungle-teal-800 hover:bg-jungle-teal-50 hover:border-jungle-teal-300'
+                      }`}
+                    >
+                      {active ? <Check className="w-3 h-3 shrink-0" /> : <NonCashIcon method={m.id} />}
+                      <span>{m.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Notes the customer is likely to hand over for this exact bill. */}
+            {quickCashOptions.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-ui-2xs text-jungle-teal-500 shrink-0">Quick cash</span>
+                {quickCashOptions.map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    onClick={() => {
+                      setIsDueSaleMode(false);
+                      setBkashAmount('');
+                      setNagadAmount('');
+                      setCardAmount('');
+                      setOtherAmount('');
+                      setShowNonCashPicker(false);
+                      setCashAmount(String(amount));
+                    }}
+                    title={`Customer hands over ৳${amount} — change ৳${(amount - totalPaisa / 100).toFixed(2)}`}
+                    className="h-7 px-2.5 rounded-lg border border-jungle-teal-200 bg-white hover:bg-muted-teal-50 hover:border-muted-teal-300 text-ui-2xs font-mono font-bold text-jungle-teal-800 transition-colors"
+                  >
+                    ৳ {amount.toLocaleString('en-US')}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {totalPaidPaisa > 0 && (
               <div className="pt-2.5 border-t border-jungle-teal-100 flex items-center justify-between text-ui-sm font-mono">
                 <div className="text-jungle-teal-600">
                   Received: <span className="font-semibold text-jungle-teal-900">৳ {(totalPaidPaisa / 100).toFixed(2)}</span>
+                  <span className="ml-1.5 font-sans text-ui-2xs text-jungle-teal-500">{paymentSummaryStr}</span>
                 </div>
                 {changePaisa > 0 && (
                   <div className="text-muted-teal-800 bg-muted-teal-50 px-2.5 py-0.5 rounded-lg border border-muted-teal-200 font-semibold">
@@ -1615,6 +1923,26 @@ export const PosView: React.FC<PosViewProps> = ({
           {/* Checkout */}
           {(() => {
             const isWalkInPartialDue = !selectedCustomerId && totalPaidPaisa > 0 && duePaisa > 0;
+
+            /*
+             * No shift, no sale - and the button says so instead of taking a
+             * full cart and failing at the end. Pressing it opens the shift
+             * dialog, so the way out is the same control that refused.
+             */
+            if (!canTakeMoney) {
+              return (
+                <button
+                  type="button"
+                  onClick={onOpenShift}
+                  className="w-full h-12 font-semibold text-ui-lg rounded-2xl shadow-sm flex items-center justify-center gap-2 transition-all bg-amber-600 hover:bg-amber-700 text-white active:scale-[0.99]"
+                  title="A sale puts cash in the drawer, and the drawer is counted per shift. Open one first."
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>Open Shift to Sell</span>
+                </button>
+              );
+            }
+
             return (
               <button
                 type="button"
@@ -1667,12 +1995,14 @@ export const PosView: React.FC<PosViewProps> = ({
         paymentMethodSummary={paymentSummaryStr}
         invoiceLayout={invoiceLayout}
         loading={loading}
+        hasPrinter={hasPrinter}
       />
 
 
       {/* Sale Success & Print Feedback Modal */}
       {successSaleMeta && (
         <SaleSuccessModal
+          layout={invoiceLayout}
           isOpen={showSuccessModal}
           onClose={() => {
             setShowSuccessModal(false);
@@ -1691,6 +2021,8 @@ export const PosView: React.FC<PosViewProps> = ({
           paymentMethodSummary={successSaleMeta.paymentMethodSummary}
           customer={successSaleMeta.customer}
           autoPrint={successSaleMeta.autoPrint}
+          hasPrinter={hasPrinter}
+          pdfBase64={invoicePdfBase64}
           onViewInvoice={() => {
             setShowSuccessModal(false);
             setShowInvoiceModal(true);
@@ -1801,7 +2133,7 @@ export const PosView: React.FC<PosViewProps> = ({
               </div>
               <button
                 onClick={() => setShowInvoiceActionModal(false)}
-                className="p-1.5 text-jungle-teal-400 hover:text-jungle-teal-700 rounded-lg"
+                className="p-1.5 text-jungle-teal-600 hover:text-jungle-teal-700 rounded-lg"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1860,6 +2192,8 @@ export const PosView: React.FC<PosViewProps> = ({
           onSuccess={() => {
             setShowReturnModal(false);
             onRefreshProducts();
+            // A refund pays out of the same drawer.
+            onShiftChanged();
             // A refund moves the customer's balance too.
             fetchData();
             toast.success('Return and refund completed.');

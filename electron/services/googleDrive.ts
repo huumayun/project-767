@@ -1,25 +1,47 @@
 import { google } from 'googleapis';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getDb } from '../db';
 import { shell } from 'electron';
-
-const CLIENT_ID = '933362428054-k7j37j1spon8p7aimqa33vm29gp5eofj.apps.googleusercontent.com';
-const CLIENT_SECRET = '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';
-const REDIRECT_URI = 'http://localhost'; // User configured this in console
+import { getGoogleCredentials, GOOGLE_NOT_CONFIGURED } from './googleCredentials';
+import { encryptSecret, decryptSecret } from './safeStore';
 
 const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 
+export const GDRIVE_TOKEN_KEY = 'gdrive_refresh_token';
+
 export function getOAuth2Client() {
-  return new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+  const creds = getGoogleCredentials();
+  if (!creds) throw new Error(GOOGLE_NOT_CONFIGURED);
+  return new google.auth.OAuth2(creds.clientId, creds.clientSecret, creds.redirectUri);
 }
+
+/*
+ * PKCE. The verifier is made when the URL is built and spent when the code
+ * comes back, so an authorization code intercepted on its way through the
+ * browser cannot be exchanged by anyone who does not also hold the verifier -
+ * which never leaves this process.
+ *
+ * Held in a module variable because the two halves of the flow are two IPC
+ * calls in one run of the app: the owner clicks Connect, and pastes the code
+ * back into the same window.
+ */
+let pendingVerifier: string | null = null;
 
 export function getAuthUrl(): string {
   const oauth2Client = getOAuth2Client();
+
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  pendingVerifier = verifier;
+
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
-    prompt: 'consent'
+    prompt: 'consent',
+    code_challenge_method: 'S256' as any,
+    code_challenge: challenge,
   });
 }
 
@@ -38,16 +60,30 @@ export async function authorizeWithCode(input: string): Promise<boolean> {
 
   const oauth2Client = getOAuth2Client();
   try {
-    const { tokens } = await oauth2Client.getToken(code);
+    const verifier = pendingVerifier;
+    // Spent whatever the outcome: a verifier that survived a failed exchange
+    // could be replayed against a second code.
+    pendingVerifier = null;
+
+    const { tokens } = await oauth2Client.getToken(
+      verifier ? ({ code, codeVerifier: verifier } as any) : code
+    );
     if (tokens.refresh_token) {
       const db = getDb();
       const now = new Date().toISOString();
-      const check = db.prepare('SELECT value FROM settings WHERE key = ?').get('gdrive_refresh_token');
-      if (check) {
-        db.prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?').run(tokens.refresh_token, now, 'gdrive_refresh_token');
-      } else {
-        db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run('gdrive_refresh_token', tokens.refresh_token, now);
-      }
+      /*
+       * Stored encrypted, like the Supabase key beside it.
+       *
+       * It was written as it came back from Google, so a refresh token granting
+       * standing access to the shop's Drive sat in plain text in shop.db - and
+       * shop.db is itself uploaded to that same Drive, so every backup carried
+       * the credential for the account holding it.
+       */
+      const stored = encryptSecret(tokens.refresh_token);
+      db.prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(GDRIVE_TOKEN_KEY, stored, now);
       return true;
     }
     return false;
@@ -59,8 +95,14 @@ export async function authorizeWithCode(input: string): Promise<boolean> {
 
 export function getRefreshToken(): string | null {
   const db = getDb();
-  const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('gdrive_refresh_token') as any;
-  return setting ? setting.value : null;
+  const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get(GDRIVE_TOKEN_KEY) as any;
+  if (!setting?.value) return null;
+
+  // Tokens written before they were encrypted decrypt to nothing; such a value
+  // is the token itself. Migration 011 converts them, so this is only a guard
+  // for a row that arrived some other way.
+  const decrypted = decryptSecret(setting.value);
+  return decrypted || setting.value;
 }
 
 export function isDriveConnected(): boolean {

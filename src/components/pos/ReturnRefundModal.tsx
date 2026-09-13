@@ -90,7 +90,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/50 backdrop-blur-xs p-4 overflow-y-auto font-sans animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/60 backdrop-blur-xs p-4 overflow-y-auto font-sans animate-in fade-in">
       <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl max-w-xl w-full p-6 shadow-2xl text-jungle-teal-900 my-8 space-y-4">
         <div className="flex items-center justify-between border-b border-jungle-teal-200 pb-3">
           <div className="flex items-center gap-2.5">
@@ -103,7 +103,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
             </div>
           </div>
 
-          <button onClick={onClose} className="text-jungle-teal-400 hover:text-jungle-teal-700 font-bold">
+          <button onClick={onClose} className="text-jungle-teal-600 hover:text-jungle-teal-700 font-bold">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -151,7 +151,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
                         disabled={maxReturnable === 0}
                         value={returnQtys[it.id] || 0}
                         onChange={(e) => handleQtyChange(it.id, maxReturnable, parseInt(e.target.value, 10) || 0)}
-                        className="w-16 bg-jungle-teal-50 border border-jungle-teal-300 rounded-sm px-2 py-1 text-center font-bold text-xs focus:outline-hidden focus:border-azure-mist-600 font-mono disabled:bg-jungle-teal-100 disabled:text-jungle-teal-400"
+                        className="w-16 bg-jungle-teal-50 border border-jungle-teal-300 rounded-sm px-2 py-1 text-center font-bold text-xs focus:outline-hidden focus:border-azure-mist-600 font-mono disabled:bg-jungle-teal-100 disabled:text-jungle-teal-600"
                       />
                     </div>
                   </div>
