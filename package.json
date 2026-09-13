@@ -4,6 +4,7 @@
   "description": "Offline-first Mechanical Shop POS Desktop Application",
   "main": "dist-electron/main.js",
   "scripts": {
+    "start": "node scripts/dev.js",
     "dev": "npm exec -- vite",
     "typecheck": "npm exec -- tsc -p tsconfig.json --noEmit && npm exec -- tsc -p tsconfig.electron.json --noEmit",
     "build": "npm run typecheck && npm exec -- vite build && npm exec -- tsc -p tsconfig.electron.json",
@@ -28,7 +29,6 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.1",
-    "ts-morph": "^28.0.0",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"
   },

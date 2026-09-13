@@ -10,6 +10,11 @@
       preview was refused and came up white. A blob: URL can only be minted by
       this page's own scripts, which script-src 'self' already limits to the
       app's bundle, so this lets nothing from outside in.
+
+      script-src stays 'self' only. Allowing 'unsafe-inline' and 'unsafe-eval'
+      would let any markup that reached the page run as code, which is the
+      protection this policy exists for; the Vite dev server and the packaged
+      app both run under the strict policy.
     -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' https://*.supabase.co;" />
     <title>Mechanical Shop POS</title>

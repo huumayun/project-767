@@ -57,8 +57,14 @@ function createWindow() {
   // Apply Security Hardening
   setupSecurityPolicies(mainWindow);
 
-  // Initialize SQLite database. Failing here used to leave the window blank
-  // because loadURL below never ran, so surface the error instead.
+  /*
+   * Initialize SQLite database. Failing here used to leave the window blank
+   * because loadURL below never ran, so surface the error instead - and quit,
+   * rather than leave a window with no database and no handlers behind it.
+   *
+   * The usual cause on a fresh clone is better-sqlite3 built for Node rather
+   * than for Electron, so the message says how to rebuild it.
+   */
   try {
     getDb();
   } catch (err) {
@@ -67,7 +73,10 @@ function createWindow() {
       'Database Error',
       `The database could not be opened or migrated.
 
-${err instanceof Error ? err.message : String(err)}`
+${err instanceof Error ? err.message : String(err)}
+
+If this is a fresh clone, the SQLite module may need rebuilding for Electron:
+npx electron-builder install-app-deps`
     );
     app.quit();
     return;
@@ -93,6 +102,7 @@ ${err instanceof Error ? err.message : String(err)}`
   // Load URL
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }

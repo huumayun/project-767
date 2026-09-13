@@ -22,7 +22,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, onSwitchTo
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!window.api) return;
+    if (!window.api) {
+      // Opened in a plain browser (the Vite dev URL) rather than in Electron:
+      // there is no database behind this page, so say how to start the real app.
+      setError(
+        'Web Browser Mode: This is an Electron desktop app! To use the SQLite database and hardware integrations, please run "npm run electron:dev" or "npm start" in your terminal.'
+      );
+      return;
+    }
 
     if (!username.trim() || !password.trim()) {
       setError('Please enter both username and password.');
