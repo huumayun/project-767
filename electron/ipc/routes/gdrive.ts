@@ -17,8 +17,57 @@ export function registerGDriveHandlers() {
     requireOwnerOrFirstRun();
     if (!isGoogleConfigured()) throw new Error(GOOGLE_NOT_CONFIGURED);
     const url = getAuthUrl();
-    await shell.openExternal(url);
-    return { success: true };
+    
+    return new Promise((resolve) => {
+      const { BrowserWindow } = require('electron');
+      const authWindow = new BrowserWindow({
+        width: 600,
+        height: 750,
+        alwaysOnTop: true,
+        autoHideMenuBar: true,
+        title: 'Sign in with Google',
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        }
+      });
+
+      const spoofUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+      let resolved = false;
+
+      authWindow.webContents.on('will-redirect', async (e: any, newUrl: string) => {
+        if (newUrl.startsWith('http://localhost') || newUrl.startsWith('http://127.0.0.1')) {
+          e.preventDefault();
+          const parsedUrl = new URL(newUrl);
+          const code = parsedUrl.searchParams.get('code');
+          if (code && !resolved) {
+            resolved = true;
+            try {
+              const success = await authorizeWithCode(code);
+              resolve({ success, autoHandled: true });
+            } catch (err: any) {
+              resolve({ success: false, autoHandled: true, error: err.message });
+            }
+            authWindow.close();
+          } else if (!resolved) {
+            resolved = true;
+            resolve({ success: false, autoHandled: true, error: 'Authorization rejected or missing code' });
+            authWindow.close();
+          }
+        }
+      });
+
+      authWindow.on('closed', () => {
+        if (!resolved) {
+          resolved = true;
+          // If closed without redirect, it is effectively cancelled, return normal autoHandled failure.
+          resolve({ success: false, autoHandled: true, error: 'Sign-in window closed by user.' });
+        }
+      });
+
+      authWindow.loadURL(url, { userAgent: spoofUA }).catch(() => {});
+    });
   });
 
   ipcMain.handle('api:gdrive:authorize', async (_event, code: string) => {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, Tray, Menu } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { setupSecurityPolicies } from './security';
@@ -7,6 +7,8 @@ import { registerIpcHandlers } from './ipc/handlers';
 import { startSyncEngine, stopSyncEngine } from './services/syncEngine';
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
 
 /**
  * The icon sits beside the build output in development and inside the asar once
@@ -44,7 +46,14 @@ function createWindow() {
     minHeight: 700,
     title: 'Mechanical Shop POS',
     backgroundColor: '#0b0f19',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#0b0f19', // Matches dark background
+      symbolColor: '#f59e0b', // amber-500
+      height: 30
+    },
     icon: appIconPath(), // App Icon
+    autoHideMenuBar: true, // This hides the File/Edit/View menu
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -107,18 +116,68 @@ npx electron-builder install-app-deps`
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// Single Instance Lock
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance, we should focus our window.
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
   });
-});
+
+  app.whenReady().then(() => {
+    createWindow();
+    
+    // Create Tray Icon
+    const iconPath = appIconPath() || path.join(__dirname, '../build/icon.png');
+    if (fs.existsSync(iconPath)) {
+      tray = new Tray(iconPath);
+      const contextMenu = Menu.buildFromTemplate([
+        { label: 'Open Mechanical Shop POS', click: () => mainWindow?.show() },
+        { type: 'separator' },
+        { 
+          label: 'Quit', 
+          click: () => {
+            isQuitting = true;
+            app.quit();
+          } 
+        }
+      ]);
+      tray.setToolTip('Mechanical Shop POS');
+      tray.setContextMenu(contextMenu);
+      tray.on('click', () => {
+        if (mainWindow) {
+          if (mainWindow.isVisible()) {
+            if (mainWindow.isFocused()) mainWindow.hide();
+            else mainWindow.focus();
+          } else {
+            mainWindow.show();
+          }
+        }
+      });
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -131,3 +190,4 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   stopSyncEngine();
 });
+}

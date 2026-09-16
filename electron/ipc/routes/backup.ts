@@ -1,4 +1,4 @@
-import { listBackups, createDatabaseBackup, restoreDatabase } from '../../services/backupManager';
+import { listBackups, createDatabaseBackup, restoreDatabase, verifyBackupFile } from '../../services/backupManager';
 
 import { ipcMain, dialog, app } from 'electron';
 import { v7 as uuidv7 } from 'uuid';
@@ -71,4 +71,17 @@ export function registerBackupHandlers() {
     return { success: true };
   });
 
+  ipcMain.handle('api:backup:getFileInfo', async (_event, filePath: string) => {
+    requireOwnerOrFirstRun();
+    verifyBackupFile(filePath);
+    
+    const fs = require('fs');
+    const path = require('path');
+    const stat = fs.statSync(filePath);
+    return {
+      name: path.basename(filePath),
+      size: stat.size,
+      date: stat.mtime.toISOString()
+    };
+  });
 }

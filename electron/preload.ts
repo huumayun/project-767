@@ -195,6 +195,7 @@ contextBridge.exposeInMainWorld('api', {
   backup: {
     selectFolder: () => ipcRenderer.invoke('api:backup:selectFolder'),
     selectFile: () => ipcRenderer.invoke('api:backup:selectFile'),
+    getFileInfo: (filePath: string) => ipcRenderer.invoke('api:backup:getFileInfo', filePath),
     restoreLocalFile: (filePath: string) => ipcRenderer.invoke('api:backup:restoreLocalFile', filePath),
     list: () => ipcRenderer.invoke('api:backup:list'),
     createManual: () => ipcRenderer.invoke('api:backup:createManual'),

@@ -1,7 +1,7 @@
 {
-  "name": "mechanical-shop-pos",
+  "name": "fatema-electronics-pos",
   "version": "1.0.1",
-  "description": "Offline-first Mechanical Shop POS Desktop Application",
+  "description": "Fatema Electronics POS Desktop Application",
   "main": "dist-electron/main.js",
   "scripts": {
     "start": "node scripts/dev.js",

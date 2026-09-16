@@ -147,7 +147,7 @@ export function listBackups(): BackupFileInfo[] {
  * and not performed, so a truncated download or an unrelated .db would replace
  * the shop's live data and only fail afterwards.
  */
-function verifyBackupFile(backupFilePath: string) {
+export function verifyBackupFile(backupFilePath: string) {
   let probe: Database.Database | null = null;
   try {
     probe = new Database(backupFilePath, { readonly: true, fileMustExist: true });

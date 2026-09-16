@@ -111,8 +111,24 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
 
   const handleGdriveConnectClick = async () => {
     if (!window.api?.gdrive) return;
-    await window.api.gdrive.getAuthUrl();
-    setShowGdriveAuth(true);
+    setLoading(true);
+    try {
+      const result = await window.api.gdrive.getAuthUrl();
+      if (result?.autoHandled) {
+        if (result.success) {
+          setGdriveConnected(true);
+          toast.success('Google Drive connected successfully!');
+        } else {
+          toast.error(result.error || 'Authorization cancelled.');
+        }
+      } else {
+        setShowGdriveAuth(true);
+      }
+    } catch(err: any) {
+      toast.error(err.message || 'Failed to start authentication.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGdriveDisconnect = async () => {

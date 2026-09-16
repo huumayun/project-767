@@ -90,7 +90,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({
   const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'];
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-jungle-teal-50 via-jungle-teal-100 to-azure-mist-50 text-jungle-teal-900 flex flex-col items-center justify-center p-4 select-none font-sans relative overflow-hidden">
+    <div className="h-full w-full bg-linear-to-br from-jungle-teal-50 via-jungle-teal-100 to-azure-mist-50 text-jungle-teal-900 flex flex-col items-center justify-center p-4 select-none font-sans relative overflow-hidden">
       {/* Background Ambient Glows */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-muted-teal-200/40 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-azure-mist-200/50 rounded-full blur-3xl pointer-events-none" />
@@ -102,7 +102,7 @@ export const PinLoginScreen: React.FC<PinLoginScreenProps> = ({
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-white border border-azure-mist-200 shadow-lg shadow-azure-mist-900/10 mb-1">
             <Lock className="w-8 h-8 text-azure-mist-700" />
           </div>
-          <h1 className="text-xl font-extrabold text-jungle-teal-900 tracking-tight">{shopName}</h1>
+          <h1 className="text-xl font-extrabold text-jungle-teal-900 tracking-tight">Fatema Electronics POS</h1>
           <p className="text-xs text-jungle-teal-700">Enter your 4-digit PIN to sign in</p>
         </div>
 

@@ -5,30 +5,30 @@ export const BrandLogoIcon: React.FC<{ className?: string }> = ({ className = 'w
   <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
     <path
       d="M24 4L40 13.24V31.76L24 41L8 31.76V13.24L24 4Z"
-      fill="#517b64"
-      fillOpacity="0.12"
+      fill="currentColor"
+      fillOpacity="0.2"
     />
     <path
       d="M24 6L38 14.08V30.92L24 39L10 30.92V14.08L24 6Z"
-      stroke="#283e32"
+      stroke="currentColor"
       strokeWidth="2.5"
       strokeLinejoin="round"
     />
     <path
       d="M24 6V22.5M38 14.08L24 22.5M10 14.08L24 22.5"
-      stroke="#283e32"
+      stroke="currentColor"
       strokeWidth="2.5"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
     <path
       d="M24 22.5V39M38 30.92L24 22.5M10 30.92L24 22.5"
-      stroke="#3c5d4b"
+      stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
-    <circle cx="24" cy="22.5" r="3.5" fill="#283e32" />
+    <circle cx="24" cy="22.5" r="3.5" fill="currentColor" />
   </svg>
 );
 

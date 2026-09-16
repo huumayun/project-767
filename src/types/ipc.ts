@@ -700,12 +700,13 @@ export interface IElectronApi {
     restore: (filePath: string) => Promise<{ success: boolean }>;
     selectFolder: () => Promise<string | null>;
     selectFile: () => Promise<string | null>;
+    getFileInfo: (filePath: string) => Promise<{ name: string; size: number; date: string }>;
     restoreLocalFile: (filePath: string) => Promise<{ success: boolean }>;
   };
   gdrive: {
     /** isConfigured is false when this build shipped without OAuth credentials. */
     status: () => Promise<{ isConnected: boolean; isConfigured?: boolean }>;
-    getAuthUrl: () => Promise<{ success: boolean }>;
+    getAuthUrl: () => Promise<{ success: boolean; autoHandled?: boolean; error?: string }>;
     authorize: (code: string) => Promise<{ success: boolean }>;
     disconnect: () => Promise<{ success: boolean }>;
     restoreLatest: () => Promise<{ success: boolean }>;
@@ -718,6 +719,7 @@ export interface IElectronApi {
       shop_phone?: string | null;
       device_id_prefix?: string;
       default_invoice_layout?: '80mm' | 'a4';
+      owner_username?: string | null;
       owner_password?: string | null;
     }) => Promise<{ success: boolean; recoveryCodes?: string[] | null }>;
   };

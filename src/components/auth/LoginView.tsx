@@ -54,7 +54,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, onSwitchTo
   };
 
   return (
-    <div className="min-h-screen w-screen flex flex-col justify-center items-center bg-linear-to-br from-jungle-teal-50 via-jungle-teal-100 to-azure-mist-50 text-jungle-teal-900 p-4 relative overflow-hidden select-none">
+    <div className="h-full w-full flex flex-col justify-center items-center bg-linear-to-br from-jungle-teal-50 via-jungle-teal-100 to-azure-mist-50 text-jungle-teal-900 p-4 relative overflow-hidden select-none">
       {/* Background Decorative Rings */}
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-azure-mist-200/50 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-amber-200/40 rounded-full blur-3xl pointer-events-none" />
@@ -66,7 +66,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, onSwitchTo
             <Wrench className="w-10 h-10" />
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight text-jungle-teal-900 font-sans">
-            {shopName || 'Mechanical Shop POS'}
+            Fatema Electronics POS
           </h1>
           <p className="text-xs text-jungle-teal-700 mt-1 font-mono">
             Offline-First Desktop Terminal · Bangladesh
