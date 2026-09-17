@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Tray, Menu } from 'electron';
+import { app, BrowserWindow, dialog, Tray, Menu , powerSaveBlocker} from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { setupSecurityPolicies } from './security';
@@ -44,7 +44,7 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 700,
-    title: 'Mechanical Shop POS',
+    title: 'Fatema Electronics POS',
     backgroundColor: '#0b0f19',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -143,6 +143,9 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(() => {
+    // Prevent the screen from sleeping while the app is running
+    powerSaveBlocker.start('prevent-display-sleep');
+    
     createWindow();
     
     // Create Tray Icon
@@ -150,7 +153,7 @@ if (!gotTheLock) {
     if (fs.existsSync(iconPath)) {
       tray = new Tray(iconPath);
       const contextMenu = Menu.buildFromTemplate([
-        { label: 'Open Mechanical Shop POS', click: () => mainWindow?.show() },
+        { label: 'Open Fatema Electronics POS', click: () => mainWindow?.show() },
         { type: 'separator' },
         { 
           label: 'Quit', 
@@ -160,7 +163,7 @@ if (!gotTheLock) {
           } 
         }
       ]);
-      tray.setToolTip('Mechanical Shop POS');
+      tray.setToolTip('Fatema Electronics POS');
       tray.setContextMenu(contextMenu);
       tray.on('click', () => {
         if (mainWindow) {

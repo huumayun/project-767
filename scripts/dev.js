@@ -34,8 +34,8 @@ function checkViteReady(url, timeout = 30000) {
 
 async function start() {
   try {
-    console.log('⏳ Waiting for Vite on http://localhost:5173 ...');
-    await checkViteReady('http://localhost:5173');
+    console.log('⏳ Waiting for Vite on http://127.0.0.1:5173 ...');
+    await checkViteReady('http://127.0.0.1:5173');
     console.log('✓ Vite server ready!');
 
     // First compile electron typescript
@@ -58,7 +58,7 @@ async function start() {
         shell: true,
         env: {
           ...process.env,
-          VITE_DEV_SERVER_URL: 'http://localhost:5173',
+          VITE_DEV_SERVER_URL: 'http://127.0.0.1:5173',
         },
         cwd: path.resolve(__dirname, '..'),
       });

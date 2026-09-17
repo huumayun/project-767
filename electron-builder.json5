@@ -26,13 +26,11 @@
       }
     ],
     "icon": "build/icon.ico",
-    "artifactName": "${productName}-Setup-${version}.${ext}",
-    "signAndEditExecutable": false,
-    "sign": null,
-    "forceCodeSigning": false
+    "artifactName": "${productName}-Setup-${version}.${ext}"
   },
 
   "nsis": {
+    "include": "build/uninstaller.nsh",
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,

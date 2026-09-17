@@ -353,7 +353,7 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
     });
   };
 
-  const shopName = shopSettings?.shop_name || 'Mechanical Workshop';
+  const shopName = shopSettings?.shop_name || 'Fatema Electronics';
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-4 font-sans max-w-7xl mx-auto w-full">
@@ -406,28 +406,28 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
         <div className="p-3.5 bg-white border border-jungle-teal-200 rounded-2xl shadow-xs">
           <span className="text-[11px] font-sans text-jungle-teal-600 block">Total Sales</span>
           <span className="text-base font-extrabold text-jungle-teal-950">
-            ৳ {(totalSalesPaisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            ৳ {(totalSalesPaisa / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </span>
         </div>
 
         <div className="p-3.5 bg-white border border-emerald-200 bg-emerald-50/40 rounded-2xl shadow-xs">
           <span className="text-[11px] font-sans text-emerald-800 block">Cash Sales</span>
           <span className="text-base font-extrabold text-emerald-900">
-            ৳ {(totalCashSalesPaisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            ৳ {(totalCashSalesPaisa / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </span>
         </div>
 
         <div className="p-3.5 bg-white border border-rose-200 bg-rose-50/30 rounded-2xl shadow-xs">
           <span className="text-[11px] font-sans text-rose-800 block">Cash Withdrawn</span>
           <span className="text-base font-extrabold text-rose-900">
-            ৳ {(totalWithdrawnPaisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            ৳ {(totalWithdrawnPaisa / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </span>
         </div>
 
         <div className="p-3.5 bg-white border border-jungle-teal-200 rounded-2xl shadow-xs">
           <span className="text-[11px] font-sans text-jungle-teal-600 block">Difference</span>
           <span className={`text-base font-extrabold ${totalDiffPaisa === 0 ? 'text-emerald-700' : totalDiffPaisa > 0 ? 'text-blue-700' : 'text-rose-700'}`}>
-            {totalDiffPaisa >= 0 ? `+ ৳ ${(totalDiffPaisa / 100).toFixed(2)}` : `- ৳ ${(Math.abs(totalDiffPaisa) / 100).toFixed(2)}`}
+            {totalDiffPaisa >= 0 ? `+ ৳ ${(totalDiffPaisa / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}` : `- ৳ ${(Math.abs(totalDiffPaisa) / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}`}
           </span>
         </div>
       </div>
@@ -555,23 +555,23 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
 
                       {/* 4. Opening Float */}
                       <td className="py-3 px-3 text-right font-bold text-jungle-teal-900">
-                        ৳ {((shift.opening_cash_paisa || 0) / 100).toFixed(2)}
+                        ৳ {((shift.opening_cash_paisa || 0) / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                       </td>
 
                       {/* 5. Cash Sales */}
                       <td className="py-3 px-3 text-right font-bold text-emerald-700">
-                        ৳ {((shift.total_cash_sales_paisa || 0) / 100).toFixed(2)}
+                        ৳ {((shift.total_cash_sales_paisa || 0) / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                       </td>
 
                       {/* 6. Total Sales */}
                       <td className="py-3 px-3 text-right font-bold text-jungle-teal-950">
-                        ৳ {((shift.total_sales_paisa || 0) / 100).toFixed(2)}
+                        ৳ {((shift.total_sales_paisa || 0) / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                       </td>
 
                       {/* 7. Actual Counted Drawer Cash */}
                       <td className="py-3 px-3 text-right">
                         <span className="font-extrabold text-jungle-teal-950 block">
-                          ৳ {(((shift.actual_cash_paisa ?? shift.expected_cash_paisa) || 0) / 100).toFixed(2)}
+                          ৳ {(((shift.actual_cash_paisa ?? shift.expected_cash_paisa) || 0) / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                         </span>
                         {!isOpen && diff !== 0 && (
                           <span className={`text-[10px] font-bold block ${diff > 0 ? 'text-blue-700' : 'text-rose-700'}`}>
@@ -582,12 +582,12 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
 
                       {/* 8. Withdrawn by Owner */}
                       <td className="py-3 px-3 text-right font-bold text-rose-700">
-                        ৳ {((shift.closing_cash_withdrawn_paisa || 0) / 100).toFixed(2)}
+                        ৳ {((shift.closing_cash_withdrawn_paisa || 0) / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                       </td>
 
                       {/* 9. Float Left in Drawer */}
                       <td className="py-3 px-3 text-right font-extrabold text-emerald-800">
-                        ৳ {((shift.closing_float_left_paisa || 0) / 100).toFixed(2)}
+                        ৳ {((shift.closing_float_left_paisa || 0) / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                       </td>
 
                       {/* 10. Actions */}

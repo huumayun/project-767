@@ -82,6 +82,7 @@ export function registerPrintHandlers() {
       name: p.name,
       displayName: p.displayName || p.name,
       isDefault: p.isDefault,
+      status: p.status,
     }));
   });
 
@@ -161,9 +162,13 @@ export function registerPrintHandlers() {
       let silent = chosen.silent;
       if (silent) {
         const available = await win.webContents.getPrintersAsync();
-        if (!available.some((p) => p.name === chosen.deviceName)) {
-          console.warn(`Receipt printer "${chosen.deviceName}" was not found; falling back to the print dialog.`);
-          silent = false;
+        const printer = available.find((p) => p.name === chosen.deviceName);
+        if (!printer) {
+          throw new Error(`Printer "${chosen.deviceName}" not connected or not found.`);
+        }
+        // If printer has a non-zero status, it might be offline. But Windows spooler often accepts jobs anyway.
+        if (printer.status !== 0) {
+          // You could choose to throw here, but sometimes Windows says a printer is offline until you print to it.
         }
       }
 
@@ -174,7 +179,7 @@ export function registerPrintHandlers() {
             : { silent: false, printBackground: true },
           (success, reason) => {
             if (success || reason === 'cancelled') resolve({ success, cancelled: !success });
-            else reject(new Error(reason || 'The invoice could not be printed.'));
+            else reject(new Error(reason || 'The invoice could not be printed. Check if the printer is connected and turned on.'));
           }
         );
       });

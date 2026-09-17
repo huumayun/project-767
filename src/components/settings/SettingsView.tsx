@@ -14,6 +14,7 @@ import {
   Settings,
   Store,
   Printer,
+  Maximize2,
   Shield,
   Clock,
   Save,
@@ -83,6 +84,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
   const [rejected, setRejected] = useState<ShortcutId | null>(null);
 
   const [shopName, setShopName] = useState('');
+  const [invoiceShopName, setInvoiceShopName] = useState('');
   // The code itself is only ever held here, for the moment it is on screen.
   const [recoveryTotal, setRecoveryTotal] = useState(0);
   const [recoveryRemaining, setRecoveryRemaining] = useState(0);
@@ -92,6 +94,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
   const [codesCopied, setCodesCopied] = useState(false);
   const [shopAddress, setShopAddress] = useState('');
   const [shopPhone, setShopPhone] = useState('');
+  const [invoiceContacts, setInvoiceContacts] = useState<{name: string, phone: string}[]>([]);
   const [invoiceFooter, setInvoiceFooter] = useState('');
   const [deviceIdPrefix, setDeviceIdPrefix] = useState('');
   const [defaultInvoiceLayout, setDefaultInvoiceLayout] = useState<InvoicePaperId>('80mm');
@@ -104,6 +107,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewUrl = usePdfObjectUrl(previewPdf);
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
   const [invoiceSignatureHeightMm, setInvoiceSignatureHeightMm] = useState(14);
   const [invoiceTitle, setInvoiceTitle] = useState('');
   const [invoiceHeaderNote, setInvoiceHeaderNote] = useState('');
@@ -122,7 +126,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
   const [hasPrinter, setHasPrinter] = useState(true);
   const [silentPrint, setSilentPrint] = useState(false);
   const [receiptPrinterName, setReceiptPrinterName] = useState('');
-  const [printers, setPrinters] = useState<{ name: string; displayName: string; isDefault: boolean }[]>([]);
+  const [printers, setPrinters] = useState<{ name: string; displayName: string; isDefault: boolean; status: number }[]>([]);
 
   const [enableShifts, setEnableShifts] = useState(true);
   const [barcodeScannerMode, setBarcodeScannerMode] = useState<'speed' | 'prefix'>('speed');
@@ -132,9 +136,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showEraseModal, setShowEraseModal] = useState(false);
+  const [showAdvancedAuth, setShowAdvancedAuth] = useState(false);
+  const [advancedAuthPassword, setAdvancedAuthPassword] = useState('');
+  const [advancedAuthError, setAdvancedAuthError] = useState('');
+  const [advancedAuthBusy, setAdvancedAuthBusy] = useState(false);
   // Which build this is. Sample data is offered only when this says so, which
   // it never does in the installed app.
   const [appInfo, setAppInfo] = useState<{ version: string; sampleDataAvailable: boolean } | null>(null);
+  const [activeTab, setActiveTab] = useState('print');
 
   const isOwner = currentSession?.role === 'owner';
 
@@ -251,8 +260,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
           invoice_show_footer: invoiceFields.footer,
           invoice_show_signature: invoiceShowSignature,
           shop_name: shopName,
+          invoice_shop_name: invoiceShopName,
           shop_address: shopAddress,
           shop_phone: shopPhone,
+          invoice_contacts: invoiceContacts.filter(c => c.name.trim() || c.phone.trim()),
           invoice_footer: invoiceFooter,
         });
         if (!cancelled) {
@@ -286,7 +297,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
     isOwner, defaultInvoiceLayout, invoiceMarginMm, invoiceFontPt, invoiceTitle,
     invoiceHeaderNote, invoiceTerms, invoiceLogo, invoiceLogoHeightMm,
     invoiceSignature, invoiceSignatureHeightMm, invoiceFields, invoiceShowSignature,
-    shopName, shopAddress, shopPhone, invoiceFooter,
+    shopName, invoiceShopName, shopAddress, shopPhone, invoiceFooter, JSON.stringify(invoiceContacts),
   ]);
 
   const handleSaveSection = async (sectionName: string, data: Record<string, any>) => {
@@ -447,79 +458,48 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
         </div>
       )}
 
-      <div className="text-ui-sm space-y-6">
-        <div className="columns-1 min-[1150px]:columns-2 gap-6">
-        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 break-inside-avoid mb-6">
-          <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
-            <Store className="w-4 h-4 text-azure-mist-700" />
-            <h3 className="font-semibold text-ui-base text-jungle-teal-900">Store Profile & Invoice Header</h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Shop / Workshop Name *</label>
-              <input
-                type="text"
-                required
-                value={shopName}
-                onChange={(e) => setShopName(e.target.value)}
-                placeholder="e.g. Master Auto Parts & Mechanical Works"
-                className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600 font-semibold"
-              />
-            </div>
-
-            <div>
-              <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Phone Numbers (Comma separated)</label>
-              <input
-                type="text"
-                value={shopPhone}
-                onChange={(e) => setShopPhone(e.target.value)}
-                placeholder="01711-000000, 01811-000000"
-                className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 font-mono placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Physical Address</label>
-            <input
-              type="text"
-              value={shopAddress}
-              onChange={(e) => setShopAddress(e.target.value)}
-              placeholder="e.g. 142/A Tejgaon Link Road, Dhaka-1208"
-              className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600"
-            />
-          </div>
-
-          <div>
-            <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Invoice Footer Message</label>
-            <input
-              type="text"
-              value={invoiceFooter}
-              onChange={(e) => setInvoiceFooter(e.target.value)}
-              placeholder="Thank you, please come again! • Sold goods cannot be returned without receipt."
-              className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600"
-            />
-          </div>
-          <div className="flex justify-end pt-2 mt-4 border-t border-jungle-teal-200">
+      <div className="flex flex-col md:flex-row gap-6 items-start">
+        {/* SIDEBAR TABS */}
+        <div className="w-full md:w-64 shrink-0 flex flex-col gap-1 bg-jungle-teal-50 border border-jungle-teal-200 p-2 rounded-2xl shadow-xs">
+          {[
+            { id: 'print', label: 'Store Profile & Print', icon: Printer },
+            { id: 'hardware', label: 'Hardware', icon: Barcode },
+            { id: 'security', label: 'Security & Access', icon: Shield },
+            { id: 'backup', label: 'Backup & Data', icon: Cloud },
+            { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+            { id: 'advanced', label: 'Advanced Settings', icon: AlertCircle },
+          ].map(tab => (
             <button
-              type="button"
-              onClick={() => handleSaveSection('Store Profile', { shop_name: shopName.trim(), shop_address: shopAddress.trim(), shop_phone: shopPhone.trim(), invoice_footer: invoiceFooter.trim() })}
-              disabled={loading}
-              className="h-9 px-5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white font-semibold rounded-xl text-ui-xs flex items-center gap-2 shadow-sm transition-colors disabled:opacity-40 cursor-pointer"
+              key={tab.id}
+              onClick={() => {
+              if (tab.id === 'advanced' && activeTab !== 'advanced') {
+                setShowAdvancedAuth(true);
+                setAdvancedAuthPassword('');
+                setAdvancedAuthError('');
+              } else {
+                setActiveTab(tab.id);
+              }
+            }}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-ui-sm transition-colors text-left ${activeTab === tab.id ? 'bg-azure-mist-100 text-azure-mist-900 border border-azure-mist-200' : 'text-jungle-teal-600 hover:bg-jungle-teal-100/50 hover:text-jungle-teal-900 border border-transparent'}`}
             >
-              <Save className="w-4 h-4" />
-              <span>Save Profile</span>
+              <tab.icon className="w-5 h-5 shrink-0" />
+              {tab.label}
             </button>
-          </div>
+          ))}
         </div>
+
+        {/* CONTENT AREA */}
+        <div className="flex-1 min-w-0 space-y-6">
+
+        
 
         {/* Cloud Backup Card. The sidebar used to carry a permanent "Local Only"
             chip that was the only way into this dialog; backup is configuration,
             so the door belongs here. */}
-        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 break-inside-avoid mb-6">
-          <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
-            <Cloud className="w-4 h-4 text-azure-mist-700" />
+        {activeTab === 'backup' && (
+          <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 mb-6">
+            <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
+              <Cloud className="w-4 h-4 text-azure-mist-700" />
             <h3 className="font-semibold text-ui-base text-jungle-teal-900">Cloud Backup &amp; Sync</h3>
           </div>
 
@@ -538,13 +518,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
               <span>Open backup settings</span>
             </button>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Owner Recovery Card. Owner-only twice over: this whole view returns
             early for staff, and the handlers behind it require the owner role. */}
-        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 break-inside-avoid mb-6">
-          <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
-            <KeyRound className="w-4 h-4 text-azure-mist-700" />
+        {activeTab === 'security' && (
+          <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 mb-6">
+            <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
+              <KeyRound className="w-4 h-4 text-azure-mist-700" />
             <h3 className="font-semibold text-ui-base text-jungle-teal-900">Owner Recovery Codes</h3>
             {recoveryTotal > 0 ? (
               <span
@@ -679,13 +661,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
                 </button>
               </div>
             </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Barcode Scanner Config Card */}
-        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 break-inside-avoid mb-6">
-          <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
-            <Barcode className="w-4 h-4 text-azure-mist-700" />
+        {activeTab === 'hardware' && (
+          <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 mb-6">
+            <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
+              <Barcode className="w-4 h-4 text-azure-mist-700" />
             <h3 className="font-semibold text-ui-base text-jungle-teal-900">Barcode Scanner Configuration</h3>
           </div>
 
@@ -729,11 +713,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
               <span>Save Scanner Config</span>
             </button>
           </div>
-        </div>
+          </div>
+        )}
         {/* Security & Inactivity Lock Card */}
-        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 break-inside-avoid mb-6">
-          <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
-            <Clock className="w-4 h-4 text-azure-mist-700" />
+        {activeTab === 'security' && (
+          <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 mb-6">
+            <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
+              <Clock className="w-4 h-4 text-azure-mist-700" />
             <h3 className="font-semibold text-ui-base text-jungle-teal-900">Security & Session Policies</h3>
           </div>
 
@@ -797,12 +783,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
               <span>Save Policies</span>
             </button>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Sample data - development builds only. The installed app never
             shows this card, and the main process refuses the call there too. */}
-        {appInfo?.sampleDataAvailable && (
-          <div className="bg-jungle-teal-50 border border-dashed border-frozen-water-300 rounded-2xl p-4 shadow-xs space-y-3 break-inside-avoid mb-6">
+        {activeTab === 'advanced' && appInfo?.sampleDataAvailable && (
+          <div className="bg-jungle-teal-50 border border-dashed border-frozen-water-300 rounded-2xl p-4 shadow-xs space-y-3 mb-6">
             <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
               <Database className="w-4 h-4 text-frozen-water-700" />
               <h3 className="font-semibold text-ui-base text-jungle-teal-900">Sample Data</h3>
@@ -824,15 +811,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
           </div>
         )}
 
-        </div>
-
         {/* Print Layout. Everything that decides what a printed invoice looks
             like, with a live preview beside it - the controls are meaningless
             without seeing what they do to the page. */}
-        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5">
-          <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
-            <Printer className="w-4 h-4 text-azure-mist-700" />
-            <h3 className="font-semibold text-ui-base text-jungle-teal-900">Print Layout</h3>
+        {activeTab === 'print' && (
+          <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 mb-6">
+            <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
+              <Store className="w-4 h-4 text-azure-mist-700" />
+            <h3 className="font-semibold text-ui-base text-jungle-teal-900">Store Profile & Print Layout</h3>
             <span className="ml-auto text-ui-2xs text-jungle-teal-500">
               Applies to printed invoices and saved PDFs
             </span>
@@ -841,6 +827,91 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
           <div className="grid grid-cols-1 min-[1150px]:grid-cols-[1fr_320px] gap-6">
             {/* ---------------- controls ---------------- */}
             <div className="space-y-4 min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Shop Name (App Display) *</label>
+              <input
+                type="text"
+                required
+                value={shopName}
+                onChange={(e) => setShopName(e.target.value)}
+                placeholder="e.g. Master Auto Parts"
+                className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600 font-semibold mb-3"
+              />
+              <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Shop Name (Printed Invoice)</label>
+              <input
+                type="text"
+                value={invoiceShopName}
+                onChange={(e) => setInvoiceShopName(e.target.value)}
+                placeholder="Leave blank to use App Display name"
+                className="w-full h-[40px] bg-white border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600 font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Invoice Contacts</label>
+              <div className="space-y-2">
+                {invoiceContacts.map((c, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Name (e.g. Manager)"
+                      value={c.name}
+                      onChange={(e) => {
+                        const newC = [...invoiceContacts];
+                        newC[i].name = e.target.value;
+                        setInvoiceContacts(newC);
+                      }}
+                      className="flex-1 min-w-0 h-[36px] bg-white border border-jungle-teal-200 rounded-lg px-2 text-ui-sm focus:outline-hidden focus:border-azure-mist-600"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Phone"
+                      value={c.phone}
+                      onChange={(e) => {
+                        const newC = [...invoiceContacts];
+                        newC[i].phone = e.target.value;
+                        setInvoiceContacts(newC);
+                      }}
+                      className="flex-1 min-w-0 h-[36px] bg-white border border-jungle-teal-200 rounded-lg px-2 text-ui-sm focus:outline-hidden focus:border-azure-mist-600 font-mono"
+                    />
+                    <button type="button" onClick={() => setInvoiceContacts(invoiceContacts.filter((_, idx) => idx !== i))} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg shrink-0 transition-colors">
+                      <X className="w-4 h-4"/>
+                    </button>
+                  </div>
+                ))}
+                {invoiceContacts.length < 4 && (
+                  <button type="button" onClick={() => setInvoiceContacts([...invoiceContacts, {name: '', phone: ''}])} className="text-ui-xs font-semibold text-azure-mist-700 hover:text-azure-mist-900 transition-colors">
+                    + Add Contact
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Physical Address</label>
+            <input
+              type="text"
+              value={shopAddress}
+              onChange={(e) => setShopAddress(e.target.value)}
+              placeholder="e.g. 142/A Tejgaon Link Road, Dhaka-1208"
+              className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600"
+            />
+          </div>
+
+          <div>
+            <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1">Invoice Footer Message</label>
+            <input
+              type="text"
+              value={invoiceFooter}
+              onChange={(e) => setInvoiceFooter(e.target.value)}
+              placeholder="Thank you, please come again! • Sold goods cannot be returned without receipt."
+              className="w-full h-[40px] bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl px-3 text-ui-sm text-jungle-teal-900 placeholder:text-jungle-teal-500 focus:outline-hidden focus:border-azure-mist-600"
+            />
+          </div>
+              <hr className="border-jungle-teal-200" />
+
               <div>
                 <label className="block text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 mb-1.5">Paper</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -900,7 +971,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
                   <option value="">Ask every time (show the print dialog)</option>
                   {printers.map((p) => (
                     <option key={p.name} value={p.name}>
-                      {p.displayName}{p.isDefault ? ' — Windows default' : ''}
+                      {p.displayName}{p.isDefault ? ' — Windows default' : ''}{p.status !== 0 ? ' (Offline/Error)' : ''}
                     </option>
                   ))}
                 </select>
@@ -1145,6 +1216,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
                 <span className="text-ui-2xs text-jungle-teal-400">
                   {previewBusy ? 'rendering…' : 'the real invoice, sample data'}
                 </span>
+                {previewUrl && (
+                  <div className="ml-auto flex gap-3">
+                    <button type="button" onClick={() => setPreviewFullscreen(true)} className="text-jungle-teal-600 hover:text-azure-mist-700 transition-colors flex items-center justify-center p-1 rounded hover:bg-jungle-teal-100" title="Full Screen">
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                    <button type="button" onClick={() => { if (previewPdf && window.api?.print?.pdf) window.api.print.pdf({ pdfBase64: previewPdf, fileName: 'preview' }); }} className="text-jungle-teal-600 hover:text-azure-mist-700 transition-colors flex items-center justify-center p-1 rounded hover:bg-jungle-teal-100" title="Print">
+                      <Printer className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
               {/*
                 The generated PDF, not a sketch of one.
@@ -1157,12 +1238,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
               */}
               <div className="rounded-xl border border-jungle-teal-200 bg-jungle-teal-100/60 p-3">
                 {previewUrl ? (
-                  <iframe
-                    title="Invoice preview"
-                    src={`${previewUrl}#toolbar=0&navpanes=0&view=FitH`}
-                    className="w-full bg-white rounded-lg border border-jungle-teal-200 shadow-sm"
-                    style={{ height: defaultInvoiceLayout === '80mm' ? 420 : 560 }}
-                  />
+                  <>
+                    <iframe
+                      id="preview-iframe"
+                      title="Invoice preview"
+                      src={`${previewUrl}#toolbar=0&navpanes=0&view=FitH`}
+                      className="w-full bg-white rounded-lg border border-jungle-teal-200 shadow-sm"
+                      style={{ height: defaultInvoiceLayout === '80mm' ? 420 : 560 }}
+                    />
+                    {previewFullscreen && previewUrl && (
+                  <div className="fixed inset-0 z-[9999] bg-slate-900/90 flex flex-col p-4 backdrop-blur-sm animate-fade-in">
+                    <div className="flex justify-end mb-4">
+                      <button 
+                        onClick={() => setPreviewFullscreen(false)} 
+                        className="bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-colors"
+                      >
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <iframe
+                      src={`${previewUrl}#toolbar=0&navpanes=0&view=FitH`}
+                      className="w-full flex-1 bg-white rounded-lg shadow-2xl"
+                    />
+                  </div>
+                )}
+                  </>
                 ) : (
                   <div className="h-[420px] flex items-center justify-center text-ui-xs text-jungle-teal-500">
                     {previewBusy ? 'Preparing the preview…' : previewError || 'The preview could not be prepared.'}
@@ -1199,7 +1301,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
             <button
               type="button"
               onClick={() =>
-                handleSaveSection('Print Layout', {
+                handleSaveSection('Store & Print Layout', {
+                  shop_name: shopName.trim(),
+                  invoice_shop_name: invoiceShopName.trim(),
+                  shop_address: shopAddress.trim(),
+                  shop_phone: shopPhone.trim(),
+                  invoice_contacts: invoiceContacts.filter(c => c.name.trim() || c.phone.trim()),
+                  invoice_footer: invoiceFooter.trim(),
                   default_invoice_layout: defaultInvoiceLayout,
                   invoice_signature: invoiceSignature,
                   invoice_signature_height_mm: invoiceSignatureHeightMm,
@@ -1233,16 +1341,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
               <span>Save Print Layout</span>
             </button>
           </div>
-        </div>
+          </div>
+        )}
 
 
         {/* Keyboard Shortcuts sits outside the masonry above: seven rows of
             label plus key made it taller than any two other cards stacked, so
             whichever column took it ran long while the other ended halfway down
             the page. Full width, in two columns, it is half the height. */}
-        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5">
-          <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
-            <Keyboard className="w-4 h-4 text-azure-mist-700" />
+        {activeTab === 'shortcuts' && (
+          <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs space-y-3.5 mb-6">
+            <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
+              <Keyboard className="w-4 h-4 text-azure-mist-700" />
             <h3 className="font-semibold text-ui-base text-jungle-teal-900">Keyboard Shortcuts</h3>
             <button
               type="button"
@@ -1329,15 +1439,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
                 or Alt with another key.
               </span>
             </div>
-          )}
-        </div>
-      </div>
+            )}
+          </div>
+        )}
 
-      {/* Danger zone. At the bottom and on its own, rather than beside a
+        {/* Danger zone. At the bottom and on its own, rather than beside a
           harmless button, so it is only ever reached on purpose. */}
-      <div className="bg-white border border-rose-200 rounded-2xl p-4 shadow-xs">
-        <div className="flex items-center gap-2 border-b border-rose-100 pb-3">
-          <AlertCircle className="w-4 h-4 text-rose-600" />
+      {activeTab === 'advanced' && (
+        <div className="bg-white border border-rose-200 rounded-2xl p-4 shadow-xs mb-6">
+          <div className="flex items-center gap-2 border-b border-rose-100 pb-3">
+            <AlertCircle className="w-4 h-4 text-rose-600" />
           <h3 className="font-semibold text-ui-base text-rose-900">Danger Zone</h3>
           {appInfo?.version && (
             <span className="ml-auto text-ui-2xs text-jungle-teal-500 font-mono">v{appInfo.version}</span>
@@ -1357,8 +1468,84 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
           >
             Erase business data…
           </button>
+          </div>
         </div>
+      )}
+
       </div>
+      </div>
+
+      
+      {showAdvancedAuth && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-rose-50 p-6 text-center border-b border-rose-100">
+              <Shield className="w-12 h-12 text-rose-600 mx-auto mb-3" />
+              <h3 className="text-xl font-bold text-rose-900 tracking-tight">Owner Verification</h3>
+              <p className="text-sm text-rose-700 mt-2 leading-relaxed">
+                You are entering a sensitive area. Please enter the owner password to continue.
+              </p>
+            </div>
+            <div className="p-6">
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!window.api || advancedAuthBusy) return;
+                  setAdvancedAuthBusy(true);
+                  setAdvancedAuthError('');
+                  try {
+                    const res = await window.api.auth.verifyOwnerPassword({ password: advancedAuthPassword });
+                    if (res.success) {
+                      setShowAdvancedAuth(false);
+                      setActiveTab('advanced');
+                    } else {
+                      setAdvancedAuthError(res.error || 'Incorrect password');
+                    }
+                  } catch (err: any) {
+                    setAdvancedAuthError(err.message || 'Verification failed');
+                  } finally {
+                    setAdvancedAuthBusy(false);
+                  }
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <input
+                    type="password"
+                    autoFocus
+                    placeholder="Enter owner password"
+                    value={advancedAuthPassword}
+                    onChange={(e) => setAdvancedAuthPassword(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-hidden focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-shadow"
+                    disabled={advancedAuthBusy}
+                  />
+                  {advancedAuthError && (
+                    <p className="text-xs text-rose-600 font-medium mt-2">{advancedAuthError}</p>
+                  )}
+                </div>
+                
+                <div className="pt-2 flex gap-3">
+                  <button
+                    type="button"
+                    disabled={advancedAuthBusy}
+                    onClick={() => setShowAdvancedAuth(false)}
+                    className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={advancedAuthBusy || !advancedAuthPassword.trim()}
+                    className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {advancedAuthBusy ? 'Verifying...' : 'Proceed'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       <EraseDataModal
         isOpen={showEraseModal}

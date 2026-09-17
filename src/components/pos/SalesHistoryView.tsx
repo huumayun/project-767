@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { InvoiceModal } from './InvoiceModal';
 import { ReturnRefundModal } from './ReturnRefundModal';
+import { ReturnInvoiceModal } from './ReturnInvoiceModal';
 import { useToast } from '../../context/ToastContext';
 
 type DatePreset = 'today' | '7days' | 'this_month' | 'last_month' | 'custom';
@@ -64,9 +65,10 @@ const rangeFor = (preset: DatePreset, customStart: string, customEnd: string) =>
 
 interface SalesHistoryViewProps {
   currentSession: UserSession | null;
+  onShiftChanged?: () => void;
 }
 
-export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSession }) => {
+export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSession, onShiftChanged }) => {
   const toast = useToast();
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [search, setSearch] = useState('');
@@ -85,6 +87,8 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
   const [selectedInvoiceNo, setSelectedInvoiceNo] = useState('');
   const [returnTargetSale, setReturnTargetSale] = useState<SaleRecord | null>(null);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [selectedReturnInvoiceNo, setSelectedReturnInvoiceNo] = useState('');
+  const [showReturnInvoiceModal, setShowReturnInvoiceModal] = useState(false);
 
   const fetchSales = async () => {
     if (!window.api) return;
@@ -120,6 +124,11 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
     } catch (err: any) {
       toast.error(`Failed to load sale details: ${err.message}`);
     }
+  };
+
+  const handleOpenReturnInvoice = (returnInvoiceNo: string) => {
+    setSelectedReturnInvoiceNo(returnInvoiceNo);
+    setShowReturnInvoiceModal(true);
   };
 
   const creditSalesCount = sales.filter((s) => (s.due_at_sale_paisa || 0) > 0).length;
@@ -297,8 +306,15 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
                       {sale.customer_name || <span className="text-jungle-teal-600 italic">Walk-in Customer</span>}
                     </td>
                     <td className="p-3.5 font-sans text-jungle-teal-700">{sale.cashier_name || 'Staff'}</td>
-                    <td className="p-3.5 text-right font-bold text-jungle-teal-900">
-                      ৳ {(sale.total_paisa / 100).toFixed(2)}
+                    <td className="p-3.5 text-right">
+                      <div className="font-bold text-jungle-teal-900">
+                        ৳ {(sale.total_paisa / 100).toFixed(2)}
+                      </div>
+                      {(sale.refunded_paisa ?? 0) > 0 && (
+                        <div className="text-[10px] text-rose-600 font-semibold mt-0.5">
+                          Refunded: -৳ {((sale.refunded_paisa || 0) / 100).toFixed(2)}
+                        </div>
+                      )}
                     </td>
                     <td className="p-3.5 text-right">
                       {(sale.due_at_sale_paisa || 0) > 0 ? (
@@ -331,7 +347,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
                       </span>
                     </td>
                     <td className="p-3.5 text-center">
-                      <div className="flex items-center justify-center gap-1.5 font-sans">
+                      <div className="flex items-center justify-center gap-1.5 font-sans flex-wrap">
                         <button
                           onClick={() => handleOpenInvoice(sale)}
                           className="px-2.5 py-1 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-lg border border-jungle-teal-300 transition-colors text-[11px] font-semibold flex items-center gap-1"
@@ -341,7 +357,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
                           <span>Reprint</span>
                         </button>
 
-                        {sale.status === 'completed' && (
+                        {(sale.status === 'completed' || sale.status === 'partial_refund') && (
                           <button
                             onClick={() => handleOpenReturn(sale)}
                             className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-300 transition-colors text-[11px] font-semibold flex items-center gap-1"
@@ -349,6 +365,17 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                             <span>Return</span>
+                          </button>
+                        )}
+
+                        {(sale.status === 'refunded' || sale.status === 'partial_refund') && (sale as any).return_invoice_no && (
+                          <button
+                            onClick={() => handleOpenReturnInvoice((sale as any).return_invoice_no)}
+                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-azure-mist-700 rounded-lg border border-blue-200 transition-colors text-[11px] font-semibold flex items-center gap-1"
+                            title="View Return Invoice"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Return Invoice</span>
                           </button>
                         )}
                       </div>
@@ -385,6 +412,29 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
           onSuccess={() => {
             fetchSales();
             setShowReturnModal(false);
+            if (onShiftChanged) onShiftChanged();
+          }}
+          onViewReturnInvoice={(rtnNo) => {
+            setShowReturnModal(false);
+            setReturnTargetSale(null);
+            handleOpenReturnInvoice(rtnNo);
+          }}
+        />
+      )}
+
+      {/* Return Invoice (Credit Note) Modal */}
+      {selectedReturnInvoiceNo && (
+        <ReturnInvoiceModal
+          isOpen={showReturnInvoiceModal}
+          onClose={() => {
+            setShowReturnInvoiceModal(false);
+            setSelectedReturnInvoiceNo('');
+          }}
+          returnInvoiceNo={selectedReturnInvoiceNo}
+          onOpenOriginalInvoice={(invNo) => {
+            setShowReturnInvoiceModal(false);
+            setSelectedInvoiceNo(invNo);
+            setShowInvoiceModal(true);
           }}
         />
       )}

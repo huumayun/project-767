@@ -1,4 +1,4 @@
-import { generateInvoicePdf, InvoicePdfData } from '../../services/invoicePdf';
+import { generateInvoicePdf, generateReturnInvoicePdf, InvoicePdfData } from '../../services/invoicePdf';
 import { printOptionsFromSettings } from '../../services/invoicePrintOptions';
 
 import { ipcMain, dialog, app } from 'electron';
@@ -6,7 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, requireOpenShift, generateInvoiceNumber, isInvoiceNumberCollision, allocateSaleDiscount } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, requireOpenShift, generateInvoiceNumber, generateReturnInvoiceNumber, isInvoiceNumberCollision, allocateSaleDiscount } from '../shared';
 
 /** Every setting in one query - the invoice needs a dozen of them. */
 function readSettingsMap(db: any): Record<string, string> {
@@ -251,7 +251,7 @@ export function registerSalesHandlers() {
       logAudit('CREATE_SALE', 'sales', saleId, { invoiceNo, totalPaisa: payload.total_paisa });
   
       const settingsMap = readSettingsMap(db);
-      const shopName = settingsMap['shop_name'] || 'Mechanical Parts Shop';
+      const shopName = settingsMap['invoice_shop_name'] || settingsMap['shop_name'] || 'Mechanical Parts Shop';
       const shopAddress = settingsMap['shop_address'] || 'Dhaka, Bangladesh';
       const invoiceFooter = settingsMap['invoice_footer'] || 'Thank you for your business!';
   
@@ -262,6 +262,8 @@ export function registerSalesHandlers() {
       const pdfData: InvoicePdfData = {
         shopName,
         shopAddress,
+        shopPhone: settingsMap['shop_phone'] || '',
+        invoiceContacts: (() => { try { return JSON.parse(settingsMap['invoice_contacts'] || '[]'); } catch { return []; } })(),
         invoiceFooter,
         invoiceNo,
         // The sale's own timestamp; invoicePdf formats it for print. A string
@@ -382,7 +384,9 @@ export function registerSalesHandlers() {
       return db.prepare(`
         SELECT s.*, c.name as customer_name, u.name as cashier_name,
           COALESCE(paid.sum_paid, 0) AS paid_at_sale_paisa,
-          MAX(0, s.total_paisa - COALESCE(paid.sum_paid, 0)) AS due_at_sale_paisa
+          MAX(0, s.total_paisa - COALESCE(paid.sum_paid, 0)) AS due_at_sale_paisa,
+          COALESCE(refunds.sum_refunded, 0) AS refunded_paisa,
+          ret.return_invoice_no
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
         LEFT JOIN users u ON s.user_id = u.id
@@ -392,6 +396,19 @@ export function registerSalesHandlers() {
           WHERE p.direction = 'in' AND p.type = 'sale_payment' AND p.deleted_at IS NULL
           GROUP BY p.sale_id
         ) paid ON paid.sale_id = s.id
+        LEFT JOIN (
+          SELECT p.sale_id, SUM(p.amount_paisa) AS sum_refunded
+          FROM payments p
+          WHERE p.direction = 'out' AND p.type = 'refund' AND p.deleted_at IS NULL
+          GROUP BY p.sale_id
+        ) refunds ON refunds.sale_id = s.id
+        LEFT JOIN (
+          SELECT sale_id, return_invoice_no
+          FROM returns
+          WHERE deleted_at IS NULL AND return_invoice_no IS NOT NULL
+          GROUP BY sale_id
+          HAVING created_at = MAX(created_at)
+        ) ret ON ret.sale_id = s.id
         WHERE s.deleted_at IS NULL AND s.status != 'held'
         ORDER BY s.created_at DESC
         LIMIT ?
@@ -475,6 +492,7 @@ export function registerSalesHandlers() {
         cashRefundPaisa: 0,
         creditedToDuePaisa: 0,
         status: 'partial_refund',
+        returnInvoiceNo: '',
       };
 
       db.transaction(() => {
@@ -530,10 +548,14 @@ export function registerSalesHandlers() {
           totalRefundPaisa += item.amount_paisa;
         }
 
+        // Generate the return invoice number inside the transaction so two
+        // concurrent returns on the same day cannot get the same number.
+        const returnInvoiceNo = generateReturnInvoiceNumber(db);
+
         db.prepare(`
-          INSERT INTO returns (id, sale_id, user_id, reason, device_id, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(returnId, payload.sale_id, userId, payload.reason, deviceId, now, now);
+          INSERT INTO returns (id, sale_id, user_id, reason, device_id, return_invoice_no, refund_method, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(returnId, payload.sale_id, userId, payload.reason, deviceId, returnInvoiceNo, payload.refund_method, now, now);
 
         const insertReturnItem = db.prepare(`
           INSERT INTO return_items (id, return_id, sale_item_id, qty, amount_paisa, device_id, created_at, updated_at)
@@ -597,11 +619,12 @@ export function registerSalesHandlers() {
         const status = returnedTotalPaisa >= sale.total_paisa ? 'refunded' : 'partial_refund';
         db.prepare('UPDATE sales SET status = ?, updated_at = ? WHERE id = ?').run(status, now, payload.sale_id);
 
-        outcome = { totalRefundPaisa, cashRefundPaisa, creditedToDuePaisa, status };
+        outcome = { totalRefundPaisa, cashRefundPaisa, creditedToDuePaisa, status, returnInvoiceNo };
       })();
 
       logAudit('PROCESS_RETURN', 'returns', returnId, {
         saleId: payload.sale_id,
+        returnInvoiceNo: outcome.returnInvoiceNo,
         totalRefundPaisa: outcome.totalRefundPaisa,
         cashRefundPaisa: outcome.cashRefundPaisa,
         creditedToDuePaisa: outcome.creditedToDuePaisa,
@@ -611,12 +634,109 @@ export function registerSalesHandlers() {
       return {
         success: true,
         returnId,
+        return_invoice_no: outcome.returnInvoiceNo,
         total_refund_paisa: outcome.totalRefundPaisa,
         cash_refund_paisa: outcome.cashRefundPaisa,
         credited_to_due_paisa: outcome.creditedToDuePaisa,
         status: outcome.status,
       };
     });
+
+  ipcMain.handle('api:sales:getReturnByInvoice', async (_event, rawReturnInvoiceNo) => {
+      requireRole(['owner', 'staff']);
+      const returnInvoiceNo = z.string().min(1).parse(rawReturnInvoiceNo);
+      const db = getDb();
+
+      const ret = db.prepare(`
+        SELECT r.*, s.invoice_no as original_invoice_no,
+               c.name as customer_name, c.phone as customer_phone,
+               u.name as cashier_name
+        FROM returns r
+        JOIN sales s ON s.id = r.sale_id
+        LEFT JOIN customers c ON s.customer_id = c.id
+        LEFT JOIN users u ON r.user_id = u.id
+        WHERE r.return_invoice_no = ? AND r.deleted_at IS NULL
+      `).get(returnInvoiceNo) as any;
+
+      if (!ret) throw new Error('Return invoice not found.');
+
+      const items = db.prepare(`
+        SELECT ri.*, p.name as product_name, si.unit_price_paisa
+        FROM return_items ri
+        JOIN sale_items si ON si.id = ri.sale_item_id
+        JOIN products p ON p.id = si.product_id
+        WHERE ri.return_id = ? AND ri.deleted_at IS NULL
+      `).all(ret.id) as any[];
+
+      return { ...ret, items };
+    });
+
+  ipcMain.handle('api:sales:generateReturnPdf', async (_event, rawArgs) => {
+      requireRole(['owner', 'staff']);
+      const schema = z.object({
+        return_invoice_no: z.string().min(1),
+        layout: z.enum(['80mm', 'a4']).default('80mm'),
+      });
+      const { return_invoice_no, layout } = schema.parse(rawArgs);
+      const db = getDb();
+
+      const ret = db.prepare(`
+        SELECT r.*, s.invoice_no as original_invoice_no,
+               c.name as customer_name, c.phone as customer_phone,
+               u.name as cashier_name
+        FROM returns r
+        JOIN sales s ON s.id = r.sale_id
+        LEFT JOIN customers c ON s.customer_id = c.id
+        LEFT JOIN users u ON r.user_id = u.id
+        WHERE r.return_invoice_no = ? AND r.deleted_at IS NULL
+      `).get(return_invoice_no) as any;
+
+      if (!ret) throw new Error('Return invoice not found.');
+
+      const items = db.prepare(`
+        SELECT ri.*, p.name as product_name, si.unit_price_paisa
+        FROM return_items ri
+        JOIN sale_items si ON si.id = ri.sale_item_id
+        JOIN products p ON p.id = si.product_id
+        WHERE ri.return_id = ? AND ri.deleted_at IS NULL
+      `).all(ret.id) as any[];
+
+      const settingsMap = readSettingsMap(db);
+      const shopName = settingsMap['invoice_shop_name'] || settingsMap['shop_name'] || 'Shop';
+      const shopAddress = settingsMap['shop_address'] || '';
+      const invoiceFooter = settingsMap['invoice_footer'] || 'Thank you for your business!';
+
+      const totalRefundPaisa = items.reduce((s: number, i: any) => s + i.amount_paisa, 0);
+
+      const pdfBase64 = await generateReturnInvoicePdf(
+        {
+          shopName,
+          shopAddress,
+          shopPhone: settingsMap['shop_phone'] || '',
+          invoiceFooter,
+          returnInvoiceNo: ret.return_invoice_no,
+          originalInvoiceNo: ret.original_invoice_no,
+          date: ret.created_at,
+          cashierName: ret.cashier_name || 'Staff',
+          customerName: ret.customer_name,
+          customerPhone: ret.customer_phone,
+          reason: ret.reason || '',
+          refundMethod: ret.refund_method || 'cash',
+          items: items.map((i: any) => ({
+            productName: i.product_name,
+            qty: i.qty,
+            unitPricePaisa: i.unit_price_paisa,
+            totalPaisa: i.amount_paisa,
+          })),
+          totalRefundPaisa,
+        },
+        printOptionsFromSettings(settingsMap, layout)
+      );
+
+      return { success: true, pdfBase64 };
+    });
+
+
 
   ipcMain.handle('api:sales:generatePdf', async (_event, rawArgs) => {
       requireRole(['owner', 'staff']);
@@ -649,7 +769,7 @@ export function registerSalesHandlers() {
       ).all(sale.id) as any[];
 
       const settingsMap = readSettingsMap(db);
-      const shopName = settingsMap['shop_name'] || 'Mechanical Parts Shop';
+      const shopName = settingsMap['invoice_shop_name'] || settingsMap['shop_name'] || 'Mechanical Parts Shop';
       const shopAddress = settingsMap['shop_address'] || 'Dhaka, Bangladesh';
       const invoiceFooter = settingsMap['invoice_footer'] || 'Thank you for your business!';
 
@@ -684,6 +804,8 @@ export function registerSalesHandlers() {
       const pdfData: InvoicePdfData = {
         shopName,
         shopAddress,
+        shopPhone: settingsMap['shop_phone'] || '',
+        invoiceContacts: (() => { try { return JSON.parse(settingsMap['invoice_contacts'] || '[]'); } catch { return []; } })(),
         invoiceFooter,
         invoiceNo: sale.invoice_no,
         date: sale.created_at,

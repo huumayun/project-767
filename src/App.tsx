@@ -59,7 +59,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <BrandLogoIcon className="w-4 h-4 text-amber-500" />
               <span className="text-[11px] font-bold text-amber-500 tracking-wide uppercase">
-                Mechanical Shop POS
+                Fatema Electronics POS
               </span>
             </div>
           </div>
@@ -614,7 +614,7 @@ function MainApp() {
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100'
                   : 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
               }`}
-              title={activeShift ? `Shift Active: ৳ ${(activeShift.expected_cash_paisa / 100).toFixed(2)}` : 'Shift Closed - Click to Open'}
+              title={activeShift ? `Shift Active: ৳ ${(activeShift.expected_cash_paisa / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Shift Closed - Click to Open'}
             >
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${activeShift ? 'bg-emerald-600 animate-pulse' : 'bg-amber-500'}`} />
               {sidebarOpen && (
@@ -630,7 +630,7 @@ function MainApp() {
                     )}
                   </div>
                   <span className="text-xs font-mono font-extrabold truncate mt-0.5">
-                    {activeShift ? `৳ ${(activeShift.expected_cash_paisa / 100).toLocaleString('en-US')}` : 'Start Shift'}
+                    {activeShift ? `৳ ${(activeShift.expected_cash_paisa / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Start Shift'}
                   </span>
                 </div>
               )}
@@ -777,7 +777,7 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'sales' && <SalesHistoryView currentSession={currentSession} />}
+        {activeTab === 'sales' && <SalesHistoryView currentSession={currentSession} onShiftChanged={fetchActiveShift} />}
 
         {activeTab === 'customers' && (
           <CustomersView currentSession={currentSession} onShiftChanged={fetchActiveShift} />

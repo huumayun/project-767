@@ -284,6 +284,7 @@ export interface SaleRecord {
   paid_at_sale_paisa?: number;
   /** total_paisa minus paid_at_sale_paisa, floored at zero. Same caveat. */
   due_at_sale_paisa?: number;
+  refunded_paisa?: number;
 }
 
 export interface HeldSale {
@@ -376,6 +377,7 @@ export interface SalesReportData {
     date: string;
     orders_count: number;
     sales_paisa: number;
+    refunded_paisa?: number;
   }>;
 }
 
@@ -479,6 +481,8 @@ export type AuditLogEntry = AuditLogRecord;
 
 export interface ShopSettings {
   shop_name: string;
+  invoice_shop_name?: string;
+  invoice_contacts?: { name: string; phone: string }[];
   shop_address: string;
   shop_phone: string;
   /** Footer contacts. Empty means the line is left off the invoice entirely. */
@@ -555,6 +559,7 @@ export interface IElectronApi {
   ping: () => Promise<{ status: string; timestamp: string }>;
   auth: {
     login: (args: { username: string; password: string }) => Promise<{ success: boolean; session?: UserSession; error?: string }>;
+    verifyOwnerPassword: (args: { password: string }) => Promise<{ success: boolean; error?: string }>;
     pinLogin: (args: { pin: string }) => Promise<{ success: boolean; session?: UserSession; error?: string }>;
     logout: () => Promise<boolean>;
     getSession: () => Promise<UserSession | null>;
@@ -574,7 +579,7 @@ export interface IElectronApi {
     /** Writes the document to a PDF in Downloads and opens it. */
     toPdf: (args: { html: string; marginMm?: number; fileName?: string }) => Promise<{ success: boolean; filePath: string }>;
     /** Installed printers, for choosing which one receipts go to. */
-    listPrinters: () => Promise<{ name: string; displayName: string; isDefault: boolean }[]>;
+    listPrinters: () => Promise<{ name: string; displayName: string; isDefault: boolean; status: number }[]>;
     /** Asks where to save an invoice PDF, writes it, and opens it. */
     savePdf: (args: { pdfBase64: string; fileName?: string }) => Promise<{
       success: boolean;
@@ -637,8 +642,18 @@ export interface IElectronApi {
       reason: string;
       refund_method?: 'cash' | 'bkash' | 'nagad' | 'card' | 'other';
       items: Array<{ sale_item_id: string; product_id: string; qty: number; amount_paisa: number }>;
-    }) => Promise<{ success: boolean; returnId: string }>;
+    }) => Promise<{
+      success: boolean;
+      returnId: string;
+      return_invoice_no: string;
+      total_refund_paisa: number;
+      cash_refund_paisa: number;
+      credited_to_due_paisa: number;
+      status: string;
+    }>;
     generatePdf: (args: { invoice_no: string; layout?: '80mm' | 'a4' }) => Promise<{ success: boolean; pdfBase64: string }>;
+    getReturnByInvoice: (returnInvoiceNo: string) => Promise<any>;
+    generateReturnPdf: (args: { return_invoice_no: string; layout?: '80mm' | 'a4' }) => Promise<{ success: boolean; pdfBase64: string }>;
   };
   customers: {
     list: (search?: string) => Promise<Customer[]>;

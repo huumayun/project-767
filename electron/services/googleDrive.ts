@@ -11,6 +11,19 @@ const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 
 export const GDRIVE_TOKEN_KEY = 'gdrive_refresh_token';
 
+function getShopNameForFolder(): string {
+  try {
+    const { getDb } = require('../db');
+    const db = getDb();
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('shop_name');
+    const name = row && row.value ? String(row.value).trim().replace(/[^a-zA-Z0-9 -]/g, '') : '';
+    return name ? `${name} Backups` : 'POS Backups';
+  } catch(e) {
+    return 'POS Backups';
+  }
+}
+
+
 export function getOAuth2Client() {
   const creds = getGoogleCredentials();
   if (!creds) throw new Error(GOOGLE_NOT_CONFIGURED);
@@ -150,7 +163,8 @@ export async function uploadToDrive(filePath: string): Promise<void> {
 
   try {
     console.log(`Starting upload to Google Drive: ${fileName}`);
-    const folderId = await getOrCreateFolder(drive, 'MS POS Backups');
+    const folderName = getShopNameForFolder();
+    const folderId = await getOrCreateFolder(drive, folderName);
 
     const fileMetadata = {
       name: fileName,
@@ -184,8 +198,20 @@ export async function findAndDownloadLatestBackup(targetPath: string): Promise<b
   const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
   try {
+    const folderName = getShopNameForFolder();
+    const folderRes = await drive.files.list({
+      q: `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`,
+      fields: 'files(id)',
+      spaces: 'drive',
+    });
+    
+    let folderQuery = "";
+    if (folderRes.data.files && folderRes.data.files.length > 0) {
+      folderQuery = ` and '${folderRes.data.files[0].id}' in parents`;
+    }
+
     const res = await drive.files.list({
-      q: "name contains 'shop-backup' and mimeType='application/x-sqlite3' and trashed=false",
+      q: `name contains 'shop-backup' and mimeType='application/x-sqlite3' and trashed=false${folderQuery}`,
       orderBy: 'createdTime desc',
       spaces: 'drive',
       pageSize: 1,

@@ -14,6 +14,7 @@ export interface InvoicePdfData {
   shopName: string;
   shopAddress: string;
   shopPhone?: string;
+  invoiceContacts?: { name: string; phone: string }[];
   invoiceFooter: string;
   invoiceNo: string;
   /** When the sale happened, as a timestamp (ISO). Formatted for print here. */
@@ -41,6 +42,8 @@ export interface InvoicePdfData {
   totalPaidPaisa: number;
   changePaisa?: number;
   duePaisa?: number;
+  returnedPaisa?: number;
+  refundedPaisa?: number;
 }
 
 /**
@@ -142,13 +145,13 @@ function buildMemoContent(
   });
 
   // ── the money ───────────────────────────────────────────────────────────
-  const totalsRow = (label: string, value: string, o: { bold?: boolean; rule?: boolean } = {}) => [
+  const totalsRow = (label: string, value: string, o: { bold?: boolean; rule?: boolean; color?: string } = {}) => [
     {
       text: label,
       alignment: 'right',
       fontSize: o.bold ? size.total : size.meta,
       bold: o.bold,
-      color: o.bold ? INK : MUTED,
+      color: o.color || (o.bold ? INK : MUTED),
       margin: [0, o.rule ? 3 : 1, 6, 1],
       border: [false, o.rule || false, false, false],
       borderColor: [RULE, RULE, RULE, RULE],
@@ -158,7 +161,7 @@ function buildMemoContent(
       alignment: 'right',
       fontSize: o.bold ? size.total : size.meta,
       bold: o.bold,
-      color: INK,
+      color: o.color || INK,
       margin: [0, o.rule ? 3 : 1, 0, 1],
       border: [false, o.rule || false, false, false],
       borderColor: [RULE, RULE, RULE, RULE],
@@ -167,8 +170,15 @@ function buildMemoContent(
 
   const totalsBody: any[] = [totalsRow('Total Amount :', money(data.subtotalPaisa))];
   if (data.discountPaisa > 0) totalsBody.push(totalsRow('Discount :', money(data.discountPaisa)));
-  totalsBody.push(totalsRow('Net Payable :', money(data.totalPaisa), { bold: true, rule: true }));
-  totalsBody.push(totalsRow('Paid Amount :', money(data.totalPaidPaisa)));
+  if ((data.returnedPaisa || 0) > 0) totalsBody.push(totalsRow('Returns Deducted :', `-${money(data.returnedPaisa || 0)}`, { color: '#e11d48' }));
+  const finalTotal = data.totalPaisa - (data.returnedPaisa || 0);
+  totalsBody.push(totalsRow('Net Payable :', money(finalTotal), { bold: true, rule: true }));
+  if ((data.refundedPaisa || 0) > 0) {
+    totalsBody.push(totalsRow('Paid Amount (Original) :', money(data.totalPaidPaisa)));
+    totalsBody.push(totalsRow('Refunded to Customer :', `-${money(data.refundedPaisa || 0)}`, { color: '#e11d48' }));
+  } else {
+    totalsBody.push(totalsRow('Paid Amount :', money(data.totalPaidPaisa)));
+  }
   if ((data.changePaisa || 0) > 0) totalsBody.push(totalsRow('Change Returned :', money(data.changePaisa || 0)));
   totalsBody.push(totalsRow('Total Outstanding :', money(data.duePaisa || 0), { bold: true, rule: true }));
 
@@ -206,9 +216,7 @@ function buildMemoContent(
   });
 
   const footerLines = [
-    opts.showAddress && data.shopAddress ? `Office : ${data.shopAddress}` : '',
     [
-      opts.showPhone && data.shopPhone ? `Tel : ${data.shopPhone}` : '',
       opts.web ? `Web : ${opts.web}` : '',
       opts.email ? `E-mail : ${opts.email}` : '',
     ].filter(Boolean).join('   '),
@@ -218,27 +226,21 @@ function buildMemoContent(
     // ── masthead: the logo carries the brand, so the name only fills in
     //    where there is no logo to carry it.
     {
-      columns: [
-        { width: '*', text: '' },
+      stack: [
         opts.showLogo && opts.logoDataUrl
-          ? {
-              width: 'auto',
-              stack: [
-                { image: opts.logoDataUrl, fit: [200, Math.round(opts.logoHeightMm * MM_TO_PT)], alignment: 'right' },
-                opts.headerNote
-                  ? { text: opts.headerNote, fontSize: size.fine, color: MUTED, alignment: 'right', margin: [0, 2, 0, 0] }
-                  : {},
-              ],
-            }
-          : {
-              width: 'auto',
-              stack: [
-                { text: data.shopName, fontSize: size.shopName, bold: true, alignment: 'right', color: INK },
-                opts.headerNote
-                  ? { text: opts.headerNote, fontSize: size.fine, color: MUTED, alignment: 'right', margin: [0, 2, 0, 0] }
-                  : {},
-              ],
-            },
+          ? { image: opts.logoDataUrl, fit: [contentWidthPt, Math.round(opts.logoHeightMm * MM_TO_PT)], alignment: 'center', margin: [0, 0, 0, 4] }
+          : { text: data.shopName, fontSize: size.shopName, bold: true, alignment: 'center', color: INK },
+        opts.headerNote
+          ? { text: opts.headerNote, fontSize: size.fine, color: MUTED, alignment: 'center', margin: [0, 2, 0, 0] }
+          : {},
+        opts.showAddress && data.shopAddress
+          ? { text: data.shopAddress, fontSize: size.shopMeta, color: MUTED, alignment: 'center', margin: [0, 2, 0, 0] }
+          : {},
+        opts.showPhone && data.invoiceContacts && data.invoiceContacts.length > 0
+          ? { text: data.invoiceContacts.map(c => `${c.name}: ${c.phone}`).join('   |   '), fontSize: size.shopMeta, color: MUTED, alignment: 'center', margin: [0, 2, 0, 0] }
+          : opts.showPhone && data.shopPhone
+          ? { text: `Phone: ${data.shopPhone}`, fontSize: size.shopMeta, color: MUTED, alignment: 'center', margin: [0, 2, 0, 0] }
+          : {},
       ],
       margin: [0, 0, 0, 8],
     },
@@ -474,14 +476,16 @@ export async function generateInvoicePdf(
             margin: [0, 0, 0, 2],
           }
         : {},
-      { text: data.shopName, fontSize: size.shopName, bold: true, alignment: 'center' },
+      { text: data.shopName, fontSize: size.shopName, bold: true, alignment: 'center', margin: [0, 0, 0, -2] },
       opts.headerNote
         ? { text: opts.headerNote, fontSize: size.fine, alignment: 'center', margin: [0, 1, 0, 0] }
         : {},
       opts.showAddress && data.shopAddress
         ? { text: data.shopAddress, fontSize: size.shopMeta, alignment: 'center', margin: [0, 2, 0, 0] }
         : {},
-      opts.showPhone && data.shopPhone
+      opts.showPhone && data.invoiceContacts && data.invoiceContacts.length > 0
+        ? { text: data.invoiceContacts.map(c => `${c.name}: ${c.phone}`).join('\n'), fontSize: size.shopMeta, alignment: 'center' }
+        : opts.showPhone && data.shopPhone
         ? { text: `Phone: ${data.shopPhone}`, fontSize: size.shopMeta, alignment: 'center' }
         : {},
       {
@@ -525,7 +529,21 @@ export async function generateInvoicePdf(
           widths: ['*', ...numericCols[opts.paper]],
           body: tableBody,
         },
-        layout: 'lightHorizontalLines',
+        layout: {
+          hLineWidth: function (i: number, node: any) {
+            return 0.5; // Make all horizontal lines thin (0.5 instead of 2/1)
+          },
+          vLineWidth: function (i: number, node: any) {
+            return 0; // No vertical lines
+          },
+          hLineColor: function (i: number, node: any) {
+            return '#0f172a';
+          },
+          paddingLeft: function (i: number, node: any) { return 0; },
+          paddingRight: function (i: number, node: any) { return 0; },
+          paddingTop: function (i: number, node: any) { return 3; },
+          paddingBottom: function (i: number, node: any) { return 3; }
+        },
         margin: [0, 0, 0, 6],
       },
 
@@ -590,7 +608,7 @@ export async function generateInvoicePdf(
               opts.showFooter && data.invoiceFooter
                 ? { text: data.invoiceFooter + '\n', bold: true, fontSize: size.footer }
                 : '',
-              { text: 'Software: Mechanical Shop POS (Offline-First)\n', fontSize: size.fine, color: '#94a3b8' },
+              { text: 'Software by Gramtech\n', fontSize: size.fine, color: '#94a3b8' },
             ],
             alignment: isThermal ? 'center' : 'left',
           },
@@ -652,5 +670,160 @@ export async function generateInvoicePdf(
     pdfDoc.getBase64((dataUri: string) => {
       resolve(dataUri);
     });
+  });
+}
+
+// ─── Return / Credit Note PDF ────────────────────────────────────────────────
+
+export interface ReturnInvoicePdfData {
+  shopName: string;
+  shopAddress: string;
+  shopPhone?: string;
+  invoiceFooter: string;
+  /** The RTN-... number generated for this return. */
+  returnInvoiceNo: string;
+  /** The original INV-... sale invoice this return is against. */
+  originalInvoiceNo: string;
+  /** When the return was processed (ISO timestamp). */
+  date: string;
+  cashierName: string;
+  customerName?: string;
+  customerPhone?: string;
+  reason: string;
+  refundMethod: string;
+  items: Array<{
+    productName: string;
+    qty: number;
+    unitPricePaisa: number;
+    totalPaisa: number;
+  }>;
+  totalRefundPaisa: number;
+}
+
+/**
+ * Generates a Return / Credit Note PDF in receipt style.
+ * Always uses the 80mm receipt layout regardless of paper setting so it
+ * prints on any printer without reconfiguration.
+ */
+export async function generateReturnInvoicePdf(
+  data: ReturnInvoicePdfData,
+  opts: InvoicePrintOptions
+): Promise<string> {
+  const geometry = PAPER_GEOMETRY['80mm'];
+  const marginPt = Math.round((opts.marginMm ?? 5) * MM_TO_PT);
+  const contentWidthPt = geometry.widthPt - marginPt * 2;
+  const size = typeScale(geometry.defaultFontPt);
+
+  const pdfMakeModule = require('pdfmake/build/pdfmake');
+  const pdfFontsModule = require('pdfmake/build/vfs_fonts');
+  const pdfMake = pdfMakeModule.default || pdfMakeModule;
+  const pdfFonts = pdfFontsModule.default || pdfFontsModule;
+  pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts.vfs;
+
+  const money = (paisa: number) => (paisa / 100).toFixed(2);
+
+  const refundMethodLabel: Record<string, string> = {
+    cash: 'Cash', bkash: 'bKash', nagad: 'Nagad', card: 'Card', other: 'Other',
+  };
+
+  // Items table rows
+  const tableBody: any[] = [
+    [
+      { text: 'Item', bold: true, fontSize: size.tableHead },
+      { text: 'Qty', bold: true, alignment: 'center', fontSize: size.tableHead },
+      { text: 'Price(Tk)', bold: true, alignment: 'right', fontSize: size.tableHead },
+      { text: 'Total(Tk)', bold: true, alignment: 'right', fontSize: size.tableHead },
+    ],
+  ];
+  data.items.forEach((item) => {
+    tableBody.push([
+      { text: item.productName, fontSize: size.tableBody },
+      { text: String(item.qty), alignment: 'center', fontSize: size.tableBody },
+      { text: money(item.unitPricePaisa), alignment: 'right', fontSize: size.tableBody },
+      { text: money(item.totalPaisa), alignment: 'right', fontSize: size.tableBody },
+    ]);
+  });
+
+  const rule = (weight = 0.7) => ({
+    canvas: [{ type: 'line', x1: 0, y1: 0, x2: contentWidthPt, y2: 0, lineWidth: weight }],
+    margin: [0, 2, 0, 4],
+  });
+
+  const docDefinition: any = {
+    pageSize: geometry.pdfPageSize,
+    pageMargins: [marginPt, marginPt, marginPt, marginPt],
+    content: [
+      // ── Masthead ──
+      { text: data.shopName, fontSize: size.shopName, bold: true, alignment: 'center', margin: [0, 0, 0, 2] },
+      data.shopAddress
+        ? { text: data.shopAddress, fontSize: size.shopMeta, alignment: 'center' }
+        : {},
+      data.shopPhone
+        ? { text: `Phone: ${data.shopPhone}`, fontSize: size.shopMeta, alignment: 'center', margin: [0, 0, 0, 2] }
+        : {},
+      rule(1),
+
+      // ── Credit Note title ──
+      { text: 'RETURN / CREDIT NOTE', fontSize: size.total, bold: true, alignment: 'center', margin: [0, 0, 0, 2] },
+      rule(0.5),
+
+      // ── Meta ──
+      { text: [{ text: 'Return No:  ', bold: true }, data.returnInvoiceNo], fontSize: size.meta, margin: [0, 0, 0, 1] },
+      { text: [{ text: 'Orig. Invoice: ', bold: true }, data.originalInvoiceNo], fontSize: size.meta, margin: [0, 0, 0, 1] },
+      { text: [{ text: 'Date: ', bold: true }, printedDate(data.date)], fontSize: size.meta, margin: [0, 0, 0, 1] },
+      { text: [{ text: 'Cashier: ', bold: true }, data.cashierName], fontSize: size.meta, margin: [0, 0, 0, 1] },
+      data.customerName
+        ? { text: [{ text: 'Customer: ', bold: true }, data.customerName + (data.customerPhone ? ` (${data.customerPhone})` : '')], fontSize: size.meta, margin: [0, 0, 0, 1] }
+        : {},
+      rule(0.5),
+
+      // ── Items ──
+      {
+        table: { widths: ['*', 20, 36, 40], body: tableBody },
+        layout: {
+          hLineWidth: (i: number, node: any) =>
+            i === 0 || i === 1 || i === node.table.body.length ? 0.7 : 0.3,
+          vLineWidth: () => 0,
+          hLineColor: () => '#94a3b8',
+          paddingLeft: () => 2, paddingRight: () => 2,
+          paddingTop: () => 2, paddingBottom: () => 2,
+        },
+        margin: [0, 0, 0, 4],
+      },
+
+      // ── Totals ──
+      rule(0.7),
+      {
+        columns: [
+          { width: '*', text: 'Total Refund:', fontSize: size.total, bold: true },
+          { width: 'auto', text: `Tk ${money(data.totalRefundPaisa)}`, fontSize: size.total, bold: true, alignment: 'right' },
+        ],
+        margin: [0, 0, 0, 2],
+      },
+      {
+        columns: [
+          { width: '*', text: 'Refund Method:', fontSize: size.meta },
+          { width: 'auto', text: refundMethodLabel[data.refundMethod] ?? data.refundMethod, fontSize: size.meta, alignment: 'right' },
+        ],
+        margin: [0, 0, 0, 2],
+      },
+      {
+        columns: [
+          { width: '*', text: 'Reason:', fontSize: size.meta },
+          { width: 'auto', text: data.reason, fontSize: size.meta, alignment: 'right' },
+        ],
+        margin: [0, 0, 0, 6],
+      },
+
+      // ── Footer ──
+      rule(0.5),
+      { text: data.invoiceFooter || 'Thank you!', fontSize: size.fine, alignment: 'center', italics: true },
+    ],
+    defaultStyle: { font: 'Roboto' },
+  };
+
+  return new Promise((resolve) => {
+    const pdfDoc = pdfMake.createPdf(docDefinition);
+    pdfDoc.getBase64((dataUri: string) => resolve(dataUri));
   });
 }

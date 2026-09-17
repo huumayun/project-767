@@ -358,6 +358,28 @@ export function isInvoiceNumberCollision(err: unknown): boolean {
   return message.includes('UNIQUE constraint failed: sales.invoice_no');
 }
 
+/**
+ * Generates a unique Return/Credit Note number in RTN-YYMMDD-NNNN format.
+ * Mirrors generateInvoiceNumber but counts against the returns table.
+ * Must be called inside the same transaction that writes the return row.
+ */
+export function generateReturnInvoiceNumber(db: any): string {
+  const now = new Date();
+  const datePart = now.getFullYear().toString().slice(-2) +
+    (now.getMonth() + 1).toString().padStart(2, '0') +
+    now.getDate().toString().padStart(2, '0');
+
+  const prefix = `RTN-${datePart}-`;
+  const row = db.prepare(`
+    SELECT MAX(CAST(substr(return_invoice_no, ?) AS INTEGER)) AS max_serial
+    FROM returns
+    WHERE return_invoice_no LIKE ?
+  `).get(prefix.length + 1, `${prefix}%`) as any;
+
+  const nextSerial = (row?.max_serial || 0) + 1;
+  return `${prefix}${nextSerial.toString().padStart(4, '0')}`;
+}
+
 
 /**
  * Spreads an invoice-level discount across the lines it was given on, by value,
@@ -632,10 +654,13 @@ export function calculateShiftSummary(db: any, shift: any) {
       else if (p.method === 'card') cardSalesPaisa += p.amount_paisa;
       else otherSalesPaisa += p.amount_paisa;
     } else if (p.direction === 'out' && p.method === 'cash') {
-      // Any cash that leaves the drawer has to come off the expected count -
-      // paying a supplier empties the till exactly as a refund does. Counting
-      // only refunds made every such payment look like a shortage at close.
-      cashPaidOutPaisa += p.amount_paisa;
+      // Any cash that leaves the drawer has to come off the expected count.
+      // However, the shop owner requested NOT to deduct supplier payments from 
+      // the till cash, as they might not be paid from the actual cash drawer. 
+      // We only deduct refunds and petty cash-out.
+      if (p.type !== 'supplier_payment') {
+        cashPaidOutPaisa += p.amount_paisa;
+      }
       if (p.type === 'refund') cashRefundPaisa += p.amount_paisa;
     }
   });
