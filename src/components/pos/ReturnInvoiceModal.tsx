@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { RotateCcw, Printer, Download, X, RefreshCw, CheckCircle2, ExternalLink } from 'lucide-react';
 import { usePdfObjectUrl } from '../../utils/pdfObjectUrl';
 
+const LAYOUT_TABS: Array<{ id: '80mm' | 'a4'; label: string }> = [
+  { id: '80mm', label: '80mm' },
+  { id: 'a4', label: 'A4' },
+];
+
 interface ReturnInvoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,6 +22,7 @@ export const ReturnInvoiceModal: React.FC<ReturnInvoiceModalProps> = ({
   returnInvoiceNo,
   onOpenOriginalInvoice,
 }) => {
+  const [currentLayout, setCurrentLayout] = useState<'80mm' | 'a4'>('80mm');
   const [pdfData, setPdfData] = useState('');
   const [returnDetails, setReturnDetails] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -26,14 +32,14 @@ export const ReturnInvoiceModal: React.FC<ReturnInvoiceModalProps> = ({
 
   const pdfUrl = usePdfObjectUrl(pdfData);
 
-  const loadData = async () => {
+  const loadData = async (targetLayout: '80mm' | 'a4') => {
     if (!window.api || !returnInvoiceNo) return;
     setLoading(true);
     setError(null);
     try {
       const [detailsRes, pdfRes] = await Promise.all([
         window.api.sales.getReturnByInvoice(returnInvoiceNo).catch(() => null),
-        window.api.sales.generateReturnPdf({ return_invoice_no: returnInvoiceNo, layout: '80mm' }).catch(() => null),
+        window.api.sales.generateReturnPdf({ return_invoice_no: returnInvoiceNo, layout: targetLayout }).catch(() => null),
       ]);
       if (detailsRes) setReturnDetails(detailsRes);
       if (pdfRes?.pdfBase64) setPdfData(pdfRes.pdfBase64);
@@ -49,7 +55,7 @@ export const ReturnInvoiceModal: React.FC<ReturnInvoiceModalProps> = ({
       setSaveState('idle');
       setPdfData('');
       setReturnDetails(null);
-      loadData();
+      loadData(currentLayout);
     }
   }, [isOpen, returnInvoiceNo]);
 
@@ -85,8 +91,8 @@ export const ReturnInvoiceModal: React.FC<ReturnInvoiceModalProps> = ({
   const originalInvoiceNo = returnDetails?.original_invoice_no;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
-      <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-3xl max-w-2xl w-full p-6 shadow-2xl text-jungle-teal-900 my-6 space-y-4">
+    <div className="fixed inset-0 z-50 bg-jungle-teal-900/60 backdrop-blur-xs overflow-y-auto py-10 px-4 animate-in fade-in flex items-start justify-center">
+      <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-3xl max-w-2xl w-full p-6 shadow-2xl text-jungle-teal-900 space-y-4">
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-jungle-teal-200 pb-3">
@@ -101,31 +107,49 @@ export const ReturnInvoiceModal: React.FC<ReturnInvoiceModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-jungle-teal-600 hover:text-jungle-teal-800 hover:bg-jungle-teal-100 rounded-xl transition-colors"
+            className="p-2 text-jungle-teal-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Original Invoice Link */}
-        {originalInvoiceNo && (
-          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-xs">
-            <span className="text-blue-700 font-semibold">Return for original invoice:</span>
+        {originalInvoiceNo && onOpenOriginalInvoice && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-ui-xs font-semibold text-blue-800">
+              Return for original invoice: <span className="font-mono">{originalInvoiceNo}</span>
+            </span>
             <button
-              onClick={() => onOpenOriginalInvoice?.(originalInvoiceNo)}
-              className="font-mono font-bold text-azure-mist-700 hover:underline flex items-center gap-1"
+              onClick={() => onOpenOriginalInvoice(originalInvoiceNo)}
+              className="text-blue-700 hover:text-blue-900 flex items-center gap-1.5 text-xs font-bold"
             >
-              {originalInvoiceNo}
-              <ExternalLink className="w-3 h-3" />
+              View Invoice <ExternalLink className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
 
-        {error && (
-          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-ui-xs">
-            {error}
+        <div className="flex items-center justify-between">
+          <div className="flex bg-jungle-teal-100 p-1 rounded-xl shadow-inner">
+            {LAYOUT_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  if (currentLayout !== tab.id) {
+                    setCurrentLayout(tab.id);
+                    loadData(tab.id);
+                  }
+                }}
+                className={`px-4 py-1.5 rounded-lg text-ui-sm font-semibold transition-all ${
+                  currentLayout === tab.id
+                    ? 'bg-white text-jungle-teal-900 shadow-xs'
+                    : 'text-jungle-teal-600 hover:text-jungle-teal-800 hover:bg-jungle-teal-50'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
         {/* PDF Preview */}
         <div className="bg-jungle-teal-100/50 p-4 rounded-2xl border border-jungle-teal-200 flex justify-center max-h-[500px] overflow-y-auto shadow-inner">
@@ -136,10 +160,10 @@ export const ReturnInvoiceModal: React.FC<ReturnInvoiceModalProps> = ({
             </div>
           ) : pdfUrl ? (
             <iframe
-              title={`Return Invoice ${returnInvoiceNo}`}
-              src={`${pdfUrl}#toolbar=0&navpanes=0`}
+              src={`${pdfUrl}#view=FitH&toolbar=0&navpanes=0`}
               className="w-full bg-white rounded-xl border border-slate-200 shadow-md"
-              style={{ height: 520 }}
+              style={{ height: currentLayout === '80mm' ? 520 : 680 }}
+              title="Return Invoice PDF"
             />
           ) : (
             <div className="p-12 text-center text-jungle-teal-500 font-sans text-ui-sm">

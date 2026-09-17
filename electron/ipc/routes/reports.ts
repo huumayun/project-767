@@ -99,7 +99,7 @@ export function registerReportsHandlers() {
 
       // Daily trends, grouped on the same local-day expression as the totals so
       // the columns of the chart always add up to the header figures.
-      const trendsMap: Record<string, { orders_count: number; sales_paisa: number }> = {};
+      const trendsMap: Record<string, { orders_count: number; sales_paisa: number; refunded_paisa: number }> = {};
       const trendRows = db.prepare(`
         SELECT ${saleDay} AS day,
                COUNT(id) AS orders_count,
@@ -114,11 +114,30 @@ export function registerReportsHandlers() {
         trendsMap[row.day] = {
           orders_count: row.orders_count,
           sales_paisa: row.sales_paisa,
+          refunded_paisa: 0,
         };
       });
 
+      const trendRefundRows = db.prepare(`
+        SELECT ${localDaySql('created_at')} AS day,
+               COALESCE(SUM(amount_paisa), 0) AS refunded_paisa
+        FROM payments
+        WHERE deleted_at IS NULL 
+          AND direction = 'out' 
+          AND type = 'refund'
+          AND ${localDaySql('created_at')} BETWEEN ? AND ?
+        GROUP BY day
+      `).all(startDate, endDate) as any[];
+
+      trendRefundRows.forEach((row) => {
+        if (!trendsMap[row.day]) {
+          trendsMap[row.day] = { orders_count: 0, sales_paisa: 0, refunded_paisa: 0 };
+        }
+        trendsMap[row.day].refunded_paisa = row.refunded_paisa;
+      });
+
       // Populate daily trends for all dates in range
-      const dailyTrends: Array<{ date: string; orders_count: number; sales_paisa: number }> = [];
+      const dailyTrends: Array<{ date: string; orders_count: number; sales_paisa: number; refunded_paisa: number }> = [];
       const [sY, sM, sD] = startDate.split('-').map(Number);
       const [eY, eM, eD] = endDate.split('-').map(Number);
       const curr = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
@@ -134,6 +153,7 @@ export function registerReportsHandlers() {
             date: key,
             orders_count: trendsMap[key]?.orders_count || 0,
             sales_paisa: trendsMap[key]?.sales_paisa || 0,
+            refunded_paisa: trendsMap[key]?.refunded_paisa || 0,
           });
           curr.setDate(curr.getDate() + 1);
         }
@@ -143,6 +163,7 @@ export function registerReportsHandlers() {
             date: key,
             orders_count: trendsMap[key].orders_count,
             sales_paisa: trendsMap[key].sales_paisa,
+            refunded_paisa: trendsMap[key].refunded_paisa,
           });
         });
       }

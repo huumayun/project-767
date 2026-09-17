@@ -152,8 +152,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const dueTaka = Math.max(0, ((saleDetails?.total_paisa || 0) - payments.reduce((sum: number, p: any) => sum + (p.amount_paisa || 0), 0)) / 100).toFixed(2);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-3xl max-w-2xl w-full p-6 shadow-2xl text-jungle-teal-900 my-6 space-y-4">
+    <div className="fixed inset-0 z-50 bg-jungle-teal-900/60 backdrop-blur-xs overflow-y-auto py-10 px-4 animate-in fade-in flex items-start justify-center">
+      <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-3xl max-w-2xl w-full p-6 shadow-2xl text-jungle-teal-900 space-y-4">
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-jungle-teal-200 pb-3">
           <div className="flex items-center gap-3">

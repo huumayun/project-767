@@ -19,6 +19,7 @@ export interface DailyTrend {
   date: string;
   orders_count: number;
   sales_paisa: number;
+  refunded_paisa?: number;
 }
 
 interface DailySalesChartProps {
@@ -127,19 +128,31 @@ export const DailySalesChart: React.FC<DailySalesChartProps> = ({ trends, format
               <tr>
                 <th className="px-3 py-1.5 text-left">Date</th>
                 <th className="px-3 py-1.5 text-right">Invoices</th>
-                <th className="px-3 py-1.5 text-right">Sales</th>
+                <th className="px-3 py-1.5 text-right">Gross Sales</th>
+                <th className="px-3 py-1.5 text-right">Refund</th>
+                <th className="px-3 py-1.5 text-right">Net Sales</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-jungle-teal-100 font-mono">
-              {trends.map((t) => (
-                <tr key={t.date} className="hover:bg-jungle-teal-50">
-                  <td className="px-3 py-1.5 text-jungle-teal-800">{t.date}</td>
-                  <td className="px-3 py-1.5 text-right text-jungle-teal-600">{t.orders_count}</td>
-                  <td className="px-3 py-1.5 text-right font-bold text-jungle-teal-900" title={formatTaka(t.sales_paisa).full}>
-                    {formatTaka(t.sales_paisa).compact}
-                  </td>
-                </tr>
-              ))}
+              {trends.map((t) => {
+                const refund = t.refunded_paisa || 0;
+                const net = t.sales_paisa - refund;
+                return (
+                  <tr key={t.date} className="hover:bg-jungle-teal-50">
+                    <td className="px-3 py-1.5 text-jungle-teal-800">{t.date}</td>
+                    <td className="px-3 py-1.5 text-right text-jungle-teal-600">{t.orders_count}</td>
+                    <td className="px-3 py-1.5 text-right text-jungle-teal-600" title={formatTaka(t.sales_paisa).full}>
+                      {formatTaka(t.sales_paisa).compact}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right ${refund > 0 ? 'text-rose-600' : 'text-jungle-teal-600'}`} title={formatTaka(refund).full}>
+                      {refund > 0 ? `-${formatTaka(refund).compact}` : formatTaka(0).compact}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-bold text-jungle-teal-900" title={formatTaka(net).full}>
+                      {formatTaka(net).compact}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

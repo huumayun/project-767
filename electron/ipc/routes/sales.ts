@@ -681,7 +681,7 @@ export function registerSalesHandlers() {
       const db = getDb();
 
       const ret = db.prepare(`
-        SELECT r.*, s.invoice_no as original_invoice_no,
+        SELECT r.*, s.invoice_no as original_invoice_no, s.total_paisa as original_total_paisa,
                c.name as customer_name, c.phone as customer_phone,
                u.name as cashier_name
         FROM returns r
@@ -692,6 +692,13 @@ export function registerSalesHandlers() {
       `).get(return_invoice_no) as any;
 
       if (!ret) throw new Error('Return invoice not found.');
+
+      const originalItems = db.prepare(`
+        SELECT si.*, p.name as product_name
+        FROM sale_items si
+        JOIN products p ON p.id = si.product_id
+        WHERE si.sale_id = ? AND si.deleted_at IS NULL
+      `).all(ret.sale_id) as any[];
 
       const items = db.prepare(`
         SELECT ri.*, p.name as product_name, si.unit_price_paisa
@@ -722,6 +729,13 @@ export function registerSalesHandlers() {
           customerPhone: ret.customer_phone,
           reason: ret.reason || '',
           refundMethod: ret.refund_method || 'cash',
+          originalItems: originalItems.map((i: any) => ({
+            productName: i.product_name,
+            qty: i.qty,
+            unitPricePaisa: i.unit_price_paisa,
+            totalPaisa: (i.unit_price_paisa * i.qty) - i.discount_paisa,
+          })),
+          originalTotalPaisa: ret.original_total_paisa || 0,
           items: items.map((i: any) => ({
             productName: i.product_name,
             qty: i.qty,

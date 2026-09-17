@@ -691,6 +691,13 @@ export interface ReturnInvoicePdfData {
   customerPhone?: string;
   reason: string;
   refundMethod: string;
+  originalItems: Array<{
+    productName: string;
+    qty: number;
+    unitPricePaisa: number;
+    totalPaisa: number;
+  }>;
+  originalTotalPaisa: number;
   items: Array<{
     productName: string;
     qty: number;
@@ -700,16 +707,228 @@ export interface ReturnInvoicePdfData {
   totalRefundPaisa: number;
 }
 
+function buildMemoReturnContent(
+  data: ReturnInvoicePdfData,
+  opts: InvoicePrintOptions,
+  contentWidthPt: number,
+  size: ReturnType<typeof typeScale>
+): any[] {
+  const money = (paisa: number) =>
+    (paisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const INK = '#0f172a';
+  const MUTED = '#475569';
+  const RULE = '#94a3b8';
+  const BAND = '#eef2f1';
+
+  const d = new Date(data.date);
+  const parsed = !isNaN(d.getTime());
+  const dd = parsed ? String(d.getDate()).padStart(2, '0') : '';
+  const mm = parsed ? String(d.getMonth() + 1).padStart(2, '0') : '';
+  const yyyy = parsed ? String(d.getFullYear()) : '';
+
+  const dateBox = (text: string) => ({
+    table: { widths: [22], body: [[{ text, alignment: 'center', fontSize: size.meta, bold: true, margin: [0, 1, 0, 1] }]] },
+    layout: {
+      hLineWidth: () => 0.7, vLineWidth: () => 0.7,
+      hLineColor: () => RULE, vLineColor: () => RULE,
+    },
+  });
+
+  const labelled = (label: string, value: string) => ({
+    columns: [
+      { width: 75, text: label, fontSize: size.meta, color: MUTED },
+      { width: '*', text: value || '', fontSize: size.meta, bold: true, color: INK },
+    ],
+    margin: [0, 0, 0, 2],
+  });
+
+  const body: any[] = [
+    [
+      { text: 'SL #', style: 'th', alignment: 'center' },
+      { text: 'Description', style: 'th' },
+      { text: 'Quantity', style: 'th', alignment: 'center' },
+      { text: 'Unit Price', style: 'th', alignment: 'right' },
+      { text: 'Amount', style: 'th', alignment: 'right' },
+    ],
+    [
+      { text: 'ORIGINAL PURCHASE', colSpan: 5, bold: true, fontSize: size.tableHead, margin: [0, 2, 0, 2], fillColor: '#f8fafc', color: MUTED },
+      {}, {}, {}, {}
+    ]
+  ];
+
+  data.originalItems.forEach((item, i) => {
+    body.push([
+      { text: String(i + 1), alignment: 'center', fontSize: size.tableBody, margin: [0, 1.5, 0, 1.5] },
+      { text: item.productName, fontSize: size.tableBody, margin: [0, 1.5, 0, 1.5] },
+      { text: String(item.qty), alignment: 'center', fontSize: size.tableBody, margin: [0, 1.5, 0, 1.5] },
+      { text: money(item.unitPricePaisa), alignment: 'right', fontSize: size.tableBody, margin: [0, 1.5, 0, 1.5] },
+      { text: money(item.totalPaisa), alignment: 'right', fontSize: size.tableBody, margin: [0, 1.5, 0, 1.5] },
+    ]);
+  });
+
+  body.push([
+    { text: 'RETURNED ITEMS', colSpan: 5, bold: true, color: '#dc2626', fontSize: size.tableHead, margin: [0, 2, 0, 2], fillColor: '#fef2f2' },
+    {}, {}, {}, {}
+  ]);
+
+  data.items.forEach((item, i) => {
+    body.push([
+      { text: String(i + 1), alignment: 'center', fontSize: size.tableBody, color: '#dc2626', margin: [0, 1.5, 0, 1.5] },
+      { text: item.productName, fontSize: size.tableBody, color: '#dc2626', margin: [0, 1.5, 0, 1.5] },
+      { text: String(item.qty), alignment: 'center', fontSize: size.tableBody, color: '#dc2626', margin: [0, 1.5, 0, 1.5] },
+      { text: money(item.unitPricePaisa), alignment: 'right', fontSize: size.tableBody, color: '#dc2626', margin: [0, 1.5, 0, 1.5] },
+      { text: '-' + money(item.totalPaisa), alignment: 'right', fontSize: size.tableBody, color: '#dc2626', margin: [0, 1.5, 0, 1.5] },
+    ]);
+  });
+
+  const totalsRow = (label: string, value: string, o: { bold?: boolean; rule?: boolean; color?: string } = {}) => [
+    {
+      text: label,
+      alignment: 'right',
+      fontSize: o.bold ? size.total : size.meta,
+      bold: o.bold,
+      color: o.color || (o.bold ? INK : MUTED),
+      margin: [0, o.rule ? 3 : 1, 6, 1],
+      border: [false, o.rule || false, false, false],
+      borderColor: [RULE, RULE, RULE, RULE],
+    },
+    {
+      text: value,
+      alignment: 'right',
+      fontSize: o.bold ? size.total : size.meta,
+      bold: o.bold,
+      color: o.color || INK,
+      margin: [0, o.rule ? 3 : 1, 0, 1],
+      border: [false, o.rule || false, false, false],
+      borderColor: [RULE, RULE, RULE, RULE],
+    },
+  ];
+
+  const finalNetPaisa = data.originalTotalPaisa - data.totalRefundPaisa;
+
+  const totalsBody: any[] = [
+    totalsRow('Original Total :', money(data.originalTotalPaisa)),
+    totalsRow('Total Refund :', `-${money(data.totalRefundPaisa)}`, { color: '#dc2626' }),
+    totalsRow('Final Net Bill :', money(finalNetPaisa), { bold: true, rule: true }),
+  ];
+
+  const refundMethodLabel: Record<string, string> = {
+    cash: 'Cash', bkash: 'bKash', nagad: 'Nagad', card: 'Card', other: 'Other',
+  };
+
+  const footerLines = [
+    opts.web ? `Web : ${opts.web}` : '',
+    opts.email ? `E-mail : ${opts.email}` : '',
+  ].filter(Boolean).join('   ');
+
+  return [
+    {
+      stack: [
+        opts.showLogo && opts.logoDataUrl
+          ? { image: opts.logoDataUrl, fit: [contentWidthPt, Math.round(opts.logoHeightMm * MM_TO_PT)], alignment: 'center', margin: [0, 0, 0, 4] }
+          : { text: data.shopName, fontSize: size.shopName, bold: true, alignment: 'center', color: INK },
+        opts.headerNote ? { text: opts.headerNote, fontSize: size.fine, color: MUTED, alignment: 'center', margin: [0, 2, 0, 0] } : {},
+        opts.showAddress && data.shopAddress ? { text: data.shopAddress, fontSize: size.shopMeta, color: MUTED, alignment: 'center', margin: [0, 2, 0, 0] } : {},
+        opts.showPhone && data.shopPhone ? { text: `Phone: ${data.shopPhone}`, fontSize: size.shopMeta, color: MUTED, alignment: 'center', margin: [0, 2, 0, 0] } : {},
+      ],
+      margin: [0, 0, 0, 8],
+    },
+    {
+      table: { widths: ['*'], body: [[{ text: 'RETURN / CREDIT NOTE', style: 'docTitle' }]] },
+      layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => BAND, paddingTop: () => 3, paddingBottom: () => 3 },
+      margin: [contentWidthPt * 0.3, 0, contentWidthPt * 0.3, 8],
+    },
+    {
+      columns: [
+        {
+          width: '*',
+          stack: [
+            {
+              columns: [
+                {
+                  width: 34,
+                  table: { widths: [22], body: [[{ text: 'No', alignment: 'center', fontSize: size.meta, bold: true, color: '#ffffff' }]] },
+                  layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => INK },
+                },
+                { width: '*', text: data.returnInvoiceNo, fontSize: size.meta, bold: true, margin: [4, 0.5, 0, 0] },
+              ],
+              margin: [0, 0, 0, 3],
+            },
+            labelled('Orig. Invoice :', data.originalInvoiceNo),
+            labelled('Client Name :', data.customerName || 'Walk-in Customer'),
+            labelled('Reason :', data.reason || 'Customer returned item'),
+            labelled('Refund Method :', refundMethodLabel[data.refundMethod] || 'Cash'),
+          ],
+        },
+        {
+          width: 'auto',
+          stack: [
+            {
+              columns: [
+                { width: 'auto', text: 'Date :', fontSize: size.meta, color: MUTED, margin: [0, 2, 6, 0] },
+                { width: 'auto', ...dateBox(dd) },
+                { width: 'auto', ...dateBox(mm), margin: [3, 0, 0, 0] },
+                { width: 'auto', ...dateBox(yyyy === '' ? '' : yyyy), margin: [3, 0, 0, 0] },
+              ],
+              margin: [0, 0, 0, 4],
+            },
+            data.customerPhone ? { text: [{ text: 'Contact : ', color: MUTED }, { text: data.customerPhone, bold: true }], fontSize: size.meta, alignment: 'right' } : {},
+            opts.showCashier ? { text: [{ text: 'Served by : ', color: MUTED }, { text: data.cashierName }], fontSize: size.fine, alignment: 'right', margin: [0, 2, 0, 0] } : {},
+          ],
+        },
+      ],
+      margin: [0, 0, 0, 8],
+    },
+    {
+      table: { headerRows: 1, widths: [26, '*', 46, 62, 68], body },
+      layout: {
+        hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 0.8 : 0.4),
+        vLineWidth: () => 0.4,
+        hLineColor: (i: number) => (i <= 1 ? INK : '#cbd5e1'),
+        vLineColor: () => '#cbd5e1',
+        paddingLeft: () => 4, paddingRight: () => 4,
+      },
+      margin: [0, 0, 0, 4],
+    },
+    {
+      columns: [
+        { width: '*', text: '' },
+        {
+          width: 230,
+          table: { widths: ['*', 78], body: totalsBody },
+          layout: {
+            defaultBorder: false,
+            hLineWidth: (i: number, node: any) => (node.table.body[i]?.[0]?.border?.[1] ? 0.8 : 0),
+            vLineWidth: () => 0,
+            hLineColor: () => RULE,
+          },
+        },
+      ],
+      margin: [0, 0, 0, 4],
+    },
+    opts.showFooter
+      ? {
+          stack: [
+            { canvas: [{ type: 'line', x1: 0, y1: 0, x2: contentWidthPt, y2: 0, lineWidth: 0.8, lineColor: RULE }], margin: [0, 0, 0, 4] },
+            { text: data.shopName, fontSize: size.total, bold: true, alignment: 'center', color: INK },
+            footerLines ? { text: footerLines, fontSize: size.fine, color: MUTED, alignment: 'center', margin: [0, 1, 0, 0] } : {},
+            data.invoiceFooter ? { text: data.invoiceFooter, fontSize: size.fine, color: MUTED, alignment: 'center', margin: [0, 3, 0, 0], italics: true } : {},
+          ],
+          margin: [0, 24, 0, 0],
+        }
+      : {},
+  ];
+}
+
 /**
- * Generates a Return / Credit Note PDF in receipt style.
- * Always uses the 80mm receipt layout regardless of paper setting so it
- * prints on any printer without reconfiguration.
+ * Generates a Return / Credit Note PDF.
  */
 export async function generateReturnInvoicePdf(
   data: ReturnInvoicePdfData,
   opts: InvoicePrintOptions
 ): Promise<string> {
-  const geometry = PAPER_GEOMETRY['80mm'];
+  const geometry = PAPER_GEOMETRY[opts.paper] || PAPER_GEOMETRY['80mm'];
   const marginPt = Math.round((opts.marginMm ?? 5) * MM_TO_PT);
   const contentWidthPt = geometry.widthPt - marginPt * 2;
   const size = typeScale(geometry.defaultFontPt);
@@ -726,7 +945,8 @@ export async function generateReturnInvoicePdf(
     cash: 'Cash', bkash: 'bKash', nagad: 'Nagad', card: 'Card', other: 'Other',
   };
 
-  // Items table rows
+  const isMemo = opts.paper === 'a4';
+
   const tableBody: any[] = [
     [
       { text: 'Item', bold: true, fontSize: size.tableHead },
@@ -735,7 +955,13 @@ export async function generateReturnInvoicePdf(
       { text: 'Total(Tk)', bold: true, alignment: 'right', fontSize: size.tableHead },
     ],
   ];
-  data.items.forEach((item) => {
+
+  tableBody.push([
+    { text: 'ORIGINAL PURCHASE', colSpan: 4, bold: true, fontSize: size.tableHead - 1, margin: [0, 4, 0, 2] },
+    {}, {}, {}
+  ]);
+
+  data.originalItems.forEach((item) => {
     tableBody.push([
       { text: item.productName, fontSize: size.tableBody },
       { text: String(item.qty), alignment: 'center', fontSize: size.tableBody },
@@ -744,15 +970,35 @@ export async function generateReturnInvoicePdf(
     ]);
   });
 
+  tableBody.push([
+    { text: 'RETURNED ITEMS', colSpan: 4, bold: true, color: '#dc2626', fontSize: size.tableHead - 1, margin: [0, 4, 0, 2] },
+    {}, {}, {}
+  ]);
+
+  data.items.forEach((item) => {
+    tableBody.push([
+      { text: item.productName, fontSize: size.tableBody, color: '#dc2626' },
+      { text: String(item.qty), alignment: 'center', fontSize: size.tableBody, color: '#dc2626' },
+      { text: money(item.unitPricePaisa), alignment: 'right', fontSize: size.tableBody, color: '#dc2626' },
+      { text: '-' + money(item.totalPaisa), alignment: 'right', fontSize: size.tableBody, color: '#dc2626' },
+    ]);
+  });
+
   const rule = (weight = 0.7) => ({
     canvas: [{ type: 'line', x1: 0, y1: 0, x2: contentWidthPt, y2: 0, lineWidth: weight }],
     margin: [0, 2, 0, 4],
   });
 
+  const finalNetPaisa = data.originalTotalPaisa - data.totalRefundPaisa;
+
   const docDefinition: any = {
     pageSize: geometry.pdfPageSize,
     pageMargins: [marginPt, marginPt, marginPt, marginPt],
-    content: [
+    styles: {
+      th: { bold: true, fontSize: size.tableHead, color: '#0f172a', margin: [0, 2, 0, 2] },
+      docTitle: { bold: true, fontSize: size.total, alignment: 'center', color: '#0f172a', characterSpacing: 0.6 },
+    },
+    content: isMemo ? buildMemoReturnContent(data, opts, contentWidthPt, size) : [
       // ── Masthead ──
       { text: data.shopName, fontSize: size.shopName, bold: true, alignment: 'center', margin: [0, 0, 0, 2] },
       data.shopAddress
@@ -779,7 +1025,7 @@ export async function generateReturnInvoicePdf(
 
       // ── Items ──
       {
-        table: { widths: ['*', 20, 36, 40], body: tableBody },
+        table: { widths: ['*', 'auto', 'auto', 'auto'], body: tableBody },
         layout: {
           hLineWidth: (i: number, node: any) =>
             i === 0 || i === 1 || i === node.table.body.length ? 0.7 : 0.3,
@@ -795,10 +1041,25 @@ export async function generateReturnInvoicePdf(
       rule(0.7),
       {
         columns: [
-          { width: '*', text: 'Total Refund:', fontSize: size.total, bold: true },
-          { width: 'auto', text: `Tk ${money(data.totalRefundPaisa)}`, fontSize: size.total, bold: true, alignment: 'right' },
+          { width: '*', text: 'Original Total:', fontSize: size.total, bold: true },
+          { width: 'auto', text: `Tk ${money(data.originalTotalPaisa)}`, fontSize: size.total, bold: true, alignment: 'right' },
         ],
         margin: [0, 0, 0, 2],
+      },
+      {
+        columns: [
+          { width: '*', text: 'Total Refund:', fontSize: size.total, bold: true, color: '#dc2626' },
+          { width: 'auto', text: `-Tk ${money(data.totalRefundPaisa)}`, fontSize: size.total, bold: true, alignment: 'right', color: '#dc2626' },
+        ],
+        margin: [0, 0, 0, 2],
+      },
+      rule(0.3),
+      {
+        columns: [
+          { width: '*', text: 'Final Net Bill:', fontSize: size.total, bold: true },
+          { width: 'auto', text: `Tk ${money(finalNetPaisa)}`, fontSize: size.total, bold: true, alignment: 'right' },
+        ],
+        margin: [0, 0, 0, 4],
       },
       {
         columns: [
