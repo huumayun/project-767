@@ -1,0 +1,81 @@
+FATEMA ELECTRONICS POS
+END USER LICENSE AGREEMENT
+
+Software by GraamTech
+
+Please read this agreement before installing. By clicking "I Agree" and
+installing the software, you accept these terms. If you do not accept them,
+click "Cancel" and do not install the software.
+
+
+1. WHAT YOU MAY DO
+
+GraamTech grants you a licence to install and use Fatema Electronics POS
+(the "Software") on the computers of your shop, for running your shop's
+sales, stock, customers and accounts. You may make copies of the Software
+for backup and for your own tills.
+
+
+2. OWNERSHIP
+
+The Software is the work of GraamTech. The source code is published under
+the MIT License, which you may read in the project repository. This
+agreement covers the installed application and does not remove any right
+the MIT License gives you.
+
+
+3. YOUR DATA
+
+Everything you enter into the Software - sales, products, customers, dues,
+staff accounts and settings - is stored on your own computer, in your own
+user profile. It belongs to you. GraamTech does not receive it and cannot
+see it.
+
+You are responsible for keeping backups. The Software can make local
+backups and, if you set it up, backups to your own Google Drive account.
+Removing the Software offers to delete this data; answer "No" if you may
+need it again.
+
+The database is not encrypted. Protect the computer itself with a login
+password and, where possible, Windows drive encryption.
+
+
+4. PRINTERS, SCANNERS AND OTHER DEVICES
+
+The Software works with the printers and barcode scanners installed on your
+computer. Their drivers and their behaviour are the responsibility of their
+makers, not of GraamTech.
+
+
+5. NO WARRANTY
+
+The Software is provided "as is", without warranty of any kind, express or
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and non-infringement. GraamTech does not
+promise that the Software is free of errors or will run without
+interruption.
+
+
+6. LIMITATION OF LIABILITY
+
+To the fullest extent permitted by law, GraamTech shall not be liable for
+any claim, damages or other liability, whether in an action of contract,
+tort or otherwise, arising from, out of or in connection with the Software
+or the use of or dealings in the Software. This includes lost sales, lost
+data, lost profit and the cost of replacement software.
+
+
+7. UPDATES AND SUPPORT
+
+GraamTech may provide updated versions of the Software from time to time.
+Installing an update keeps your data. Support, if any, is provided under a
+separate arrangement between you and GraamTech.
+
+
+8. GENERAL
+
+This agreement is governed by the laws of Bangladesh. If any part of it is
+found unenforceable, the rest remains in effect.
+
+
+Copyright (c) 2026 GraamTech
