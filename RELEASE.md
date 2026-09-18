@@ -7,15 +7,32 @@ at the end.
 ## What survives an update, and why
 
 ```
-C:\Program Files\Mechanical Shop POS\    the app     — replaced wholesale by the installer
-%APPDATA%\mechanical-shop-pos\shop.db    the data    — the installer never touches it
-%APPDATA%\mechanical-shop-pos\backups\   copies      — kept across updates
+%LOCALAPPDATA%\Programs\Fatema Electronics POS\   the app     — replaced wholesale by the installer
+%APPDATA%\fatema-electronics-pos\shop.db          the data    — the installer never touches it
+%APPDATA%\fatema-electronics-pos\backups\         copies      — kept across updates
 ```
 
 The database lives in `app.getPath('userData')`, outside the install folder
 (`electron/db/index.ts`). Reinstalling over the top therefore keeps every sale,
-customer, product and shift. **Uninstalling does not delete it either**, so a
-shop that removes and reinstalls the app still has its books.
+customer, product and shift.
+
+**Uninstalling asks.** Removing the app from Windows Settings puts up one
+question: *Also delete all shop data?* The default is No, and No is what an
+upgrade silently answers, so a shop that removes and reinstalls the app to fix
+something still has its books. Yes is for handing the till to another shop, and
+it is the only route that deletes the folder — the uninstaller stops the app if
+it is still running and retries until the folder is gone
+(`build/uninstaller.nsh`). The Erase Data button in Settings does the same job
+from inside the app without an uninstall.
+
+**The data folder is named after the package, not the product.** The package
+was renamed from `mechanical-shop-pos` to `fatema-electronics-pos` in September
+2026, and Electron names the folder from it. A machine that ran a build from
+before the rename keeps its data in `%APPDATA%\mechanical-shop-pos\`, and the
+renamed build starts empty beside it. Nothing migrates that automatically. If
+such a machine exists, copy `shop.db` (and delete `shop.db-wal` / `shop.db-shm`
+next to it) across before the first launch, or ask for the migration to be
+written first — do not rename the package again.
 
 Schema changes travel in `electron/db/migrations.ts`. On launch the app applies
 the base schema, reconciles any missing columns, then runs whichever versioned
@@ -34,8 +51,13 @@ sale rung up seconds earlier is inside it.
    recorded in the database to decide whether to take a backup.
 
    ```
-   "version": "1.0.1"
+   "version": "1.0.0"
    ```
+
+   The first shipped build under the Fatema Electronics name is 1.0.0. The
+   earlier 1.0.0 and 1.0.1 installers in `release/` are the Mechanical Shop
+   builds — a different app id and a different data folder — and should not be
+   sent out.
 
 2. **Build.**
 
@@ -43,9 +65,29 @@ sale rung up seconds earlier is inside it.
    npm run electron:build
    ```
 
+   Takes two to five minutes. Two things stop it:
+
+   - **Node 22.12 or newer.** electron-builder 26 loads an ES-module dependency
+     that older Node cannot `require`; on Node 22.8 `npm install` itself fails
+     in the post-install step. `winget upgrade OpenJS.NodeJS.LTS` fixes it.
+   - **The dev app must be closed.** `npm start` runs a file watcher over the
+     project, and while it holds a handle on `release/win-unpacked` the packager
+     cannot rename its unpacked folder and fails with `EPERM … rename
+     win-unpacked.tmp`. Stop the dev app first. If it must keep running, build
+     somewhere outside the project:
+     `npm run electron:build -- --config.directories.output=../project-767-release`.
+
    Output lands in `release/`:
-   - `Mechanical Shop POS-Setup-1.0.1.exe` — the installer, for a shop that has the app
-   - `Mechanical Shop POS-Portable-1.0.1.exe` — no install, for a spare machine
+   - `Fatema Electronics POS-Setup-1.0.0.exe` — the installer, for a shop that has the app
+   - `Fatema Electronics POS-Portable-1.0.0.exe` — no install, for a spare machine
+
+   The installer is not code-signed, so SmartScreen warns on first run. *More
+   info → Run anyway* gets past it; tell the shop to expect that.
+
+   On the development machine the dev app and the installed app **share the
+   same data folder**, so a sale rung up in one shows in the other, and a
+   running dev app holds the database open — which is what stops an uninstall
+   from deleting it. Close the dev app before testing an uninstall.
 
 3. **Test the upgrade, not just the app.** Installing over real data is the part
    that can go wrong, and a clean machine will not show it.
@@ -56,9 +98,15 @@ sale rung up seconds earlier is inside it.
    - Check: the sales are still there; today's figures match; open a customer
      ledger; print one invoice; open and close a shift.
    - Confirm `backups\pre-update-…` gained a file.
+   - Print a receipt on the real printer, silently, with the printer chosen in
+     Settings. The invoice is drawn to page images by pdf.js in the renderer
+     and printed by the main process (`src/utils/printPdf.ts`,
+     `api:print:pages`). Printing Chromium's PDF viewer never worked — the job
+     never called back — so do not go back to it.
 
 4. **Send the installer.** The shop runs it with the app closed. No uninstall
-   first — NSIS replaces the old build in place. Their data is untouched.
+   first — NSIS replaces the old build in place. Their data is untouched, and
+   the delete-data question does not appear during an upgrade.
 
 5. **Tell them what changed**, in a sentence they can act on. "The invoice now
    prints the amount in words" travels; "v1.0.1" does not.
@@ -122,7 +170,7 @@ of them.
 ## If something goes wrong on their machine
 
 1. Close the app.
-2. In `%APPDATA%\mechanical-shop-pos\backups\`, take the newest
+2. In `%APPDATA%\fatema-electronics-pos\backups\`, take the newest
    `pre-update-…sqlite`.
 3. Rename `shop.db` to `shop.db.broken` — do not delete it; it is the only
    record of what actually happened.
