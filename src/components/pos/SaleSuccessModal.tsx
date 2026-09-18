@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, Printer, ArrowRight, FileText, RefreshCw, AlertTriangle, Download, Sparkles, Copy, Check } from 'lucide-react';
 import { Customer } from '../../types/ipc';
 import { soundFx } from '../../utils/audio';
+import { printInvoicePdf } from '../../utils/printPdf';
+import { useToast } from '../../context/ToastContext';
 
 interface SaleSuccessModalProps {
   isOpen: boolean;
@@ -51,9 +53,12 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
   pdfBase64,
 }) => {
   const [printStatus, setPrintStatus] = useState<'idle' | 'printing' | 'success' | 'failed'>('idle');
+  /** Why the last print failed, in words the cashier can act on. */
+  const [printError, setPrintError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [copied, setCopied] = useState(false);
   const printTriggeredRef = useRef(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (!isOpen) setSaveStatus('idle');
@@ -73,6 +78,7 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
     } else {
       printTriggeredRef.current = false;
       setPrintStatus('idle');
+      setPrintError(null);
     }
   }, [isOpen, autoPrint]);
 
@@ -108,18 +114,44 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
    * a picture of the POS screen. It was also a third drawing of the invoice,
    * free to disagree with both the PDF and the memo view, and it did.
    */
+  /*
+   * The sale is already saved by the time this runs, so nothing here may get
+   * in the way of the next customer: the counter keeps working while the job
+   * spools, and a failure is reported, never thrown. The toast carries the
+   * failure beyond this modal - a cashier who has pressed Enter and moved on
+   * still learns that the last receipt did not come out.
+   */
   const handleTriggerPrint = async () => {
-    if (!pdfBase64 || !window.api?.print) {
+    if (printStatus === 'printing') return;
+    setPrintError(null);
+
+    const fail = (reason: string) => {
       setPrintStatus('failed');
+      setPrintError(reason);
+      toast.showToast('error', `Invoice #${invoiceNo}: ${reason}`, 'Receipt did not print', 8000);
+    };
+
+    if (!pdfBase64) {
+      fail('No invoice document was produced for this sale. Print it again from Transactions.');
       return;
     }
+    if (!window.api?.print) {
+      fail('Printing is not available in this window.');
+      return;
+    }
+
     setPrintStatus('printing');
     try {
-      await window.api.print.pdf({ pdfBase64, fileName: `invoice-${invoiceNo}` });
-      setPrintStatus('success');
-    } catch (err) {
+      const res = await printInvoicePdf(pdfBase64, `invoice-${invoiceNo}`);
+      if (res.cancelled) {
+        // Closing the dialog is a choice, not a fault.
+        setPrintStatus('idle');
+      } else {
+        setPrintStatus('success');
+      }
+    } catch (err: any) {
       console.error('Print failed:', err);
-      setPrintStatus('failed');
+      fail(err?.message || 'The printer did not accept the receipt.');
     }
   };
 
@@ -287,17 +319,48 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
             )}
           </div>
 
-          <p className="text-[11px] text-jungle-teal-600 text-center font-sans">
-            {hasPrinter ? (
-              <>
-                💡 If the printer plays up, press <span className="font-bold text-jungle-teal-900">Re-Print</span>, or print again from Transactions at any time.
-              </>
-            ) : (
-              <>
-                💡 Any bill can be viewed or saved again later from <span className="font-bold text-jungle-teal-900">Transactions</span>.
-              </>
-            )}
-          </p>
+          {/*
+            Print outcome. Shown beside the actions rather than over them: the
+            receipt is a courtesy copy, and a printer that is off must never
+            stop the counter from taking the next customer.
+          */}
+          {printStatus === 'failed' && printError ? (
+            <div
+              role="alert"
+              className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-2.5 text-[11px] text-red-900 font-sans"
+            >
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-bold">Receipt did not print</p>
+                <p>{printError}</p>
+                <p className="text-red-700">
+                  Press <span className="font-bold">Re-Print (F8)</span> to try again, or print later from Transactions. The sale is saved.
+                </p>
+              </div>
+            </div>
+          ) : printStatus === 'success' ? (
+            <p className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-700 text-center font-sans">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Receipt sent to the printer.
+            </p>
+          ) : printStatus === 'printing' ? (
+            <p className="flex items-center justify-center gap-1.5 text-[11px] text-azure-mist-700 text-center font-sans">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              Printing the receipt… you can start the next sale meanwhile.
+            </p>
+          ) : (
+            <p className="text-[11px] text-jungle-teal-600 text-center font-sans">
+              {hasPrinter ? (
+                <>
+                  💡 If the printer plays up, press <span className="font-bold text-jungle-teal-900">Re-Print</span>, or print again from Transactions at any time.
+                </>
+              ) : (
+                <>
+                  💡 Any bill can be viewed or saved again later from <span className="font-bold text-jungle-teal-900">Transactions</span>.
+                </>
+              )}
+            </p>
+          )}
         </div>
 
         {/* Primary Action Button */}

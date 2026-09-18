@@ -567,8 +567,14 @@ export interface IElectronApi {
     }>;
   };
   print: {
-    /** Prints an already-generated PDF, so the paper matches the preview. */
-    pdf: (args: { pdfBase64: string; fileName?: string }) => Promise<{ success: boolean; cancelled?: boolean }>;
+    /**
+     * Prints page images at their exact paper size - the invoice PDF drawn by
+     * src/utils/printPdf.ts - silently to the receipt printer when one is set.
+     */
+    pages: (args: {
+      pages: { image: string; widthMm: number; heightMm: number }[];
+      fileName?: string;
+    }) => Promise<{ success: boolean; cancelled?: boolean }>;
     /** Opens the system print dialog for a standalone HTML document. */
     document: (args: { html: string; marginMm?: number }) => Promise<{ success: boolean; cancelled?: boolean }>;
     /** Writes the document to a PDF in Downloads and opens it. */

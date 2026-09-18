@@ -68,7 +68,36 @@ async function withDocument<T>(html: string, run: (win: BrowserWindow) => Promis
   }
 }
 
+/**
+ * Removes print scratch files an earlier run left behind.
+ *
+ * Each job writes its document to the temp folder and deletes it when the
+ * job ends. A job that never ended - the PDF-viewer printing above, or the
+ * app being killed mid-print - left its file, and a busy counter collected
+ * one per sale.
+ */
+function sweepStalePrintFiles() {
+  const dir = app.getPath('temp');
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  fs.promises
+    .readdir(dir)
+    .then((names) =>
+      names
+        .filter((n) => /^mcpos-(print|invoice)-\d+\.(html|pdf)$/.test(n))
+        .forEach((n) => {
+          const file = path.join(dir, n);
+          fs.promises
+            .stat(file)
+            .then((s) => (s.mtimeMs < dayAgo ? fs.promises.unlink(file) : undefined))
+            .catch(() => {});
+        })
+    )
+    .catch(() => {});
+}
+
 export function registerPrintHandlers() {
+  sweepStalePrintFiles();
+
   /**
    * The printers Windows knows about, so Settings can offer a list rather than
    * asking the shop to type a device name exactly right.
@@ -119,38 +148,57 @@ export function registerPrintHandlers() {
   });
 
   /**
-   * Prints a PDF that has already been generated.
+   * Prints the pages of an invoice, each handed over as an image of the page.
    *
    * The invoice is produced once, by invoicePdf.ts, and that file is the
-   * document the shop actually hands over. Everything else here takes HTML and
-   * lays it out again, which is how the memo on screen, the memo that printed
-   * and the memo in the PDF all came to look different - three drawings of one
-   * bill. Given the PDF itself, Chromium's viewer paginates it exactly as it
-   * was written.
+   * document the shop actually hands over. This used to load the PDF itself
+   * into a hidden window and print that, but the page it printed was
+   * Chromium's PDF viewer, and printing the viewer from webContents.print()
+   * does not behave like printing a page: the job never reached the printer,
+   * the callback never fired, and the cashier sat on "Printing…" while the
+   * hidden window and its temp file were never cleaned up. An ordinary page
+   * sent the same way prints reliably, so the renderer draws each PDF page to
+   * an image at print resolution (src/utils/printPdf.ts) and this prints a
+   * page of exactly that size around it. The printer gets the same drawing
+   * the preview shows.
    */
-  ipcMain.handle('api:print:pdf', async (_event, rawArgs) => {
+  ipcMain.handle('api:print:pages', async (_event, rawArgs) => {
     requireRole(['owner', 'staff']);
-    const { pdfBase64 } = z
-      .object({ pdfBase64: z.string().min(1), fileName: z.string().optional() })
+    const { pages } = z
+      .object({
+        pages: z
+          .array(
+            z.object({
+              image: z.string().regex(/^data:image\/(png|jpeg);base64,/),
+              widthMm: z.number().min(20).max(500),
+              heightMm: z.number().min(20).max(3000),
+            })
+          )
+          .min(1)
+          .max(50),
+        fileName: z.string().optional(),
+      })
       .parse(rawArgs);
 
-    const file = path.join(app.getPath('temp'), `mcpos-invoice-${Date.now()}.pdf`);
-    fs.writeFileSync(file, Buffer.from(pdfBase64.replace(/^data:.*?base64,/, ''), 'base64'));
+    // One invoice is one paper size; the first page speaks for the rest.
+    const widthMm = pages[0].widthMm;
+    const heightMm = pages[0].heightMm;
+    const mm = (v: number) => `${v.toFixed(2)}mm`;
 
-    // `plugins` is what enables the built-in PDF viewer; without it the window
-    // loads a blank page and prints one.
-    const win = new BrowserWindow({
-      show: false,
-      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, plugins: true },
-    });
+    // No margin here or in Electron's options: the image already contains the
+    // PDF's own margins, and any margin added around it would shrink the page
+    // onto the next sheet - or feed a receipt of blank roll.
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+@page { size: ${mm(widthMm)} ${mm(heightMm)}; margin: 0; }
+html, body { margin: 0; padding: 0; background: #fff; }
+.page { width: ${mm(widthMm)}; height: ${mm(heightMm)}; overflow: hidden; break-after: page; page-break-after: always; }
+.page:last-child { break-after: auto; page-break-after: auto; }
+.page img { display: block; width: ${mm(widthMm)}; height: ${mm(heightMm)}; }
+</style></head><body>${pages
+      .map((p) => `<div class="page"><img src="${p.image}" alt=""></div>`)
+      .join('')}</body></html>`;
 
-    try {
-      // loadFile, not a file:// URL: building one from a Windows path means
-      // escaping backslashes, and getting that wrong loads nothing at all.
-      await win.loadFile(file);
-      // The viewer renders after load; printing too early gives a blank sheet.
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
+    return withDocument(html, async (win) => {
       const chosen = receiptPrinter();
       /*
        * A named printer that has since been unplugged or renamed would make
@@ -167,21 +215,30 @@ export function registerPrintHandlers() {
         }
       }
 
-      return await new Promise((resolve, reject) => {
+      // Electron takes the paper size in microns. The receipt roll is a custom
+      // size; a driver set to a fixed roll width keeps its own, which is fine.
+      const pageSize = { width: Math.round(widthMm * 1000), height: Math.round(heightMm * 1000) };
+
+      return await new Promise<{ success: boolean; cancelled?: boolean }>((resolve, reject) => {
+        // A silent job that never calls back leaves the counter stuck on
+        // "Printing…"; the dialog path has no limit, since a person is
+        // choosing. Thirty seconds is longer than any spooler takes to accept.
+        const limit = silent
+          ? setTimeout(() => reject(new Error('The printer did not respond. Check that it is on and connected.')), 30_000)
+          : null;
+
         win.webContents.print(
           silent
-            ? { silent: true, printBackground: true, deviceName: chosen.deviceName }
-            : { silent: false, printBackground: true },
+            ? { silent: true, printBackground: true, deviceName: chosen.deviceName, pageSize, margins: { marginType: 'none' } }
+            : { silent: false, printBackground: true, pageSize, margins: { marginType: 'none' } },
           (success, reason) => {
+            if (limit) clearTimeout(limit);
             if (success || reason === 'cancelled') resolve({ success, cancelled: !success });
             else reject(new Error(reason || 'The invoice could not be printed.'));
           }
         );
       });
-    } finally {
-      if (!win.isDestroyed()) win.destroy();
-      fs.promises.unlink(file).catch(() => {});
-    }
+    });
   });
 
   /**

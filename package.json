@@ -24,6 +24,7 @@
     "googleapis": "^176.0.0",
     "jsbarcode": "^3.11.6",
     "lucide-react": "^0.475.0",
+    "pdfjs-dist": "^4.10.38",
     "pdfmake": "^0.2.18",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",

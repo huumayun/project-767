@@ -15,8 +15,13 @@
       would let any markup that reached the page run as code, which is the
       protection this policy exists for; the Vite dev server and the packaged
       app both run under the strict policy.
+
+      worker-src blob: is for the PDF renderer that prepares invoices for the
+      printer (src/utils/printPdf.ts). Its worker is bundled into the app and
+      started from a blob: URL, which again only this page's own scripts can
+      mint; without it the worker is refused and no receipt prints.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' https://*.supabase.co;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; frame-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' https://*.supabase.co;" />
     <title>Mechanical Shop POS</title>
   </head>
   <body class="bg-jungle-teal-100 text-jungle-teal-900 antialiased overflow-hidden select-none h-screen w-screen">

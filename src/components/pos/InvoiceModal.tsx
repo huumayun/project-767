@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Printer, Download, X, FileText, CheckCircle2, RefreshCw, QrCode, Phone, MapPin, User, Calendar, Tag, ShieldCheck } from 'lucide-react';
 import { usePdfObjectUrl } from '../../utils/pdfObjectUrl';
+import { printInvoicePdf } from '../../utils/printPdf';
 import { ShopSettings } from '../../types/ipc';
 
 const LAYOUT_TABS: Array<{ id: '80mm' | 'a4'; label: string }> = [
@@ -87,7 +88,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     if (!pdfData || !window.api?.print) return;
     setPrinting(true);
     try {
-      await window.api.print.pdf({ pdfBase64: pdfData, fileName: `invoice-${invoiceNo}` });
+      await printInvoicePdf(pdfData, `invoice-${invoiceNo}`);
     } catch (err: any) {
       setError(err?.message || 'The invoice could not be sent to the printer.');
     } finally {

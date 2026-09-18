@@ -46,7 +46,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   print: {
     document: (args: { html: string; marginMm?: number }) => ipcRenderer.invoke('api:print:document', args),
-    pdf: (args: { pdfBase64: string; fileName?: string }) => ipcRenderer.invoke('api:print:pdf', args),
+    pages: (args: { pages: { image: string; widthMm: number; heightMm: number }[]; fileName?: string }) =>
+      ipcRenderer.invoke('api:print:pages', args),
     toPdf: (args: { html: string; marginMm?: number; fileName?: string }) =>
       ipcRenderer.invoke('api:print:toPdf', args),
     listPrinters: () => ipcRenderer.invoke('api:print:listPrinters'),
