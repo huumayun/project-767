@@ -33,6 +33,7 @@ export function registerSettingsHandlers() {
   
       return {
         shop_name: map['shop_name'] || 'Mechanical Parts Shop',
+        invoice_shop_name: map['invoice_shop_name'] || '',
         shop_address: map['shop_address'] || 'Dhaka, Bangladesh',
         shop_phone: map['shop_phone'] || '01700-000000',
         // Blank by default, and printed only when set - a footer with an empty
@@ -40,8 +41,12 @@ export function registerSettingsHandlers() {
         shop_web: map['shop_web'] || '',
         shop_email: map['shop_email'] || '',
         invoice_footer: map['invoice_footer'] || 'Thank you for your business!',
+        invoice_contacts: (() => {
+          try { return JSON.parse(map['invoice_contacts'] || '[]'); } catch { return []; }
+        })(),
         device_id: map['device_id'] || 'REG01',
         idle_lock_minutes: map['idle_lock_minutes'] || '15',
+        local_backup_path: map['local_backup_path'] || '',
         default_invoice_layout: map['default_invoice_layout'] || '80mm',
         // Derived rather than stored raw, so an unset shop still gets sensible
         // margins and type for whichever paper it prints on.
@@ -110,7 +115,7 @@ export function registerSettingsHandlers() {
     // What the form currently shows wins over what is stored.
     for (const [k, v] of Object.entries(overrides)) {
       if (v === undefined || v === null) continue;
-      map[k] = typeof v === 'boolean' ? (v ? '1' : '0') : String(v);
+      map[k] = typeof v === 'boolean' ? (v ? '1' : '0') : typeof v === 'object' ? JSON.stringify(v) : String(v);
     }
 
     const opts = printOptionsFromSettings(map, map['default_invoice_layout']);
@@ -131,9 +136,10 @@ export function registerSettingsHandlers() {
 
     const pdfBase64 = await generateInvoicePdf(
       {
-        shopName: map['shop_name'] || 'Your Shop Name',
+        shopName: map['invoice_shop_name'] || map['shop_name'] || 'Your Shop Name',
         shopAddress: map['shop_address'] || 'Dhaka, Bangladesh',
         shopPhone: map['shop_phone'] || '',
+        invoiceContacts: (() => { try { return JSON.parse(map['invoice_contacts'] || '[]'); } catch { return []; } })(),
         invoiceFooter: map['invoice_footer'] || '',
         invoiceNo: 'INV-SAMPLE-0001',
         date: new Date().toISOString(),
@@ -197,7 +203,7 @@ export function registerSettingsHandlers() {
         for (const [k, v] of Object.entries(data)) {
           if (protectedKeys.has(k)) continue;
           // Convert true/false to '1'/'0', and other types to string
-          const strVal = typeof v === 'boolean' ? (v ? '1' : '0') : String(v);
+          const strVal = typeof v === 'boolean' ? (v ? '1' : '0') : typeof v === 'object' ? JSON.stringify(v) : String(v);
           insertOrUpdate.run(k, strVal, now);
           written[k] = v;
         }
@@ -237,7 +243,11 @@ export function registerSettingsHandlers() {
    * database holds hashes.
    */
   ipcMain.handle('api:settings:exportRecoveryCodes', async (_event, rawCodes) => {
-      requireRole(['owner']);
+      // Allowed without auth because the first-run wizard calls this before anyone logs in.
+      // The codes come from the frontend, so this handler cannot leak them.
+      if (activeSession && activeSession.role !== 'owner') {
+        throw new Error(`Forbidden: Insufficient privileges for role ${activeSession.role}`);
+      }
       const codes = z.array(z.string().min(1)).min(1).parse(rawCodes);
 
       const db = getDb();

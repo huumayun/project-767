@@ -46,10 +46,28 @@ import { translations } from './i18n/translations';
 import { BrandLogoIcon, StaffAvatarIcon } from './components/pos/PosIcons';
 
 export default function App() {
+  const isElectron = Boolean(window.api && window.api.ping);
 
   return (
     <ToastProvider>
-      <MainApp />
+      <div className="flex flex-col h-screen w-screen overflow-hidden">
+        {isElectron && (
+          <div 
+            className="shrink-0 w-full flex items-center px-3 select-none z-[9999] flex-none"
+            style={{ height: 30, backgroundColor: '#0b0f19', WebkitAppRegion: 'drag' } as any}
+          >
+            <div className="flex items-center gap-2">
+              <BrandLogoIcon className="w-4 h-4 text-amber-500" />
+              <span className="text-[11px] font-bold text-amber-500 tracking-wide uppercase">
+                Fatema Electronics POS
+              </span>
+            </div>
+          </div>
+        )}
+        <div className="flex-1 min-h-0 relative flex flex-col">
+          <MainApp />
+        </div>
+      </div>
     </ToastProvider>
   );
 }
@@ -519,7 +537,7 @@ function MainApp() {
 
   return (
 
-    <div className="h-screen w-screen flex flex-col bg-jungle-teal-100/90 text-jungle-teal-900 font-sans overflow-hidden select-none">
+    <div className="h-full w-full flex flex-col bg-jungle-teal-100/90 text-jungle-teal-900 font-sans overflow-hidden select-none">
       {!isElectron && (
         <div className="shrink-0 bg-amber-500 text-jungle-teal-950 px-4 py-1 text-xs font-mono font-bold flex items-center justify-between border-b border-amber-600 shadow-xs">
           <span>⚠️ Web Browser Preview Mode. SQLite DB active natively in Electron.</span>
@@ -560,7 +578,7 @@ function MainApp() {
                 <BrandLogoIcon className="w-7 h-7 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <h1 className="text-ui-xs font-bold tracking-tight text-jungle-teal-900 font-sans truncate leading-tight">
-                    Mechanical Shop POS
+                    Fatema Electronics POS
                   </h1>
                   {isOwner && <SyncStatusBadge onOpenSyncModal={() => setShowSyncModal(true)} />}
                 </div>
@@ -596,7 +614,7 @@ function MainApp() {
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100'
                   : 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
               }`}
-              title={activeShift ? `Shift Active: ৳ ${(activeShift.expected_cash_paisa / 100).toFixed(2)}` : 'Shift Closed - Click to Open'}
+              title={activeShift ? `Shift Active: ৳ ${(activeShift.expected_cash_paisa / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Shift Closed - Click to Open'}
             >
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${activeShift ? 'bg-emerald-600 animate-pulse' : 'bg-amber-500'}`} />
               {sidebarOpen && (
@@ -612,7 +630,7 @@ function MainApp() {
                     )}
                   </div>
                   <span className="text-xs font-mono font-extrabold truncate mt-0.5">
-                    {activeShift ? `৳ ${(activeShift.expected_cash_paisa / 100).toLocaleString('en-US')}` : 'Start Shift'}
+                    {activeShift ? `৳ ${(activeShift.expected_cash_paisa / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Start Shift'}
                   </span>
                 </div>
               )}
@@ -759,7 +777,7 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'sales' && <SalesHistoryView currentSession={currentSession} />}
+        {activeTab === 'sales' && <SalesHistoryView currentSession={currentSession} onShiftChanged={fetchActiveShift} />}
 
         {activeTab === 'customers' && (
           <CustomersView currentSession={currentSession} onShiftChanged={fetchActiveShift} />

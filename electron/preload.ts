@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('api', {
   ping: () => ipcRenderer.invoke('api:ping'),
   auth: {
     login: (args: { username: string; password: string }) => ipcRenderer.invoke('api:auth:login', args),
+    verifyOwnerPassword: (args: { password: string }) => ipcRenderer.invoke('api:auth:verifyOwnerPassword', args),
     pinLogin: (args: { pin: string }) => ipcRenderer.invoke('api:auth:pinLogin', args),
     logout: () => ipcRenderer.invoke('api:auth:logout'),
     getSession: () => ipcRenderer.invoke('api:auth:getSession'),
@@ -130,6 +131,10 @@ contextBridge.exposeInMainWorld('api', {
     processReturn: (payload: any) => ipcRenderer.invoke('api:sales:processReturn', payload),
     generatePdf: (args: { invoice_no: string; layout?: '80mm' | 'a4' }) =>
       ipcRenderer.invoke('api:sales:generatePdf', args),
+    getReturnByInvoice: (returnInvoiceNo: string) =>
+      ipcRenderer.invoke('api:sales:getReturnByInvoice', returnInvoiceNo),
+    generateReturnPdf: (args: { return_invoice_no: string; layout?: '80mm' | 'a4' }) =>
+      ipcRenderer.invoke('api:sales:generateReturnPdf', args),
   },
   customers: {
     list: (search?: string) => ipcRenderer.invoke('api:customers:list', search),
@@ -196,6 +201,7 @@ contextBridge.exposeInMainWorld('api', {
   backup: {
     selectFolder: () => ipcRenderer.invoke('api:backup:selectFolder'),
     selectFile: () => ipcRenderer.invoke('api:backup:selectFile'),
+    getFileInfo: (filePath: string) => ipcRenderer.invoke('api:backup:getFileInfo', filePath),
     restoreLocalFile: (filePath: string) => ipcRenderer.invoke('api:backup:restoreLocalFile', filePath),
     list: () => ipcRenderer.invoke('api:backup:list'),
     createManual: () => ipcRenderer.invoke('api:backup:createManual'),

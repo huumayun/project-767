@@ -280,7 +280,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
     printWindow.document.close();
   };
 
-  const shopName = shopSettings?.shop_name || 'Mechanical Workshop';
+  const shopName = shopSettings?.shop_name || 'Fatema Electronics';
   const targetSummary = closedSummary || shiftData;
 
   const openingTaka = (((targetSummary?.opening_cash_paisa || 0)) / 100).toFixed(2);
@@ -466,7 +466,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                   {closedSummary.user_breakdown.map((u, i) => (
                     <div key={i} className="flex justify-between text-slate-600">
                       <span>{u.user_name} ({u.sales_count} sales)</span>
-                      <span>৳ {(u.total_sales_paisa / 100).toFixed(2)}</span>
+                      <span>৳ {(u.total_sales_paisa / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
                     </div>
                   ))}
                 </div>
@@ -739,7 +739,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                   </span>
                 </div>
                 <span className="text-base font-extrabold text-emerald-900 shrink-0">
-                  ৳ {(Math.max(0, (parseFloat(actualCashTaka) || 0) - (parseFloat(withdrawnCashTaka) || 0))).toFixed(2)}
+                  ৳ {(Math.max(0, (parseFloat(actualCashTaka) || 0) - (parseFloat(withdrawnCashTaka) || 0))).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                 </span>
               </div>
 
@@ -960,7 +960,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                         <span className="text-[10px] text-slate-400 block ml-1">{u.sales_count} sales</span>
                       </div>
                       <span className="font-bold text-jungle-teal-700">
-                        ৳ {(u.total_sales_paisa / 100).toFixed(2)}
+                        ৳ {(u.total_sales_paisa / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                       </span>
                     </div>
                   ))}
@@ -982,7 +982,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                         <span className="text-[10px] text-slate-400 block">{new Date(tx.created_at).toLocaleTimeString()}</span>
                       </div>
                       <span className={tx.type === 'cash_in' ? 'font-bold text-emerald-700' : 'font-bold text-rose-700'}>
-                        {tx.type === 'cash_in' ? '+' : '-'} ৳ {(tx.amount_paisa / 100).toFixed(2)}
+                        {tx.type === 'cash_in' ? '+' : '-'} ৳ {(tx.amount_paisa / 100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})}
                       </span>
                     </div>
                   ))}

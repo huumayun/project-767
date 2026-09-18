@@ -44,6 +44,7 @@ export function registerWizardHandlers() {
         device_id_prefix: z.string().default('REG01'),
         default_invoice_layout: z.enum(['80mm', 'a4']).default('80mm'),
         owner_password: z.string().min(4).optional().nullable(),
+        owner_username: z.string().min(3).optional().nullable(),
       });
   
       const data = schema.parse(rawPayload);
@@ -86,10 +87,28 @@ export function registerWizardHandlers() {
         upsertSetting.run('default_invoice_layout', data.default_invoice_layout, now);
         upsertSetting.run('first_run_completed', '1', now);
   
-        if (data.owner_password) {
-          const salt = bcrypt.genSaltSync(12);
-          const hash = bcrypt.hashSync(data.owner_password, salt);
-          db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE username = ?').run(hash, now, 'owner');
+        if (data.owner_password || data.owner_username) {
+          // Find the primary owner to update
+          const ownerIdRow = db.prepare("SELECT id FROM users WHERE role = 'owner' AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1").get() as any;
+          if (ownerIdRow) {
+            let updateCols = [];
+            let updateVals = [];
+            if (data.owner_username) {
+              updateCols.push("username = ?");
+              updateVals.push(data.owner_username);
+            }
+            if (data.owner_password) {
+              const salt = bcrypt.genSaltSync(12);
+              const hash = bcrypt.hashSync(data.owner_password, salt);
+              updateCols.push("password_hash = ?");
+              updateVals.push(hash);
+            }
+            updateCols.push("updated_at = ?");
+            updateVals.push(now);
+            updateVals.push(ownerIdRow.id);
+
+            db.prepare(`UPDATE users SET ${updateCols.join(', ')} WHERE id = ?`).run(...updateVals);
+          }
         }
 
         if (recoveryCodes) {

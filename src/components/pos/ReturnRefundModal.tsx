@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SaleRecord } from '../../types/ipc';
-import { RotateCcw, AlertTriangle, CheckCircle2, X } from 'lucide-react';
+import { RotateCcw, AlertTriangle, CheckCircle2, X, FileText } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 interface ReturnRefundModalProps {
@@ -8,6 +8,8 @@ interface ReturnRefundModalProps {
   onClose: () => void;
   sale: SaleRecord;
   onSuccess: () => void;
+  /** Called with the RTN invoice number so the parent can open ReturnInvoiceModal. */
+  onViewReturnInvoice?: (returnInvoiceNo: string) => void;
 }
 
 export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
@@ -15,6 +17,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
   onClose,
   sale,
   onSuccess,
+  onViewReturnInvoice,
 }) => {
   const toast = useToast();
   const [reason, setReason] = useState('Customer returned item');
@@ -22,6 +25,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
   const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [returnedInvoiceNo, setReturnedInvoiceNo] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -78,6 +82,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
         items: returnPayloadItems,
       });
       if (res.success) {
+        setReturnedInvoiceNo(res.return_invoice_no || null);
         toast.success('Return processed successfully! Stock restored and refund recorded.');
         onSuccess();
       }
@@ -194,7 +199,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-jungle-teal-200">
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-jungle-teal-200 flex-wrap">
             <button
               type="button"
               onClick={onClose}
@@ -202,9 +207,21 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
             >
               Cancel
             </button>
+
+            {returnedInvoiceNo && (
+              <button
+                type="button"
+                onClick={() => onViewReturnInvoice?.(returnedInvoiceNo)}
+                className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-azure-mist-700 border border-blue-200 rounded-xl font-bold text-xs flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                View Return Invoice ({returnedInvoiceNo})
+              </button>
+            )}
+
             <button
               type="submit"
-              disabled={loading || totalRefundPaisa === 0 || isFullyReturned}
+              disabled={loading || totalRefundPaisa === 0 || isFullyReturned || !!returnedInvoiceNo}
               className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md transition-colors text-xs flex items-center gap-1.5 disabled:opacity-50"
             >
               <RotateCcw className="w-3.5 h-3.5" />

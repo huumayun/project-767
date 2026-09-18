@@ -111,6 +111,7 @@ export function registerPrintHandlers() {
       name: p.name,
       displayName: p.displayName || p.name,
       isDefault: p.isDefault,
+      status: p.status,
     }));
   });
 
@@ -209,10 +210,17 @@ html, body { margin: 0; padding: 0; background: #fff; }
       let silent = chosen.silent;
       if (silent) {
         const available = await win.webContents.getPrintersAsync();
-        if (!available.some((p) => p.name === chosen.deviceName)) {
-          console.warn(`Receipt printer "${chosen.deviceName}" was not found; falling back to the print dialog.`);
+        const printer = available.find((p) => p.name === chosen.deviceName);
+        if (!printer) {
+          // Not thrown: a receipt still has to come out of some printer, and
+          // the dialog lets the cashier pick one. Refusing outright would leave
+          // a customer waiting over a Settings entry.
+          console.warn(`Receipt printer "${chosen.deviceName}" is not connected or not found; falling back to the print dialog.`);
           silent = false;
         }
+        // A non-zero status can mean offline, but Windows often reports a
+        // printer offline until the first job wakes it, so the job is sent
+        // anyway and the timeout below catches a printer that really is off.
       }
 
       // Electron takes the paper size in microns. The receipt roll is a custom
@@ -234,7 +242,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
           (success, reason) => {
             if (limit) clearTimeout(limit);
             if (success || reason === 'cancelled') resolve({ success, cancelled: !success });
-            else reject(new Error(reason || 'The invoice could not be printed.'));
+            else reject(new Error(reason || 'The invoice could not be printed. Check if the printer is connected and turned on.'));
           }
         );
       });

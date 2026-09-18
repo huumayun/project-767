@@ -21,6 +21,7 @@ export default defineConfig({
       /\.(woff2?|ttf|otf)$/i.test(filePath) ? true : undefined,
   },
   server: {
+    host: '127.0.0.1',
     port: 5173,
     strictPort: true,
   },

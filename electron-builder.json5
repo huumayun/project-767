@@ -1,7 +1,7 @@
 {
-  "appId": "com.mechanicalshop.pos",
-  "productName": "Mechanical Shop POS",
-  "copyright": "Copyright © 2026 Mechanical Shop POS",
+  "appId": "com.fatemaelectronics.pos",
+  "productName": "Fatema Electronics POS",
+  "copyright": "Copyright © 2026 Fatema Electronics POS",
   "directories": {
     "output": "release"
   },
@@ -26,19 +26,17 @@
       }
     ],
     "icon": "build/icon.ico",
-    "artifactName": "${productName}-Setup-${version}.${ext}",
-    "signAndEditExecutable": false,
-    "sign": null,
-    "forceCodeSigning": false
+    "artifactName": "${productName}-Setup-${version}.${ext}"
   },
 
   "nsis": {
+    "include": "build/uninstaller.nsh",
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Mechanical Shop POS",
-    "uninstallDisplayName": "Mechanical Shop POS"
+    "shortcutName": "Fatema Electronics POS",
+    "uninstallDisplayName": "Fatema Electronics POS"
   },
   "portable": {
     "artifactName": "${productName}-Portable-${version}.${ext}"

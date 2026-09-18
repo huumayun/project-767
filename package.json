@@ -1,7 +1,7 @@
 {
-  "name": "mechanical-shop-pos",
+  "name": "fatema-electronics-pos",
   "version": "1.0.1",
-  "description": "Offline-first Mechanical Shop POS Desktop Application",
+  "description": "Fatema Electronics POS Desktop Application",
   "main": "dist-electron/main.js",
   "scripts": {
     "start": "node scripts/dev.js",
@@ -44,10 +44,11 @@
     "@types/react-dom": "^19.0.4",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "app-builder-lib": "^26.15.3",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
-    "electron": "^34.2.0",
-    "electron-builder": "^25.1.8",
+    "electron": "^34.5.8",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3",

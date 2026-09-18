@@ -78,11 +78,11 @@ export const formatCompactTaka = (paisa: number): { compact: string; full: strin
   const isNegative = taka < 0;
   const absTaka = Math.abs(taka);
 
-  const full = `${isNegative ? '-' : ''}৳ ${((paisa || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const full = `${isNegative ? '-' : ''}৳ ${((paisa || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   if (absTaka < 100_000) {
     // Under 1 Lakh: show regular formatted currency
-    const compact = `${isNegative ? '-' : ''}৳ ${((paisa || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: (paisa % 100 !== 0) ? 2 : 0, maximumFractionDigits: 2 })}`;
+    const compact = `${isNegative ? '-' : ''}৳ ${((paisa || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: (paisa % 100 !== 0) ? 2 : 0, maximumFractionDigits: 2 })}`;
     return { compact, full };
   }
 
@@ -100,7 +100,7 @@ export const formatCompactTaka = (paisa: number): { compact: string; full: strin
     parts.push(`${lakhs}L`);
   }
   if (remainderAfterLakh > 0 || parts.length === 0) {
-    parts.push(remainderAfterLakh.toLocaleString('en-US'));
+    parts.push(remainderAfterLakh.toLocaleString('en-IN'));
   }
 
   const compact = `${isNegative ? '-' : ''}৳ ${parts.join(', ')}`;
@@ -110,15 +110,15 @@ export const formatCompactTaka = (paisa: number): { compact: string; full: strin
 export const formatCompactUnits = (units: number): { compact: string; full: string } => {
   const abs = Math.abs(units || 0);
   const unitWord = 'units';
-  const full = `${(units || 0).toLocaleString('en-US')} ${unitWord}`;
+  const full = `${(units || 0).toLocaleString('en-IN')} ${unitWord}`;
 
   let compact = '';
   if (abs >= 10_000_000) {
-    compact = `${(units / 10_000_000).toFixed(2)} Cr ${unitWord}`;
+    compact = `${(units / 10_000_000).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})} Cr ${unitWord}`;
   } else if (abs >= 100_000) {
-    compact = `${(units / 100_000).toFixed(2)} L ${unitWord}`;
+    compact = `${(units / 100_000).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})} L ${unitWord}`;
   } else {
-    compact = `${(units || 0).toLocaleString('en-US')} ${unitWord}`;
+    compact = `${(units || 0).toLocaleString('en-IN')} ${unitWord}`;
   }
 
   return { compact, full };
@@ -445,7 +445,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <p className="text-ui-xs text-jungle-teal-600 mt-1 font-mono flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-azure-mist-700" />
             <span>
-              {new Date().toLocaleDateString('en-US', {
+              {new Date().toLocaleDateString('en-IN', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
@@ -501,7 +501,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             Today
           </span>
           <span className="text-ui-xs text-jungle-teal-500 font-sans">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
           </span>
         </div>
       ) : (
@@ -581,12 +581,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   >
                     {compact}
                   </div>
-                  <div className="text-ui-2xs text-jungle-teal-600 mt-1 font-sans flex items-center justify-between">
-                    <span>{salesReport?.total_orders ?? 0} {'invoices'}</span>
-                    {(salesReport?.discount_paisa ?? 0) > 0 && (
-                      <span className="text-amber-700 font-mono font-semibold" title={discountObj.full}>
-                        -{discountObj.compact} discount
-                      </span>
+                  <div className="text-ui-2xs text-jungle-teal-600 mt-1 font-sans flex flex-col gap-0.5">
+                    <div className="flex justify-between items-center">
+                      <span>{salesReport?.total_orders ?? 0} {'invoices'}</span>
+                      {(salesReport?.discount_paisa ?? 0) > 0 && (
+                        <span className="text-amber-700 font-mono font-semibold" title={discountObj.full}>
+                          -{discountObj.compact} discount
+                        </span>
+                      )}
+                    </div>
+                    {(salesReport?.total_refunded_paisa ?? 0) > 0 && (
+                      <div className="flex justify-between items-center border-t border-jungle-teal-200/50 mt-1 pt-1">
+                        <span title={formatCompactTaka(salesReport!.gross_sales_paisa).full}>
+                          Gross: {formatCompactTaka(salesReport!.gross_sales_paisa).compact}
+                        </span>
+                        <span className="text-rose-600 font-mono font-semibold" title={formatCompactTaka(salesReport!.total_refunded_paisa).full}>
+                          Refund: -{formatCompactTaka(salesReport!.total_refunded_paisa).compact}
+                        </span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -797,11 +809,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          <div
-            className="text-ui-xs font-mono font-bold text-jungle-teal-800 bg-jungle-teal-100 px-3 py-1 rounded-xl border border-jungle-teal-200 self-auto"
-            title={formatCompactTaka(salesReport?.net_sales_paisa ?? 0).full}
-          >
-            {'Period Total:'} {formatCompactTaka(salesReport?.net_sales_paisa ?? 0).compact}
+          <div className="flex items-center gap-3">
+            {(salesReport?.total_refunded_paisa ?? 0) > 0 && (
+              <div
+                className="text-ui-xs font-mono font-bold text-rose-700 bg-rose-50 px-3 py-1 rounded-xl border border-rose-200"
+                title={formatCompactTaka(salesReport!.total_refunded_paisa).full}
+              >
+                Refunds: -{formatCompactTaka(salesReport!.total_refunded_paisa).compact}
+              </div>
+            )}
+            <div
+              className="text-ui-xs font-mono font-bold text-jungle-teal-800 bg-jungle-teal-100 px-3 py-1 rounded-xl border border-jungle-teal-200 self-auto"
+              title={formatCompactTaka(salesReport?.gross_sales_paisa ?? 0).full}
+            >
+              Gross Sales: {formatCompactTaka(salesReport?.gross_sales_paisa ?? 0).compact}
+            </div>
           </div>
         </div>
 
@@ -1060,7 +1082,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </div>
                         <div className="text-ui-2xs text-jungle-teal-600">
                           {sale.customer_name || ('Walking Customer')} ·{' '}
-                          {new Date(sale.created_at).toLocaleTimeString('en-US', {
+                          {new Date(sale.created_at).toLocaleTimeString('en-IN', {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}

@@ -971,6 +971,12 @@ const ADDITIVE_COLUMNS: Record<string, Record<string, string>> = {
   sync_state: {
     last_pushed_id: 'TEXT',
   },
+  returns: {
+    // Printed credit note number so a return can be reprinted like a sale invoice.
+    return_invoice_no: 'TEXT',
+    // Refund method recorded per-return so the credit note can print it.
+    refund_method: 'TEXT',
+  },
 };
 
 function reconcileColumns(db: Database.Database) {

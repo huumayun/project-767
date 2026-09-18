@@ -59,6 +59,22 @@ import {
 
 export function registerAuthHandlers() {
   // Auth Handlers
+
+  ipcMain.handle('api:auth:verifyOwnerPassword', async (_event, rawArgs) => {
+    requireRole(['owner']);
+    if (!activeSession) return { success: false, error: 'Not logged in' };
+    
+    const schema = z.object({ password: z.string().min(1) });
+    const { password } = schema.parse(rawArgs);
+    const db = getDb();
+    
+    const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1 AND deleted_at IS NULL').get(activeSession.id) as any;
+    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+      return { success: false, error: 'Incorrect password' };
+    }
+    return { success: true };
+  });
+
   ipcMain.handle('api:auth:login', async (_event, rawArgs) => {
       const schema = z.object({
         username: z.string().min(1),
