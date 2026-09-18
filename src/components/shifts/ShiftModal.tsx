@@ -290,12 +290,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
   const nagadTaka = (((targetSummary?.total_nagad_sales_paisa || 0)) / 100).toFixed(2);
   const cardTaka = (((targetSummary?.total_card_sales_paisa || 0)) / 100).toFixed(2);
   // Non-cash taken on the merged Other button, plus the older per-wallet rows.
-  const otherTaka = (
-    ((targetSummary?.total_other_sales_paisa || 0) +
-      (targetSummary?.total_bkash_sales_paisa || 0) +
-      (targetSummary?.total_nagad_sales_paisa || 0) +
-      (targetSummary?.total_card_sales_paisa || 0)) / 100
-  ).toFixed(2);
+  const otherTaka = (((targetSummary?.total_other_sales_paisa || 0)) / 100).toFixed(2);
   const tk = (paisa?: number) => ((paisa || 0) / 100).toFixed(2);
   const returnedTaka = tk(targetSummary?.total_returned_paisa);
   const netSalesTaka = tk(targetSummary?.net_sales_paisa);
@@ -422,10 +417,30 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                   <span>Cash Sales:</span>
                   <span>+ ৳ {cashSalesTaka}</span>
                 </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Other (digital / card) Sales:</span>
-                  <span>৳ {otherTaka}</span>
-                </div>
+                {Number(bkashTaka) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>bKash Sales:</span>
+                    <span>৳ {bkashTaka}</span>
+                  </div>
+                )}
+                {Number(nagadTaka) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Nagad Sales:</span>
+                    <span>৳ {nagadTaka}</span>
+                  </div>
+                )}
+                {Number(cardTaka) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Card Sales:</span>
+                    <span>৳ {cardTaka}</span>
+                  </div>
+                )}
+                {Number(otherTaka) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Other Sales:</span>
+                    <span>৳ {otherTaka}</span>
+                  </div>
+                )}
                 {Number(dueCollectedTaka) > 0 && (
                   <div className="flex justify-between text-slate-600">
                     <span>Old Balances Collected:</span>

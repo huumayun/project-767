@@ -287,7 +287,10 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
                   ${row('Gross profit', '৳ ' + tk(profit), { strong: true, rule: true, tone: 'pos' })}
                   ${row('Margin', margin + '%')}
                   ${row('Taken in cash', '৳ ' + tk(shift.total_cash_sales_paisa), { rule: true })}
-                  ${row('Taken digitally / other', '৳ ' + tk(digital))}
+                  ${(shift.total_bkash_sales_paisa || 0) > 0 ? row('bKash Sales', '৳ ' + tk(shift.total_bkash_sales_paisa)) : ''}
+                  ${(shift.total_nagad_sales_paisa || 0) > 0 ? row('Nagad Sales', '৳ ' + tk(shift.total_nagad_sales_paisa)) : ''}
+                  ${(shift.total_card_sales_paisa || 0) > 0 ? row('Card Sales', '৳ ' + tk(shift.total_card_sales_paisa)) : ''}
+                  ${(shift.total_other_sales_paisa || 0) > 0 ? row('Other Sales', '৳ ' + tk(shift.total_other_sales_paisa)) : ''}
                   ${row('Sold on credit', '৳ ' + tk(shift.total_due_sales_paisa), { tone: 'warn' })}
                   ${dueCollected > 0 ? row('Old balances collected', '৳ ' + tk(dueCollected)) : ''}
                 </table>
@@ -888,7 +891,10 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
                 <Row label="Gross profit" value={`৳ ${tk(profit)}`} tone="text-muted-teal-800" bold top />
                 <Row label="Margin" value={`${margin}%`} tone="text-muted-teal-800" />
                 <Row label="Taken in cash" value={`৳ ${tk(selectedShift.total_cash_sales_paisa)}`} top />
-                <Row label="Taken digitally / other" value={`৳ ${tk(digital)}`} />
+                {(selectedShift.total_bkash_sales_paisa || 0) > 0 && <Row label="bKash Sales" value={`৳ ${tk(selectedShift.total_bkash_sales_paisa)}`} />}
+                {(selectedShift.total_nagad_sales_paisa || 0) > 0 && <Row label="Nagad Sales" value={`৳ ${tk(selectedShift.total_nagad_sales_paisa)}`} />}
+                {(selectedShift.total_card_sales_paisa || 0) > 0 && <Row label="Card Sales" value={`৳ ${tk(selectedShift.total_card_sales_paisa)}`} />}
+                {(selectedShift.total_other_sales_paisa || 0) > 0 && <Row label="Other Sales" value={`৳ ${tk(selectedShift.total_other_sales_paisa)}`} />}
                 <Row label="Sold on credit" value={`৳ ${tk(selectedShift.total_due_sales_paisa)}`} tone="text-amber-800" />
                 {dueCollected > 0 && <Row label="Old balances collected" value={`৳ ${tk(dueCollected)}`} />}
               </div>

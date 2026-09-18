@@ -89,6 +89,11 @@ export function registerReportsHandlers() {
           else otherPaisa += p.amount_paisa;
         } else if (p.direction === 'out' && p.type === 'refund') {
           totalRefundedPaisa += p.amount_paisa;
+          if (p.method === 'cash') cashPaisa -= p.amount_paisa;
+          else if (p.method === 'bkash') bkashPaisa -= p.amount_paisa;
+          else if (p.method === 'nagad') nagadPaisa -= p.amount_paisa;
+          else if (p.method === 'card') cardPaisa -= p.amount_paisa;
+          else otherPaisa -= p.amount_paisa;
         }
       });
 
