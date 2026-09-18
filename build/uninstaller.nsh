@@ -18,17 +18,45 @@
       "Also delete all shop data (database, settings and local backups)?$\r$\n$\r$\nChoose No to keep the data for a future install." \
       /SD IDNO IDNO keepData
 
+    ; The database is open for as long as the app runs, and a file that is
+    ; open cannot be deleted: a first version of this ran straight after the
+    ; app was closed, cleared the caches, and left shop.db behind because its
+    ; handle had not been released yet. So the app is stopped here if it is
+    ; still up, and the delete is retried for a while until the folder is
+    ; really empty.
+    !ifmacrodef FIND_PROCESS
+      !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+      ${if} $R0 == 0
+        !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 1
+        Sleep 1500
+      ${endif}
+    !endif
+
     ; Electron keeps data per user even for an all-users install.
     ${if} $installMode == "all"
       SetShellVarContext current
     ${endif}
-    RMDir /r "$APPDATA\${APP_FILENAME}"
-    !ifdef APP_PRODUCT_FILENAME
-      RMDir /r "$APPDATA\${APP_PRODUCT_FILENAME}"
-    !endif
-    !ifdef APP_PACKAGE_NAME
-      RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
-    !endif
+
+    StrCpy $R9 0
+    ${Do}
+      RMDir /r "$APPDATA\${APP_FILENAME}"
+      !ifdef APP_PRODUCT_FILENAME
+        RMDir /r "$APPDATA\${APP_PRODUCT_FILENAME}"
+      !endif
+      !ifdef APP_PACKAGE_NAME
+        RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
+      !endif
+      IntOp $R9 $R9 + 1
+
+      ${IfNot} ${FileExists} "$APPDATA\${APP_FILENAME}\*.*"
+      !ifdef APP_PACKAGE_NAME
+      ${AndIfNot} ${FileExists} "$APPDATA\${APP_PACKAGE_NAME}\*.*"
+      !endif
+        ${ExitDo}
+      ${EndIf}
+      Sleep 1000
+    ${LoopUntil} $R9 >= 15
+
     ${if} $installMode == "all"
       SetShellVarContext all
     ${endif}
