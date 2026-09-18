@@ -1,6 +1,6 @@
 {
   "name": "fatema-electronics-pos",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "Fatema Electronics POS Desktop Application",
   "main": "dist-electron/main.js",
   "scripts": {
