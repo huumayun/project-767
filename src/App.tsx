@@ -431,7 +431,6 @@ function MainApp() {
             isOpen={showWizardModal}
             onCompleted={() => {
               setShowWizardModal(false);
-              fetchCatalog();
             }}
           />
         </>
@@ -455,7 +454,6 @@ function MainApp() {
           isOpen={showWizardModal}
           onCompleted={() => {
             setShowWizardModal(false);
-            fetchCatalog();
           }}
         />
       </>
@@ -777,7 +775,13 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'sales' && <SalesHistoryView currentSession={currentSession} onShiftChanged={fetchActiveShift} />}
+        {activeTab === 'sales' && (
+          <SalesHistoryView 
+            currentSession={currentSession} 
+            onShiftChanged={fetchActiveShift} 
+            onRefreshProducts={fetchCatalog}
+          />
+        )}
 
         {activeTab === 'customers' && (
           <CustomersView currentSession={currentSession} onShiftChanged={fetchActiveShift} />

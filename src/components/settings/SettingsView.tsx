@@ -416,7 +416,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
     setShowEraseModal(false);
     toast.success(`Business data erased. A backup was saved first: ${backupFile}`);
     // Every screen holds the old catalogue, customers and shift in memory.
-    setTimeout(() => window.location.reload(), 2500);
+    setTimeout(() => window.location.reload(), 1000);
   };
 
   if (!isOwner) {
@@ -787,30 +787,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
           </div>
         )}
 
-        {/* Sample data - development builds only. The installed app never
-            shows this card, and the main process refuses the call there too. */}
-        {activeTab === 'advanced' && appInfo?.sampleDataAvailable && (
-          <div className="bg-jungle-teal-50 border border-dashed border-frozen-water-300 rounded-2xl p-4 shadow-xs space-y-3 mb-6">
-            <div className="flex items-center gap-2 border-b border-jungle-teal-200 pb-3">
-              <Database className="w-4 h-4 text-frozen-water-700" />
-              <h3 className="font-semibold text-ui-base text-jungle-teal-900">Sample Data</h3>
-              <span className="ml-auto text-ui-2xs font-semibold uppercase tracking-wider text-frozen-water-700 bg-frozen-water-50 border border-frozen-water-200 rounded-md px-1.5 py-0.5">
-                Development build only
-              </span>
-            </div>
-            <p className="text-jungle-teal-600 text-ui-xs">
-              Adds 10 parts with stock, 3 customers and 2 suppliers, for trying the app out. Only works on an empty
-              shop, and is not available in the installed app.
-            </p>
-            <button
-              type="button"
-              onClick={handleSeedDemo}
-              className="h-9 px-4 bg-frozen-water-700 hover:bg-frozen-water-800 text-white font-medium rounded-xl text-ui-xs transition-colors"
-            >
-              Load sample data
-            </button>
-          </div>
-        )}
+
 
         {/* Print Layout. Everything that decides what a printed invoice looks
             like, with a live preview beside it - the controls are meaningless

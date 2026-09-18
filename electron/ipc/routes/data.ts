@@ -103,13 +103,22 @@ export function registerDataHandlers() {
     }
 
     const erased = businessCounts(db);
-    db.transaction(() => {
-      for (const table of BUSINESS_TABLES) db.prepare(`DELETE FROM ${table}`).run();
-    })();
-
-    // Kept on purpose: users, settings, the audit log and every backup. The log
-    // is how anyone later finds out this happened, and who did it.
-    logAudit('BUSINESS_DATA_ERASED', 'system', undefined, { erased, backup: backup.filePath });
+    
+    // Perform a full factory reset (as requested by user)
+    // Close the database, delete the file, and relaunch the app.
+    db.close();
+    
+    const fs = require('fs');
+    const { app } = require('electron');
+    const userDataPath = app.getPath('userData');
+    const dbPath = path.join(userDataPath, 'shop.db');
+    
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    if (fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`);
+    if (fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`);
+    
+    app.relaunch();
+    app.exit(0);
 
     return { success: true, erased, backupFile: backup.fileName, backupPath: backup.filePath };
   });

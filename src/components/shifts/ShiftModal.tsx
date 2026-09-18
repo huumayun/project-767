@@ -712,10 +712,14 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                 <div className="flex flex-wrap gap-1.5 pt-1.5">
                   <button
                     type="button"
-                    onClick={() => setWithdrawnCashTaka(cashSalesTaka)}
+                    onClick={() => {
+                      const total = parseFloat(actualCashTaka) || 0;
+                      const float = (targetSummary?.opening_cash_paisa || 0) / 100;
+                      setWithdrawnCashTaka(Math.max(0, total - float).toFixed(2));
+                    }}
                     className="px-2.5 py-1 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-lg text-[11px] font-mono font-bold border border-jungle-teal-200"
                   >
-                    Take the sales (৳ {cashSalesTaka})
+                    Take all except float (৳ {Math.max(0, (parseFloat(actualCashTaka) || 0) - (targetSummary?.opening_cash_paisa || 0) / 100).toFixed(2)})
                   </button>
                   <button
                     type="button"
@@ -725,7 +729,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                     }}
                     className="px-2.5 py-1 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-lg text-[11px] font-mono font-bold border border-jungle-teal-200"
                   >
-                    Leave 1000 in the drawer
+                    Leave 1000
                   </button>
                   <button
                     type="button"
@@ -735,7 +739,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                     }}
                     className="px-2.5 py-1 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-lg text-[11px] font-mono font-bold border border-jungle-teal-200"
                   >
-                    Leave 500 in the drawer
+                    Leave 500
                   </button>
                   <button
                     type="button"

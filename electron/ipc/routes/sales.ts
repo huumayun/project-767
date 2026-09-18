@@ -384,8 +384,9 @@ export function registerSalesHandlers() {
       return db.prepare(`
         SELECT s.*, c.name as customer_name, u.name as cashier_name,
           COALESCE(paid.sum_paid, 0) AS paid_at_sale_paisa,
-          MAX(0, s.total_paisa - COALESCE(paid.sum_paid, 0)) AS due_at_sale_paisa,
+          MAX(0, (s.total_paisa - COALESCE(returned.sum_returned, 0)) - COALESCE(paid.sum_paid, 0)) AS due_at_sale_paisa,
           COALESCE(refunds.sum_refunded, 0) AS refunded_paisa,
+          COALESCE(returned.sum_returned, 0) AS returned_value_paisa,
           ret.return_invoice_no
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
@@ -402,6 +403,13 @@ export function registerSalesHandlers() {
           WHERE p.direction = 'out' AND p.type = 'refund' AND p.deleted_at IS NULL
           GROUP BY p.sale_id
         ) refunds ON refunds.sale_id = s.id
+        LEFT JOIN (
+          SELECT r.sale_id, SUM(ri.amount_paisa) AS sum_returned
+          FROM return_items ri
+          JOIN returns r ON ri.return_id = r.id
+          WHERE ri.deleted_at IS NULL AND r.deleted_at IS NULL
+          GROUP BY r.sale_id
+        ) returned ON returned.sale_id = s.id
         LEFT JOIN (
           SELECT sale_id, return_invoice_no
           FROM returns
@@ -715,6 +723,24 @@ export function registerSalesHandlers() {
 
       const totalRefundPaisa = items.reduce((s: number, i: any) => s + i.amount_paisa, 0);
 
+      const collectedPaisa = (db.prepare(
+        "SELECT COALESCE(SUM(amount_paisa), 0) AS n FROM payments WHERE sale_id = ? AND direction = 'in' AND deleted_at IS NULL"
+      ).get(ret.sale_id) as any).n;
+      const refundedBeforePaisa = (db.prepare(
+        "SELECT COALESCE(SUM(amount_paisa), 0) AS n FROM payments WHERE sale_id = ? AND direction = 'out' AND type = 'refund' AND deleted_at IS NULL"
+      ).get(ret.sale_id) as any).n;
+      const returnedBeforeTotalPaisa = (db.prepare(`
+        SELECT COALESCE(SUM(ri.amount_paisa), 0) AS n FROM return_items ri
+        JOIN returns r ON r.id = ri.return_id
+        WHERE r.sale_id = ? AND ri.deleted_at IS NULL AND r.created_at < ?
+      `).get(ret.sale_id, ret.created_at) as any).n;
+
+      const netPaidPaisa = collectedPaisa - refundedBeforePaisa;
+      const saleValueLeftPaisa = ret.original_total_paisa - (returnedBeforeTotalPaisa + totalRefundPaisa);
+      const overpaidPaisa = netPaidPaisa - saleValueLeftPaisa;
+      const cashRefundPaisa = Math.max(0, Math.min(totalRefundPaisa, netPaidPaisa, overpaidPaisa));
+      const creditedToDuePaisa = totalRefundPaisa - cashRefundPaisa;
+
       const pdfBase64 = await generateReturnInvoicePdf(
         {
           shopName,
@@ -743,6 +769,8 @@ export function registerSalesHandlers() {
             totalPaisa: i.amount_paisa,
           })),
           totalRefundPaisa,
+          cashRefundPaisa,
+          creditedToDuePaisa,
         },
         printOptionsFromSettings(settingsMap, layout)
       );

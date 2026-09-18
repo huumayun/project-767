@@ -356,11 +356,29 @@ function buildMemoContent(
       ? {
           stack: [
             { canvas: [{ type: 'line', x1: 0, y1: 0, x2: contentWidthPt, y2: 0, lineWidth: 0.8, lineColor: RULE }], margin: [0, 0, 0, 4] },
-            { text: data.shopName, fontSize: size.total, bold: true, alignment: 'center', color: INK },
-            ...footerLines.map((line) => ({ text: line, fontSize: size.fine, color: MUTED, alignment: 'center', margin: [0, 1, 0, 0] })),
-            data.invoiceFooter
-              ? { text: data.invoiceFooter, fontSize: size.fine, color: MUTED, alignment: 'center', margin: [0, 3, 0, 0], italics: true }
-              : {},
+            {
+              columns: [
+                { width: '*', text: '' },
+                {
+                  width: 'auto',
+                  stack: [
+                    { text: data.shopName, fontSize: size.total, bold: true, alignment: 'center', color: INK },
+                    ...footerLines.map((line) => ({ text: line, fontSize: size.fine, color: MUTED, alignment: 'center', margin: [0, 1, 0, 0] })),
+                    data.invoiceFooter
+                      ? { text: data.invoiceFooter, fontSize: size.fine, color: MUTED, alignment: 'center', margin: [0, 3, 0, 0], italics: true }
+                      : {},
+                  ],
+                },
+                {
+                  width: '*',
+                  text: 'Software by GraamTech',
+                  fontSize: size.fine,
+                  color: '#94a3b8',
+                  alignment: 'right',
+                  margin: [0, 2, 0, 0],
+                },
+              ],
+            },
           ],
           margin: [0, 24, 0, 0],
         }
@@ -608,7 +626,7 @@ export async function generateInvoicePdf(
               opts.showFooter && data.invoiceFooter
                 ? { text: data.invoiceFooter + '\n', bold: true, fontSize: size.footer }
                 : '',
-              { text: 'Software by Gramtech\n', fontSize: size.fine, color: '#94a3b8' },
+              { text: 'Software by GraamTech\n', fontSize: size.fine, color: '#94a3b8' },
             ],
             alignment: isThermal ? 'center' : 'left',
           },
@@ -698,13 +716,15 @@ export interface ReturnInvoicePdfData {
     totalPaisa: number;
   }>;
   originalTotalPaisa: number;
-  items: Array<{
+  items: {
     productName: string;
     qty: number;
     unitPricePaisa: number;
     totalPaisa: number;
-  }>;
+  }[];
   totalRefundPaisa: number;
+  cashRefundPaisa?: number;
+  creditedToDuePaisa?: number;
 }
 
 function buildMemoReturnContent(
@@ -810,8 +830,16 @@ function buildMemoReturnContent(
   const totalsBody: any[] = [
     totalsRow('Original Total :', money(data.originalTotalPaisa)),
     totalsRow('Total Refund :', `-${money(data.totalRefundPaisa)}`, { color: '#dc2626' }),
-    totalsRow('Final Net Bill :', money(finalNetPaisa), { bold: true, rule: true }),
   ];
+
+  if ((data.creditedToDuePaisa || 0) > 0) {
+    totalsBody.push(totalsRow('Adjusted against Due :', money(data.creditedToDuePaisa!)));
+  }
+  if ((data.cashRefundPaisa || 0) > 0) {
+    totalsBody.push(totalsRow('Actual Payout :', money(data.cashRefundPaisa!), { color: '#dc2626', bold: true }));
+  }
+
+  totalsBody.push(totalsRow('Final Net Bill :', money(finalNetPaisa), { bold: true, rule: true }));
 
   const refundMethodLabel: Record<string, string> = {
     cash: 'Cash', bkash: 'bKash', nagad: 'Nagad', card: 'Card', other: 'Other',
@@ -1053,6 +1081,20 @@ export async function generateReturnInvoicePdf(
         ],
         margin: [0, 0, 0, 2],
       },
+      (data.creditedToDuePaisa || 0) > 0 ? {
+        columns: [
+          { width: '*', text: 'Adjusted to Due:', fontSize: size.meta },
+          { width: 'auto', text: `Tk ${money(data.creditedToDuePaisa!)}`, fontSize: size.meta, alignment: 'right' },
+        ],
+        margin: [0, 0, 0, 1],
+      } : {},
+      (data.cashRefundPaisa || 0) > 0 ? {
+        columns: [
+          { width: '*', text: 'Actual Payout:', fontSize: size.meta, bold: true, color: '#dc2626' },
+          { width: 'auto', text: `Tk ${money(data.cashRefundPaisa!)}`, fontSize: size.meta, bold: true, alignment: 'right', color: '#dc2626' },
+        ],
+        margin: [0, 0, 0, 1],
+      } : {},
       rule(0.3),
       {
         columns: [
@@ -1078,7 +1120,21 @@ export async function generateReturnInvoicePdf(
 
       // ── Footer ──
       rule(0.5),
-      { text: data.invoiceFooter || 'Thank you!', fontSize: size.fine, alignment: 'center', italics: true },
+      opts.paper === 'a4'
+        ? {
+            columns: [
+              { width: '*', text: '' },
+              { width: 'auto', text: data.invoiceFooter || 'Thank you!', fontSize: size.fine, alignment: 'center', italics: true },
+              { width: '*', text: 'Software by GraamTech', fontSize: size.fine, color: '#94a3b8', alignment: 'right' },
+            ],
+            margin: [0, 4, 0, 0]
+          }
+        : {
+            stack: [
+              { text: data.invoiceFooter || 'Thank you!', fontSize: size.fine, alignment: 'center', italics: true },
+              { text: 'Software by GraamTech', fontSize: size.fine, color: '#94a3b8', alignment: 'center', margin: [0, 8, 0, 0] },
+            ]
+          },
     ],
     defaultStyle: { font: 'Roboto' },
   };

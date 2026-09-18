@@ -56,7 +56,19 @@ export const ReturnInvoiceModal: React.FC<ReturnInvoiceModalProps> = ({
       setSaveState('idle');
       setPdfData('');
       setReturnDetails(null);
-      loadData(currentLayout);
+      
+      if (window.api?.settings) {
+        window.api.settings.get().then(s => {
+          const savedLayout = s?.default_invoice_layout;
+          const defaultLayout = (savedLayout === 'a4' || savedLayout === '80mm') ? savedLayout : '80mm';
+          setCurrentLayout(defaultLayout);
+          loadData(defaultLayout);
+        }).catch(() => {
+          loadData(currentLayout);
+        });
+      } else {
+        loadData(currentLayout);
+      }
     }
   }, [isOpen, returnInvoiceNo]);
 

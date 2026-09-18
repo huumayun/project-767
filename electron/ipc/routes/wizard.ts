@@ -45,6 +45,7 @@ export function registerWizardHandlers() {
         default_invoice_layout: z.enum(['80mm', 'a4']).default('80mm'),
         owner_password: z.string().min(4).optional().nullable(),
         owner_username: z.string().min(3).optional().nullable(),
+        owner_name: z.string().min(1).optional().nullable(),
       });
   
       const data = schema.parse(rawPayload);
@@ -87,7 +88,7 @@ export function registerWizardHandlers() {
         upsertSetting.run('default_invoice_layout', data.default_invoice_layout, now);
         upsertSetting.run('first_run_completed', '1', now);
   
-        if (data.owner_password || data.owner_username) {
+        if (data.owner_password || data.owner_username || data.owner_name) {
           // Find the primary owner to update
           const ownerIdRow = db.prepare("SELECT id FROM users WHERE role = 'owner' AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1").get() as any;
           if (ownerIdRow) {
@@ -96,6 +97,10 @@ export function registerWizardHandlers() {
             if (data.owner_username) {
               updateCols.push("username = ?");
               updateVals.push(data.owner_username);
+            }
+            if (data.owner_name) {
+              updateCols.push("name = ?");
+              updateVals.push(data.owner_name);
             }
             if (data.owner_password) {
               const salt = bcrypt.genSaltSync(12);

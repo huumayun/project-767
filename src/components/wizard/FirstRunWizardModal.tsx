@@ -154,6 +154,7 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
   const [defaultInvoiceLayout, setDefaultInvoiceLayout] = useState<'80mm' | 'a4'>('80mm');
   // Deliberately blank: prefilling the seeded password is what let shops finish
   // setup still using owner/owner123.
+  const [ownerName, setOwnerName] = useState('');
   const [ownerUsername, setOwnerUsername] = useState('owner');
   const [ownerPassword, setOwnerPassword] = useState('');
   const [ownerPasswordConfirm, setOwnerPasswordConfirm] = useState('');
@@ -219,6 +220,7 @@ export const FirstRunWizardModal: React.FC<FirstRunWizardModalProps> = ({
         shop_phone: shopPhone.trim(),
         device_id_prefix: deviceIdPrefix.trim() || 'REG01',
         default_invoice_layout: defaultInvoiceLayout,
+        owner_name: ownerName.trim() || shopName.trim(), // fallback to shop name
         owner_username: ownerUsername.trim(),
         owner_password: ownerPassword.trim(),
       });

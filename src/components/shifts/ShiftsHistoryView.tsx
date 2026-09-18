@@ -215,6 +215,7 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
             .warn { color: #b45309; }
             .txs th { border-bottom: 1px solid #0f172a; font-size: 8.5pt; text-transform: uppercase;
                       color: #475569; text-align: left; letter-spacing: .04em; }
+            .txs th.num { text-align: right; }
             .txs td { border-bottom: 1px solid #e2e8f0; font-size: 9.5pt; }
             .txs tr { page-break-inside: avoid; break-inside: avoid; }
             /* A heading stranded at the foot of a page, or half a signature

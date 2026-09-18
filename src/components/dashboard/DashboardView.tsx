@@ -846,17 +846,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <button
                 type="button"
                 onClick={() => choosePreset('7days')}
-                className="px-3.5 py-1.5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-azure-mist-700 hover:bg-azure-mist-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
               >
-                {'📊 View Last 7 Days'}
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>View Last 7 Days</span>
               </button>
               )}
               <button
                 type="button"
                 onClick={() => onNavigateTab('pos')}
-                className="px-3.5 py-1.5 bg-jungle-teal-200 hover:bg-jungle-teal-300 text-jungle-teal-900 rounded-xl text-xs font-semibold transition-colors"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-jungle-teal-200 hover:bg-jungle-teal-300 text-jungle-teal-900 rounded-xl text-xs font-semibold transition-colors"
               >
-                {'🛒 Launch POS'}
+                <ShoppingCart className="w-3.5 h-3.5" />
+                <span>Launch POS</span>
               </button>
             </div>
           </div>

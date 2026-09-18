@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, Category } from '../../types/ipc';
 import { CategoryPicker } from './CategoryPicker';
-import { Package, X, Plus, AlertCircle, Save, Barcode, Sparkles, CheckCircle2, ArrowRight, Layers, Clock } from 'lucide-react';
+import { Package, X, Plus, AlertCircle, Save, Barcode, Sparkles, CheckCircle2, ArrowRight, Layers, Clock, Tag, CircleDollarSign } from 'lucide-react';
 import { playScanSuccess, playScanError } from '../../utils/audio';
 
 interface ProductFormModalProps {
@@ -287,55 +287,60 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5 text-sm font-medium">
-          {/* Barcode & Brand */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-jungle-teal-800">
-                  Barcode <span className="text-jungle-teal-500 font-normal text-xs">(Optional)</span>
-                </label>
-                {!product && (
-                  <button
-                    type="button"
-                    onClick={handleGenerateBarcode}
-                    className="text-azure-mist-700 hover:text-azure-mist-800 text-[11px] font-bold flex items-center gap-1 hover:underline"
-                    title="Generate unique internal barcode"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>Auto Generate</span>
-                  </button>
-                )}
+        <form onSubmit={handleSubmit} className="space-y-6 text-sm font-medium">
+          {/* Basic Details */}
+          <div className="bg-jungle-teal-50/40 p-4 rounded-xl border border-jungle-teal-100/50 space-y-4">
+            <h4 className="text-xs font-bold text-jungle-teal-800 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <Barcode className="w-4 h-4 text-azure-mist-600" /> Basic Details
+            </h4>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-jungle-teal-800">
+                    Barcode <span className="text-jungle-teal-500 font-normal text-xs">(Optional)</span>
+                  </label>
+                  {!product && (
+                    <button
+                      type="button"
+                      onClick={handleGenerateBarcode}
+                      className="text-azure-mist-700 hover:text-azure-mist-800 text-[11px] font-bold flex items-center gap-1 hover:underline"
+                      title="Generate unique internal barcode"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Auto Generate</span>
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    ref={barcodeInputRef}
+                    type="text"
+                    value={barcode}
+                    onChange={(e) => setBarcode(e.target.value)}
+                    onKeyDown={handleBarcodeKeyDown}
+                    placeholder="Leave blank for auto-barcode"
+                    className="w-full bg-white border border-jungle-teal-200 rounded-xl pl-9 pr-3 py-2.5 text-jungle-teal-900 font-mono focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all"
+                  />
+                  <Barcode className="w-4 h-4 text-jungle-teal-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
-              <div className="relative">
-                <input
-                  ref={barcodeInputRef}
-                  type="text"
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
-                  onKeyDown={handleBarcodeKeyDown}
-                  placeholder="Leave blank for auto-barcode"
-                  className="w-full bg-white border border-jungle-teal-200 rounded-xl pl-9 pr-3 py-2.5 text-jungle-teal-900 font-mono focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all"
-                />
-                <Barcode className="w-4 h-4 text-jungle-teal-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+
+              <div>
+                <label className="block text-jungle-teal-800 mb-1.5">Brand / Manufacturer</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    placeholder="e.g. Bosch, NGK, Denso"
+                    className="w-full bg-white border border-jungle-teal-200 rounded-xl pl-9 pr-3 py-2.5 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all"
+                  />
+                  <Tag className="w-4 h-4 text-jungle-teal-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
             </div>
 
-            <div>
-              <label className="block text-jungle-teal-800 mb-1.5">Brand / Manufacturer</label>
-              <input
-                type="text"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                placeholder="e.g. Bosch, NGK, Denso"
-                className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3.5 py-2.5 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all"
-              />
-            </div>
-          </div>
-
-          {/* Name. Full width now the Bangla field has gone - left in the
-              two-column grid it sat at half width against dead space. */}
-          <div>
             <div>
               <label className="block text-jungle-teal-800 mb-1.5">
                 Product Name <span className="text-rose-500">*</span>
@@ -350,148 +355,158 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3.5 py-2.5 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all"
               />
             </div>
-
           </div>
 
-          {/* Category & Unit */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div>
-              <CategoryPicker
-                categories={categories}
-                value={categoryId}
-                onChange={setCategoryId}
-                onAddCategory={onAddCategory}
-              />
-            </div>
-
-            <div>
-              <label className="block text-jungle-teal-800 mb-1.5">Unit of Measure</label>
-              <select
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3.5 py-2.5 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 shadow-2xs transition-all cursor-pointer"
-              >
-                <option value="pcs">Pieces (Pcs)</option>
-                <option value="set">Set</option>
-                <option value="box">Box</option>
-                <option value="kg">Kilogram (Kg)</option>
-                <option value="ltr">Liter (Ltr)</option>
-                <option value="pair">Pair</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Pricing & Stock */}
-          <div className="grid gap-4 pt-2 font-mono grid-cols-2 sm:grid-cols-4">
-            <div>
-              <label className="block text-jungle-teal-800 font-sans mb-1.5">
-                Last Purchase Cost (৳) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                step="0.01"
-                value={costPriceTaka}
-                onChange={(e) => setCostPriceTaka(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all font-bold"
-              />
-            </div>
-
-            <div>
-              <label className="block text-jungle-teal-800 font-sans mb-1.5">
-                Sell Price (৳) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                step="0.01"
-                value={sellPriceTaka}
-                onChange={(e) => setSellPriceTaka(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all font-bold"
-              />
-            </div>
-
-            {!product ? (
+          {/* Categorization */}
+          <div className="bg-jungle-teal-50/40 p-4 rounded-xl border border-jungle-teal-100/50 space-y-4">
+            <h4 className="text-xs font-bold text-jungle-teal-800 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-azure-mist-600" /> Categorization
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
-                <label className="block text-jungle-teal-800 font-sans mb-1.5">Initial Stock</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={stockQty}
-                  onChange={(e) => setStockQty(e.target.value)}
-                  className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 shadow-2xs transition-all font-mono font-bold"
+                <CategoryPicker
+                  categories={categories}
+                  value={categoryId}
+                  onChange={setCategoryId}
+                  onAddCategory={onAddCategory}
                 />
               </div>
-            ) : (
+
               <div>
-                <label className="flex items-center justify-between mb-1.5">
-                  <span className="block text-jungle-teal-800 font-sans">Total Stock</span>
-                  <span className="text-[10px] text-azure-mist-800 font-bold bg-azure-mist-50 border border-azure-mist-200 px-1.5 py-0.5 rounded-md leading-none">Cur: {product.stock_qty || 0}</span>
+                <label className="block text-jungle-teal-800 mb-1.5">Unit of Measure</label>
+                <select
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3.5 py-2.5 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 shadow-2xs transition-all cursor-pointer"
+                >
+                  <option value="pcs">Pieces (Pcs)</option>
+                  <option value="set">Set</option>
+                  <option value="box">Box</option>
+                  <option value="kg">Kilogram (Kg)</option>
+                  <option value="ltr">Liter (Ltr)</option>
+                  <option value="pair">Pair</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Pricing & Inventory */}
+          <div className="bg-jungle-teal-50/40 p-4 rounded-xl border border-jungle-teal-100/50 space-y-4">
+            <h4 className="text-xs font-bold text-jungle-teal-800 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <CircleDollarSign className="w-4 h-4 text-azure-mist-600" /> Pricing & Inventory
+            </h4>
+            <div className="grid gap-5 font-mono grid-cols-2 sm:grid-cols-4">
+              <div>
+                <label className="block text-jungle-teal-800 font-sans mb-1.5">
+                  Cost (৳) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="number"
+                  required
                   min="0"
-                  value={stockQty}
-                  onChange={(e) => setStockQty(e.target.value)}
-                  className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 shadow-2xs transition-all font-mono font-bold"
+                  step="0.01"
+                  value={costPriceTaka}
+                  onChange={(e) => setCostPriceTaka(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all font-bold"
                 />
               </div>
-            )}
 
-            <div>
-              <label className="block text-jungle-teal-800 font-sans mb-1.5">Low Stock Alert</label>
-              <input
-                type="number"
-                min="0"
-                value={lowStockThreshold}
-                onChange={(e) => setLowStockThreshold(e.target.value)}
-                className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-amber-700 focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-2xs transition-all font-mono font-bold"
-              />
-            </div>
-          </div>
+              <div>
+                <label className="block text-jungle-teal-800 font-sans mb-1.5">
+                  Sell Price (৳) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.01"
+                  value={sellPriceTaka}
+                  onChange={(e) => setSellPriceTaka(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 placeholder:text-jungle-teal-400 shadow-2xs transition-all font-bold"
+                />
+              </div>
 
-          {/* Inventory Batches Details (if multiple batches exist) */}
-          {product?.batches && product.batches.length > 0 && (
-            <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-xl p-3 shadow-xs mb-3">
-              <h4 className="text-xs font-bold text-jungle-teal-900 mb-2 flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-azure-mist-600" />
-                Inventory Cost Breakdown (FIFO Batches)
-              </h4>
-              <div className="space-y-1.5">
-                {product.batches.map((b, i) => (
-                  <div key={i} className="flex justify-between items-center text-xs font-mono bg-white border border-jungle-teal-100 rounded-lg px-3 py-2 shadow-2xs">
-                    <div>
-                      <span className="font-semibold text-jungle-teal-800">{b.remaining_qty} {product.unit}</span>
-                      {b.received_at && (
-                        <span className="text-[9px] text-jungle-teal-400 ml-2 font-sans opacity-80" title={new Date(b.received_at).toLocaleString()}>
-                          {new Date(b.received_at).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-jungle-teal-600 font-bold">@ ৳ {(b.cost_price_paisa / 100).toFixed(2)}</span>
-                  </div>
-                ))}
+              {!product ? (
+                <div>
+                  <label className="block text-jungle-teal-800 font-sans mb-1.5">Initial Stock</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={stockQty}
+                    onChange={(e) => setStockQty(e.target.value)}
+                    className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 shadow-2xs transition-all font-mono font-bold"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="flex items-center justify-between mb-1.5">
+                    <span className="block text-jungle-teal-800 font-sans">Total Stock</span>
+                    <span className="text-[10px] text-azure-mist-800 font-bold bg-azure-mist-50 border border-azure-mist-200 px-1.5 py-0.5 rounded-md leading-none">Cur: {product.stock_qty || 0}</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={stockQty}
+                    onChange={(e) => setStockQty(e.target.value)}
+                    className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-500 focus:ring-1 focus:ring-azure-mist-500 shadow-2xs transition-all font-mono font-bold"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-jungle-teal-800 font-sans mb-1.5">Low Stock Alert</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={lowStockThreshold}
+                  onChange={(e) => setLowStockThreshold(e.target.value)}
+                  className="w-full bg-white border border-jungle-teal-200 rounded-xl px-3 py-2 text-amber-700 focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-2xs transition-all font-mono font-bold"
+                />
               </div>
             </div>
-          )}
 
+            {/* Inventory Batches Details (if multiple batches exist) */}
+            {product?.batches && product.batches.length > 0 && (
+              <div className="bg-white border border-jungle-teal-100 rounded-xl p-3 shadow-xs mt-3">
+                <h4 className="text-[11px] font-bold text-jungle-teal-800 mb-2 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-azure-mist-500" />
+                  Inventory Cost Breakdown (FIFO Batches)
+                </h4>
+                <div className="space-y-1.5">
+                  {product.batches.map((b, i) => (
+                    <div key={i} className="flex justify-between items-center text-[11px] font-mono bg-jungle-teal-50/50 border border-jungle-teal-100 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                      <div>
+                        <span className="font-semibold text-jungle-teal-800">{b.remaining_qty} {product.unit}</span>
+                        {b.received_at && (
+                          <span className="text-[9px] text-jungle-teal-500 ml-2 font-sans" title={new Date(b.received_at).toLocaleString()}>
+                            {new Date(b.received_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-jungle-teal-700 font-bold">@ ৳ {(b.cost_price_paisa / 100).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
-
-          <div className="flex items-center gap-2.5 pt-2 pb-1">
-            <input
-              type="checkbox"
-              id="isSerial"
-              checked={isSerialTracked}
-              onChange={(e) => setIsSerialTracked(e.target.checked)}
-              className="rounded bg-white border-jungle-teal-300 text-azure-mist-700 focus:ring-azure-mist-600 w-4 h-4 cursor-pointer"
-            />
-            <label htmlFor="isSerial" className="text-jungle-teal-800 font-bold select-none cursor-pointer">
-              Serial Number Tracking (For warranty / high-value components)
-            </label>
+          {/* Advanced Options */}
+          <div className="bg-jungle-teal-50/40 p-4 rounded-xl border border-jungle-teal-100/50">
+            <div className="flex items-center gap-2.5">
+              <input
+                type="checkbox"
+                id="isSerial"
+                checked={isSerialTracked}
+                onChange={(e) => setIsSerialTracked(e.target.checked)}
+                className="rounded bg-white border-jungle-teal-300 text-azure-mist-700 focus:ring-azure-mist-600 w-4 h-4 cursor-pointer"
+              />
+              <label htmlFor="isSerial" className="text-jungle-teal-800 font-bold select-none cursor-pointer">
+                Serial Number Tracking (For warranty / high-value components)
+              </label>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-5 border-t border-jungle-teal-100">

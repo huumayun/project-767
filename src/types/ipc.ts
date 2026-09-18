@@ -742,6 +742,7 @@ export interface IElectronApi {
       default_invoice_layout?: '80mm' | 'a4';
       owner_username?: string | null;
       owner_password?: string | null;
+      owner_name?: string | null;
     }) => Promise<{ success: boolean; recoveryCodes?: string[] | null }>;
   };
   /** Development builds only, and only into an empty shop. */

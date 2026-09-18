@@ -62,6 +62,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [splitMode, setSplitMode] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const isSubmittingRef = React.useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,6 +76,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setActiveMethod('cash');
       setSplitMode(false);
       setError(null);
+
+      if (window.api?.settings) {
+        window.api.settings.get().then(s => {
+          const savedLayout = s?.default_invoice_layout;
+          if (savedLayout === 'a4' || savedLayout === '80mm') {
+            setLayout(savedLayout);
+          }
+        }).catch(() => {});
+      }
     }
   }, [isOpen, totalPaisa]);
 
@@ -131,6 +141,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current) return;
     if (totalPaidPaisa <= 0 && totalPaisa > 0 && !customerId) {
       setError('Cannot complete an unpaid sale without selecting a registered customer.');
       return;
@@ -146,6 +157,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       payments.push({ method: 'cash', amount_paisa: 0 });
     }
 
+    isSubmittingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -178,6 +190,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setError(err.message || 'Checkout failed.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

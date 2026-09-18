@@ -66,9 +66,10 @@ const rangeFor = (preset: DatePreset, customStart: string, customEnd: string) =>
 interface SalesHistoryViewProps {
   currentSession: UserSession | null;
   onShiftChanged?: () => void;
+  onRefreshProducts?: () => void;
 }
 
-export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSession, onShiftChanged }) => {
+export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSession, onShiftChanged, onRefreshProducts }) => {
   const toast = useToast();
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [search, setSearch] = useState('');
@@ -413,6 +414,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
             fetchSales();
             setShowReturnModal(false);
             if (onShiftChanged) onShiftChanged();
+            if (onRefreshProducts) onRefreshProducts();
           }}
           onViewReturnInvoice={(rtnNo) => {
             setShowReturnModal(false);

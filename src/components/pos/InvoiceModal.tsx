@@ -69,7 +69,19 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     if (isOpen && invoiceNo) {
       // The modal stays mounted between bills; "Saved" belongs to the last one.
       setSaveState('idle');
-      loadInvoiceData(currentLayout);
+      
+      if (window.api?.settings) {
+        window.api.settings.get().then(s => {
+          const savedLayout = s?.default_invoice_layout;
+          const defaultLayout = (savedLayout === 'a4' || savedLayout === '80mm') ? savedLayout : '80mm';
+          setCurrentLayout(defaultLayout);
+          loadInvoiceData(defaultLayout);
+        }).catch(() => {
+          loadInvoiceData(currentLayout);
+        });
+      } else {
+        loadInvoiceData(currentLayout);
+      }
     }
   }, [isOpen, invoiceNo]);
 

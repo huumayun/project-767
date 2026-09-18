@@ -258,6 +258,7 @@ export const PosView: React.FC<PosViewProps> = ({
   });
 
   const [loading, setLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   // Keyboard hints are off until asked for.
@@ -761,12 +762,15 @@ export const PosView: React.FC<PosViewProps> = ({
   handleClearCartRef.current = handleClearCart;
 
   const executeFinalCheckout = async (shouldPrint: boolean) => {
+    if (isSubmittingRef.current) return;
     if (effectiveDuePaisa > 0 && !selectedCustomerId) {
       toast.error('A walk-in customer cannot be sold on credit. Please select a customer.');
       return;
     }
 
     if (!window.api) return;
+    
+    isSubmittingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -836,6 +840,7 @@ export const PosView: React.FC<PosViewProps> = ({
       setError(err.message || 'Checkout failed.');
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

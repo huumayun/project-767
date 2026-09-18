@@ -113,24 +113,19 @@ export const EraseDataModal: React.FC<EraseDataModalProps> = ({ isOpen, onClose,
           <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
             <span className="font-bold text-rose-900 block mb-1.5">Will be erased</span>
             <ul className="space-y-0.5 font-mono text-rose-800">
-              {rows.map(([label, n]) => (
-                <li key={label} className="flex justify-between gap-2">
-                  <span className="font-sans">{label}</span>
-                  <span>{n === undefined ? '…' : n.toLocaleString('en-US')}</span>
-                </li>
-              ))}
+              <li className="flex justify-between gap-2"><span className="font-sans">All Business Data</span></li>
+              <li className="flex justify-between gap-2"><span className="font-sans">Staff Logins & PINs</span></li>
+              <li className="flex justify-between gap-2"><span className="font-sans">Shop Settings</span></li>
             </ul>
             <span className="block text-[11px] text-rose-700 mt-1.5">
-              …with every payment, return, due and stock record that belongs to them.
+              The entire database is deleted and the software will restart as a fresh installation.
             </span>
           </div>
           <div className="rounded-xl border border-jungle-teal-200 bg-white p-3">
             <span className="font-bold text-jungle-teal-900 block mb-1.5">Kept</span>
             <ul className="space-y-0.5 text-jungle-teal-700">
-              <li>Staff logins and PINs</li>
-              <li>Shop settings and print layout</li>
-              <li>The audit log</li>
               <li>All existing backups</li>
+              <li>(Nothing else is kept)</li>
             </ul>
           </div>
         </div>
