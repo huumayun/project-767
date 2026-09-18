@@ -320,11 +320,26 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
   const floatLeftTaka = ((closedSummary?.closing_float_left_paisa ?? Math.max(0, ((parseFloat(actualCashTaka) || 0) - (parseFloat(withdrawnCashTaka) || 0)) * 100)) / 100).toFixed(2);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-950/80 backdrop-blur-xs p-4 overflow-y-auto font-sans">
-      <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-3xl max-w-lg w-full p-6 shadow-2xl text-jungle-teal-950 my-6 space-y-4 animate-in zoom-in-95 duration-200">
-        
+    /*
+     * The panel never grows past the screen. It used to be centred with flex
+     * and left to grow with its content, and on a laptop screen the active
+     * shift view - tiles, the transactions table, two breakdown lists - was
+     * taller than the screen. A flex-centred box that overflows is clipped at
+     * both ends, so the header and its close button sat above the top edge
+     * where no amount of scrolling could reach them. Now the header stays put
+     * and the body scrolls inside the panel.
+     */
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-jungle-teal-950/80 backdrop-blur-xs p-4 font-sans">
+      <div
+        className={`bg-jungle-teal-50 border border-jungle-teal-200 rounded-3xl w-full max-h-[calc(100vh-2rem)] flex flex-col p-6 shadow-2xl text-jungle-teal-950 animate-in zoom-in-95 duration-200 ${
+          // The live view lays its tiles out in rows of three and four, and a
+          // wider panel turns two rows of tiles into one.
+          !closedSummary && currentMode === 'view' ? 'max-w-2xl' : 'max-w-lg'
+        }`}
+      >
+
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-jungle-teal-200 pb-3">
+        <div className="flex items-center justify-between border-b border-jungle-teal-200 pb-3 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-muted-teal-100 text-muted-teal-800 rounded-xl border border-muted-teal-200">
               <Banknote className="w-5 h-5" />
@@ -352,6 +367,10 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Scrolls inside the panel; the negative margin puts the scrollbar at
+            the panel's edge rather than beside the content. */}
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pt-4 -mx-6 px-6 pb-1">
 
         {error && (
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-ui-xs font-semibold flex items-center gap-2">
@@ -884,7 +903,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
                     Transactions ({saleRows.length})
                   </span>
                 </div>
-                <div className="max-h-56 overflow-y-auto">
+                <div className="max-h-44 overflow-y-auto">
                   <table className="w-full text-ui-2xs font-mono">
                     <thead className="text-jungle-teal-600 bg-jungle-teal-50/60 sticky top-0">
                       <tr>
@@ -1079,6 +1098,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
           </div>
         )}
 
+        </div>
       </div>
     </div>
   );
