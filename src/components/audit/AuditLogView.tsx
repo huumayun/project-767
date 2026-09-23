@@ -194,7 +194,7 @@ const formatDetails = (detailJson?: string | null) => {
                 filteredLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-jungle-teal-100/50 transition-colors">
                     <td className="p-3.5 text-jungle-teal-600 whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleDateString()} <span className="text-jungle-teal-400">|</span> {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(log.created_at).toLocaleDateString('en-GB')} <span className="text-jungle-teal-400">|</span> {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="p-3.5 font-semibold text-jungle-teal-800 flex items-center gap-2">
                       <User className="w-3.5 h-3.5 text-jungle-teal-400" />

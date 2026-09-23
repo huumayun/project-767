@@ -542,6 +542,7 @@ export function calculateShiftSummary(db: any, shift: any) {
       s.status,
       s.created_at,
       s.customer_id,
+      COALESCE(s.previous_due_paid_paisa, 0) AS previous_due_paid_paisa,
       COALESCE(c.name, 'Walk-in') AS customer_name,
       COALESCE((
         SELECT SUM(pm.amount_paisa) FROM payments pm
@@ -665,7 +666,55 @@ export function calculateShiftSummary(db: any, shift: any) {
     }
   });
 
-  // 3. Shift Cash In / Out (Petty Cash)
+
+  
+  // Move previous_due_paid_paisa from sales totals to due collected totals
+  sales.forEach((s) => {
+    let duePaid = s.previous_due_paid_paisa;
+    if (duePaid > 0) {
+      if (cashSalesPaisa >= duePaid) {
+        cashSalesPaisa -= duePaid;
+        cashDueCollectedPaisa += duePaid;
+      } else {
+        duePaid -= cashSalesPaisa;
+        cashDueCollectedPaisa += cashSalesPaisa;
+        cashSalesPaisa = 0;
+        
+        if (bkashSalesPaisa >= duePaid) {
+          bkashSalesPaisa -= duePaid;
+          otherDueCollectedPaisa += duePaid;
+        } else {
+          duePaid -= bkashSalesPaisa;
+          otherDueCollectedPaisa += bkashSalesPaisa;
+          bkashSalesPaisa = 0;
+          
+          if (nagadSalesPaisa >= duePaid) {
+            nagadSalesPaisa -= duePaid;
+            otherDueCollectedPaisa += duePaid;
+          } else {
+            duePaid -= nagadSalesPaisa;
+            otherDueCollectedPaisa += nagadSalesPaisa;
+            nagadSalesPaisa = 0;
+            
+            if (cardSalesPaisa >= duePaid) {
+              cardSalesPaisa -= duePaid;
+              otherDueCollectedPaisa += duePaid;
+            } else {
+              duePaid -= cardSalesPaisa;
+              otherDueCollectedPaisa += cardSalesPaisa;
+              cardSalesPaisa = 0;
+              
+              if (otherSalesPaisa >= duePaid) {
+                otherSalesPaisa -= duePaid;
+                otherDueCollectedPaisa += duePaid;
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+// 3. Shift Cash In / Out (Petty Cash)
   const cashTxs = db.prepare(`
     SELECT id, shift_id, type, amount_paisa, reason, user_id, device_id, created_at, updated_at
     FROM shift_cash_transactions
@@ -705,6 +754,8 @@ export function calculateShiftSummary(db: any, shift: any) {
     closing_cash_withdrawn_paisa: shift.closing_cash_withdrawn_paisa ?? 0,
     closing_float_left_paisa: shift.closing_float_left_paisa ?? 0,
     total_sales_paisa: totalSalesPaisa,
+    cash_due_collected_paisa: cashDueCollectedPaisa,
+    other_due_collected_paisa: otherDueCollectedPaisa,
     total_cash_sales_paisa: cashSalesPaisa,
     total_bkash_sales_paisa: bkashSalesPaisa,
     total_nagad_sales_paisa: nagadSalesPaisa,

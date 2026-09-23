@@ -203,6 +203,7 @@ export const PosView: React.FC<PosViewProps> = ({
 
   // Payments State
   const [cashAmount, setCashAmount] = useState<string>('');
+  const [previousDuePaidTaka, setPreviousDuePaidTaka] = useState<string>('');
   const [bkashAmount, setBkashAmount] = useState<string>('');
   const [nagadAmount, setNagadAmount] = useState<string>('');
   /*
@@ -560,6 +561,7 @@ export const PosView: React.FC<PosViewProps> = ({
     setNagadAmount('');
     setCardAmount('');
     setOtherAmount('');
+    setPreviousDuePaidTaka('');
     setShowNonCashPicker(false);
     setDiscountTaka('0');
     // Due is a property of the bill being built, not a standing preference.
@@ -576,12 +578,15 @@ export const PosView: React.FC<PosViewProps> = ({
   );
   const discountPaisa = Math.max(0, Math.round((parseFloat(discountTaka) || 0) * 100));
   const totalPaisa = Math.max(0, subtotalPaisa - discountPaisa);
+  const previousDuePaidPaisa = Math.round((parseFloat(previousDuePaidTaka) || 0) * 100);
+  const grandTotalExpectedPaisa = totalPaisa + previousDuePaidPaisa;
 
   const cashPaisa = Math.round((parseFloat(cashAmount) || 0) * 100);
   const bkashPaisa = Math.round((parseFloat(bkashAmount) || 0) * 100);
   const nagadPaisa = Math.round((parseFloat(nagadAmount) || 0) * 100);
   const cardPaisa = Math.round((parseFloat(cardAmount) || 0) * 100);
   const otherPaisa = Math.round((parseFloat(otherAmount) || 0) * 100);
+  const currentCustomerInfo = customers.find(c => c.id === selectedCustomerId);
 
   const totalPaidPaisa = cashPaisa + bkashPaisa + nagadPaisa + cardPaisa + otherPaisa;
   /*
@@ -596,13 +601,13 @@ export const PosView: React.FC<PosViewProps> = ({
    * chip says, and the remainder becomes the due on its own.
    */
   const isFullDue = isDueSaleMode && Boolean(selectedCustomerId) && totalPaidPaisa === 0;
-  const effectiveCashPaisa = (!isFullDue && totalPaidPaisa === 0) ? totalPaisa : cashPaisa;
-  const effectivePaidPaisa = isFullDue ? 0 : (totalPaidPaisa === 0 ? totalPaisa : totalPaidPaisa);
-  const effectiveChangePaisa = Math.max(0, effectivePaidPaisa - totalPaisa);
-  const effectiveDuePaisa = Math.max(0, totalPaisa - effectivePaidPaisa);
+  const effectiveCashPaisa = (!isFullDue && totalPaidPaisa === 0) ? grandTotalExpectedPaisa : cashPaisa;
+  const effectivePaidPaisa = isFullDue ? 0 : (totalPaidPaisa === 0 ? grandTotalExpectedPaisa : totalPaidPaisa);
+  const effectiveChangePaisa = Math.max(0, effectivePaidPaisa - grandTotalExpectedPaisa);
+  const effectiveDuePaisa = Math.max(0, grandTotalExpectedPaisa - effectivePaidPaisa);
 
-  const changePaisa = Math.max(0, totalPaidPaisa - totalPaisa);
-  const duePaisa = Math.max(0, totalPaisa - totalPaidPaisa);
+  const changePaisa = Math.max(0, totalPaidPaisa - grandTotalExpectedPaisa);
+  const duePaisa = Math.max(0, grandTotalExpectedPaisa - totalPaidPaisa);
 
   // Every method that took money, by name. The old chain knew only "Cash +
   // bKash" and "Cash + Other", so a bill paid partly in cash and partly on
@@ -620,9 +625,9 @@ export const PosView: React.FC<PosViewProps> = ({
     paymentSummaryStr = 'Full Due';
   } else {
     const used = [
-      ...(cashPaisa > 0 ? ['Cash'] : []),
-      ...NON_CASH_METHODS.filter((m) => nonCashPaisa[m.id] > 0).map((m) => m.label),
-    ];
+        ...(cashPaisa > 0 ? ['Cash'] : []),
+        ...NON_CASH_METHODS.filter((m) => nonCashPaisa[m.id] > 0).map((m) => m.label),
+      ];
     if (used.length > 0) paymentSummaryStr = used.join(' + ');
   }
 
@@ -630,7 +635,7 @@ export const PosView: React.FC<PosViewProps> = ({
   const handleQuickCash = () => {
     if (totalPaisa <= 0) return;
     setIsDueSaleMode(false);
-    setCashAmount((totalPaisa / 100).toFixed(2));
+    setCashAmount((grandTotalExpectedPaisa / 100).toFixed(2));
     setBkashAmount('');
     setNagadAmount('');
     setCardAmount('');
@@ -656,7 +661,7 @@ export const PosView: React.FC<PosViewProps> = ({
     setCardAmount('');
     setOtherAmount('');
     setShowNonCashPicker(false);
-    toast.info(`Due sale: ৳${(totalPaisa / 100).toFixed(2)} — press Complete Sale to record it.`);
+    toast.info(`Due sale: ৳${(grandTotalExpectedPaisa / 100).toFixed(2)} — press Complete Sale to record it.`);
     // Deliberately does NOT open the receipt preview. This only arms the mode;
     // the sale is still confirmed through Complete Sale, so a credit sale can
     // no longer be committed on a single click with nothing to confirm.
@@ -718,7 +723,7 @@ export const PosView: React.FC<PosViewProps> = ({
       setConfirmModalConfig({
         isOpen: true,
         title: 'Confirm due sale',
-        message: `Record ৳ ${(totalPaisa / 100).toFixed(
+        message: `Record ৳ ${(grandTotalExpectedPaisa / 100).toFixed(
           2
         )} as due for ${customerName}? No money is being collected now.`,
         onConfirm: () => {
@@ -736,10 +741,10 @@ export const PosView: React.FC<PosViewProps> = ({
       setConfirmModalConfig({
         isOpen: true,
         title: 'Confirm cash payment',
-        message: `Has the customer paid the full ৳ ${(totalPaisa / 100).toFixed(2)} in cash?`,
+        message: `Has the customer paid the full ৳ ${(grandTotalExpectedPaisa / 100).toFixed(2)} in cash?`,
         onConfirm: () => {
           setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
-          setCashAmount((totalPaisa / 100).toFixed(2));
+          setCashAmount((grandTotalExpectedPaisa / 100).toFixed(2));
           setShowPreviewModal(true);
         },
       });
@@ -788,6 +793,7 @@ export const PosView: React.FC<PosViewProps> = ({
     try {
       const res = await window.api.sales.create({
         customer_id: selectedCustomerId || null,
+          previous_due_paid_paisa: previousDuePaidPaisa,
         subtotal_paisa: subtotalPaisa,
         discount_paisa: discountPaisa,
         total_paisa: totalPaisa,
@@ -940,7 +946,7 @@ export const PosView: React.FC<PosViewProps> = ({
       return;
     }
 
-    const outstandingPaisa = totalPaisa - cashPaisa;
+    const outstandingPaisa = grandTotalExpectedPaisa - cashPaisa;
     setAmount(outstandingPaisa > 0 ? (outstandingPaisa / 100).toFixed(2) : '');
   };
 
@@ -1505,7 +1511,22 @@ export const PosView: React.FC<PosViewProps> = ({
                     <path d="M6 9l6 6 6-6" />
                   </svg>
                 </button>
-              
+
+                {selectedCustomer && (selectedCustomer.due_paisa || 0) > 0 && (
+                  <div className="w-full mt-2 flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                    <span className="text-xs font-semibold text-amber-800">Collect Previous Due ৳</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Amount"
+                      value={previousDuePaidTaka}
+                      onChange={(e) => setPreviousDuePaidTaka(e.target.value)}
+                      className="w-24 text-right bg-white border border-amber-300 rounded-lg text-sm font-mono font-bold text-amber-900 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                    />
+                  </div>
+                )}
+                
                 {customerPickerOpen && (
                   <div className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl shadow-2xl overflow-hidden">
                     <div className="p-2 border-b border-jungle-teal-200">
@@ -1583,9 +1604,12 @@ export const PosView: React.FC<PosViewProps> = ({
                 title="Add New Customer"
               >
                 <UserPlus className="w-4 h-4" />
-              </button>
+                </button>
+              </div>
+              
+
+
             </div>
-          </div>
           </div>
       
           {/* Active Bill / Cart Table */}
@@ -1747,11 +1771,21 @@ export const PosView: React.FC<PosViewProps> = ({
 
 
             {/* Big Highlighted Payable Box */}
-            <div className="flex items-center bg-white text-jungle-teal-900 px-3.5 py-2 rounded-xl mt-1">
-              <span className="text-ui-xs text-jungle-teal-700 font-sans">Payable</span>
-              <span className="ml-auto text-ui-2xl font-semibold font-mono tracking-tight leading-none">
-                ৳ {(totalPaisa / 100).toFixed(2)}
-              </span>
+            <div className="flex flex-col gap-1 mt-1">
+              {previousDuePaidPaisa > 0 && (
+                <div className="flex items-center bg-amber-50 text-amber-900 px-3.5 py-1.5 rounded-xl border border-amber-200">
+                  <span className="text-ui-xs text-amber-700 font-sans font-medium">Prev. Due Added</span>
+                  <span className="ml-auto text-sm font-semibold font-mono tracking-tight leading-none">
+                    + ৳ {(previousDuePaidPaisa / 100).toFixed(2)}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center bg-white text-jungle-teal-900 px-3.5 py-2 rounded-xl border border-jungle-teal-200/50">
+                <span className="text-ui-xs text-jungle-teal-700 font-sans">Payable</span>
+                <span className="ml-auto text-ui-2xl font-semibold font-mono tracking-tight leading-none">
+                  ৳ {(grandTotalExpectedPaisa / 100).toFixed(2)}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1852,7 +1886,7 @@ export const PosView: React.FC<PosViewProps> = ({
             </div>
 
             {showNonCashPicker && (
-              <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Non-cash payment method">
+              <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="Non-cash payment method">
                 {NON_CASH_METHODS.map((m) => {
                   const active = nonCashPaisa[m.id] > 0;
                   return (
@@ -1893,7 +1927,7 @@ export const PosView: React.FC<PosViewProps> = ({
                       setShowNonCashPicker(false);
                       setCashAmount(String(amount));
                     }}
-                    title={`Customer hands over ৳${amount} — change ৳${(amount - totalPaisa / 100).toFixed(2)}`}
+                    title={`Customer hands over ৳${amount} — change ৳${(amount - grandTotalExpectedPaisa / 100).toFixed(2)}`}
                     className="h-7 px-2.5 rounded-lg border border-jungle-teal-200 bg-white hover:bg-muted-teal-50 hover:border-muted-teal-300 text-ui-2xs font-mono font-bold text-jungle-teal-800 transition-colors"
                   >
                     ৳ {amount.toLocaleString('en-US')}
@@ -1986,14 +2020,15 @@ export const PosView: React.FC<PosViewProps> = ({
       {/* Receipt Preview & Confirmation Modal */}
 
       <ReceiptPreviewModal
-        isOpen={showPreviewModal}
-        onClose={() => setShowPreviewModal(false)}
-        onConfirmSale={executeFinalCheckout}
-        cart={cart}
-        customer={selectedCustomer}
-        subtotalPaisa={subtotalPaisa}
-        discountPaisa={discountPaisa}
-        totalPaisa={totalPaisa}
+          isOpen={showPreviewModal}
+          onClose={() => setShowPreviewModal(false)}
+          onConfirmSale={executeFinalCheckout}
+          cart={cart}
+          customer={selectedCustomer}
+          subtotalPaisa={subtotalPaisa}
+          discountPaisa={discountPaisa}
+          previousDuePaidPaisa={previousDuePaidPaisa}
+          totalPaisa={totalPaisa}
         paidPaisa={effectivePaidPaisa}
         changePaisa={effectiveChangePaisa}
         duePaisa={effectiveDuePaisa}

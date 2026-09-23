@@ -805,7 +805,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ currentSession }) => {
       {activeSubTab === 'sales' && salesReport && (
         <div className="space-y-4">
           {/* KPI Cards Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 font-mono">
             {/* Gross Sales */}
             <div className="bg-white border border-jungle-teal-200 p-4 rounded-3xl shadow-xs">
               <span className="text-[11px] text-jungle-teal-600 font-sans block mb-1">Invoiced Gross Sales</span>
@@ -900,16 +900,57 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ currentSession }) => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table >
+            </div>
+
+            {/* Due Collection Details Table */}
+            {salesReport?.due_collection_details && salesReport.due_collection_details.length > 0 && (
+              <div className="bg-white border border-indigo-200 rounded-3xl overflow-hidden shadow-xs mt-4">
+                <div className="p-4 border-b border-indigo-200 bg-indigo-50/50 flex justify-between items-center text-xs">
+                  <span className="font-bold text-indigo-900 font-sans">Recent Due Collections Breakdown</span>
+                  <span className="font-mono text-indigo-600 font-bold">{salesReport.due_collection_details.length} records</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse min-w-[600px]">
+                    <thead className="bg-indigo-50 text-indigo-700 uppercase font-mono text-[10.5px] border-b border-indigo-200">
+                      <tr>
+                        <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4">Customer</th>
+                        <th className="py-3 px-4">Source / Ref</th>
+                        <th className="py-3 px-4 text-right">Bill / Invoice (৳)</th>
+                        <th className="py-3 px-4 text-right text-indigo-800">Due Collected (৳)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-indigo-50 font-mono text-xs">
+                      {salesReport.due_collection_details.map((d: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-indigo-50/40 transition-colors">
+                          <td className="py-3 px-4 text-indigo-950">{new Date(d.date).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                          <td className="py-3 px-4 font-bold text-slate-800">{d.customer_name}</td>
+                          <td className="py-3 px-4 text-slate-600">
+                            {d.source} {d.invoice_no ? <span className="text-azure-mist-600 font-bold">({d.invoice_no})</span> : ''}
+                          </td>
+                          <td className="py-3 px-4 text-right text-slate-600">
+                            {d.bill_amount_paisa > 0 ? `৳ ${(d.bill_amount_paisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                          </td>
+                          <td className="py-3 px-4 text-right font-extrabold text-indigo-900">
+                            ৳ {(d.collected_paisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
           </div>
-        </div>
-      )}
+        )}
 
       {/* 5. TAB 2: PROFIT & LOSS (P&L) */}
       {activeSubTab === 'profit' && profitReport && (
         <div className="space-y-4">
           {/* P&L Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 font-mono">
             <div className="bg-white border border-jungle-teal-200 p-4 rounded-3xl shadow-xs">
               <span className="text-[11px] text-jungle-teal-600 font-sans block mb-1">Total Sales Revenue</span>
               <span
@@ -1008,7 +1049,48 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ currentSession }) => {
         </div>
       )}
 
-      {/* 6. TAB 3: PAYMENT CHANNELS & CASH INFLOW */}
+      
+            {/* Due Collection Details Table */}
+            {salesReport?.due_collection_details && salesReport.due_collection_details.length > 0 && (
+              <div className="bg-white border border-indigo-200 rounded-3xl overflow-hidden shadow-xs mt-4">
+                <div className="p-4 border-b border-indigo-200 bg-indigo-50/50 flex justify-between items-center text-xs">
+                  <span className="font-bold text-indigo-900 font-sans">Recent Due Collections Breakdown</span>
+                  <span className="font-mono text-indigo-600 font-bold">{salesReport?.due_collection_details?.length} records</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse min-w-[600px]">
+                    <thead className="bg-indigo-50 text-indigo-700 uppercase font-mono text-[10.5px] border-b border-indigo-200">
+                      <tr>
+                        <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4">Customer</th>
+                        <th className="py-3 px-4">Source / Ref</th>
+                        <th className="py-3 px-4 text-right">Bill / Invoice (৳)</th>
+                        <th className="py-3 px-4 text-right text-indigo-800">Due Collected (৳)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-indigo-50 font-mono text-xs">
+                      {salesReport?.due_collection_details?.map((d: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-indigo-50/40 transition-colors">
+                          <td className="py-3 px-4 text-indigo-950">{new Date(d.date).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                          <td className="py-3 px-4 font-bold text-slate-800">{d.customer_name}</td>
+                          <td className="py-3 px-4 text-slate-600">
+                            {d.source} {d.invoice_no ? <span className="text-azure-mist-600 font-bold">({d.invoice_no})</span> : ''}
+                          </td>
+                          <td className="py-3 px-4 text-right text-slate-600">
+                            {d.bill_amount_paisa > 0 ? `৳ ${(d.bill_amount_paisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '-'}
+                          </td>
+                          <td className="py-3 px-4 text-right font-extrabold text-indigo-900">
+                            ৳ {(d.collected_paisa / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+        {/* 6. TAB 3: PAYMENT CHANNELS & CASH INFLOW */}
       {activeSubTab === 'payments' && salesReport && (
         <div className="space-y-4">
           <div className="bg-white border border-jungle-teal-200 p-5 rounded-3xl shadow-xs space-y-4">
@@ -1181,7 +1263,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ currentSession }) => {
       {/* 8. TAB 5: STOCK VALUATION */}
       {activeSubTab === 'valuation' && stockValuation && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 font-mono">
             {/* Total SKU Count */}
             <div className="bg-white border border-jungle-teal-200 p-4 rounded-3xl shadow-xs">
               <span className="text-[11px] text-jungle-teal-600 font-sans block mb-1">Total SKUs (Items)</span>

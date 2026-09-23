@@ -38,6 +38,7 @@ export function registerSalesHandlers() {
           method: z.enum(['cash', 'bkash', 'nagad', 'card', 'other']),
           amount_paisa: z.number().int().min(0),
         })).min(1),
+        previous_due_paid_paisa: z.number().int().min(0).optional().default(0),
         total_paid_paisa: z.number().int().min(0),
         change_paisa: z.number().int().min(0).default(0),
         layout: z.enum(['80mm', 'a4']).default('80mm'),
@@ -62,8 +63,11 @@ export function registerSalesHandlers() {
       let invoiceNo = '';
 
       let customerInfo: any = null;
+      let customerPreviousDuePaisa = 0;
       if (payload.customer_id) {
         customerInfo = db.prepare('SELECT name, phone, address FROM customers WHERE id = ?').get(payload.customer_id);
+        const dueRow = db.prepare('SELECT due_paisa FROM v_customer_due WHERE customer_id = ?').get(payload.customer_id) as any;
+        if (dueRow) customerPreviousDuePaisa = dueRow.due_paisa;
       }
   
       const totalCollected = payload.payments.reduce((sum, p) => sum + (p.amount_paisa || 0), 0);
@@ -281,6 +285,9 @@ export function registerSalesHandlers() {
         totalPaidPaisa: payload.total_paid_paisa,
         changePaisa: payload.change_paisa,
         duePaisa,
+        customerPreviousDuePaisa: payload.customer_id ? customerPreviousDuePaisa : undefined,
+        previousDuePaidPaisa: payload.customer_id ? (payload.previous_due_paid_paisa || 0) : undefined,
+        customerRemainingDuePaisa: payload.customer_id ? customerPreviousDuePaisa - (payload.previous_due_paid_paisa || 0) + duePaisa : undefined,
       };
   
       let pdfBase64 = '';
@@ -611,8 +618,18 @@ export function registerSalesHandlers() {
         const netPaidPaisa = collectedPaisa - refundedBeforePaisa;
         const saleValueLeftPaisa = sale.total_paisa - returnedTotalPaisa;
         const overpaidPaisa = netPaidPaisa - saleValueLeftPaisa;
-        const cashRefundPaisa = Math.max(0, Math.min(totalRefundPaisa, netPaidPaisa, overpaidPaisa));
-        const creditedToDuePaisa = totalRefundPaisa - cashRefundPaisa;
+        let cashRefundPaisa = Math.max(0, Math.min(totalRefundPaisa, netPaidPaisa, overpaidPaisa));
+        let creditedToDuePaisa = totalRefundPaisa - cashRefundPaisa;
+
+        if (creditedToDuePaisa > 0 && sale.customer_id) {
+          const customerDueRow = db.prepare('SELECT due_paisa FROM v_customer_due WHERE customer_id = ?').get(sale.customer_id) as any;
+          const currentGlobalDue = customerDueRow ? customerDueRow.due_paisa : 0;
+          if (creditedToDuePaisa > currentGlobalDue) {
+            const excessCredit = creditedToDuePaisa - Math.max(0, currentGlobalDue);
+            creditedToDuePaisa -= excessCredit;
+            cashRefundPaisa += excessCredit;
+          }
+        }
 
         if (cashRefundPaisa > 0) {
           db.prepare(`
@@ -735,11 +752,12 @@ export function registerSalesHandlers() {
         WHERE r.sale_id = ? AND ri.deleted_at IS NULL AND r.created_at < ?
       `).get(ret.sale_id, ret.created_at) as any).n;
 
-      const netPaidPaisa = collectedPaisa - refundedBeforePaisa;
-      const saleValueLeftPaisa = ret.original_total_paisa - (returnedBeforeTotalPaisa + totalRefundPaisa);
-      const overpaidPaisa = netPaidPaisa - saleValueLeftPaisa;
-      const cashRefundPaisa = Math.max(0, Math.min(totalRefundPaisa, netPaidPaisa, overpaidPaisa));
-      const creditedToDuePaisa = totalRefundPaisa - cashRefundPaisa;
+      const refundPayment = db.prepare(`
+          SELECT amount_paisa FROM payments 
+          WHERE sale_id = ? AND direction = 'out' AND type = 'refund' AND created_at = ?
+        `).get(ret.sale_id, ret.created_at) as any;
+        const cashRefundPaisa = refundPayment ? refundPayment.amount_paisa : 0;
+        const creditedToDuePaisa = totalRefundPaisa - cashRefundPaisa;
 
       const pdfBase64 = await generateReturnInvoicePdf(
         {
@@ -843,8 +861,31 @@ export function registerSalesHandlers() {
 
       const duePaisa = Math.max(0, (sale.total_paisa - returnedPaisa) - (totalPaid - refundedPaisa));
 
-      const pdfData: InvoicePdfData = {
-        shopName,
+              let customerPreviousDuePaisa = 0;
+          if (sale.customer_id) {
+            const historyDue = db.prepare(`
+              SELECT 
+                COALESCE((
+                  SELECT SUM(total_paisa - COALESCE((
+                     SELECT SUM(ri.amount_paisa) 
+                     FROM returns r 
+                     JOIN return_items ri ON r.id = ri.return_id 
+                     WHERE r.sale_id = s.id AND r.created_at < ?
+                   ), 0))
+                  FROM sales s
+                  WHERE s.customer_id = ? AND s.deleted_at IS NULL AND s.status != 'held' AND s.created_at < ?
+                ), 0) - COALESCE((
+                  SELECT SUM(CASE WHEN direction = 'in' THEN amount_paisa ELSE -amount_paisa END)
+                  FROM payments p
+                  WHERE p.customer_id = ? AND p.deleted_at IS NULL AND p.created_at < ?
+                ), 0) AS historical_due
+            `).get(sale.created_at, sale.customer_id, sale.created_at, sale.customer_id, sale.created_at) as any;
+            
+            customerPreviousDuePaisa = historyDue ? historyDue.historical_due : 0;
+          }
+
+        const pdfData: InvoicePdfData = {
+          shopName,
         shopAddress,
         shopPhone: settingsMap['shop_phone'] || '',
         invoiceContacts: (() => { try { return JSON.parse(settingsMap['invoice_contacts'] || '[]'); } catch { return []; } })(),
@@ -869,6 +910,9 @@ export function registerSalesHandlers() {
         payments: payments.map((p: any) => ({ method: p.method, amountPaisa: p.amount_paisa })),
         totalPaidPaisa: totalPaid,
         duePaisa,
+          customerPreviousDuePaisa: sale.customer_id ? customerPreviousDuePaisa : undefined,
+          previousDuePaidPaisa: sale.customer_id ? (sale.previous_due_paid_paisa || 0) : undefined,
+          customerRemainingDuePaisa: sale.customer_id ? customerPreviousDuePaisa - (sale.previous_due_paid_paisa || 0) + duePaisa : undefined,
       };
   
       const pdfBase64 = await generateInvoicePdf(pdfData, printOptionsFromSettings(settingsMap, layout));
@@ -876,3 +920,5 @@ export function registerSalesHandlers() {
     });
 
 }
+
+

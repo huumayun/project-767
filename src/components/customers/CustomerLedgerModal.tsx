@@ -24,7 +24,25 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
     setLoading(true);
     try {
       const list = await window.api.customers.getHistory(customer.id);
-      setHistory(list);
+        const grouped = [];
+        for (let i = 0; i < list.length; i++) {
+          const row = list[i];
+          if (row.type === 'sale') {
+            const nextRow = i + 1 < list.length ? list[i + 1] : null;
+            if (nextRow && nextRow.type === 'payment' && nextRow.ref_no === row.ref_no) {
+              grouped.push({
+                ...row,
+                description: `Invoice ${row.ref_no}`,
+                credit_paisa: nextRow.credit_paisa,
+                running_balance_paisa: nextRow.running_balance_paisa
+              });
+              i++;
+              continue;
+            }
+          }
+          grouped.push(row);
+        }
+        setHistory(grouped);
     } catch (err) {
       console.error('Failed to load customer statement:', err);
     } finally {
@@ -78,17 +96,29 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
     const shopPhone = settings?.shop_phone || '';
 
     const rows = history
-      .map(
-        (tx) => `
-        <tr>
-          <td class="date">${esc(new Date(tx.date).toLocaleDateString())}</td>
-          <td class="ref">${esc(tx.ref_no)}</td>
-          <td>${esc(tx.description)}</td>
-          <td class="num">${tx.debit_paisa ? taka(tx.debit_paisa) : ''}</td>
-          <td class="num">${tx.credit_paisa ? taka(tx.credit_paisa) : ''}</td>
-          <td class="num strong">${taka(tx.running_balance_paisa || 0)}</td>
-        </tr>`
-      )
+      .map((tx) => {
+        let displayPaid = tx.credit_paisa;
+        let displayDueColl = 0;
+        if (tx.type === 'sale') {
+          if (tx.credit_paisa > tx.debit_paisa) {
+            displayDueColl = tx.credit_paisa - tx.debit_paisa;
+          }
+        } else if (tx.type === 'payment' && tx.credit_paisa > 0) {
+          displayPaid = 0;
+          displayDueColl = tx.credit_paisa;
+        }
+
+        return `
+          <tr>
+            <td class="date">${esc(new Date(tx.date).toLocaleDateString('en-GB'))}</td>
+            <td class="ref">${esc(tx.ref_no)}</td>
+            <td>${esc(tx.description)}</td>
+            <td class="num">${tx.debit_paisa ? taka(tx.debit_paisa) : ''}</td>
+            <td class="num">${displayPaid ? taka(displayPaid) : ''}</td>
+            <td class="num">${displayDueColl ? taka(displayDueColl) : ''}</td>
+            <td class="num strong">${taka(tx.running_balance_paisa || 0)}</td>
+          </tr>`;
+      })
       .join('');
 
     const html = `
@@ -175,9 +205,9 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
             </div>
 
             <div class="kpis">
-              <div class="kpi"><span>Total Debit</span><b>৳ ${taka(totalDebitPaisa)}</b></div>
-              <div class="kpi"><span>Total Credit</span><b>৳ ${taka(totalCreditPaisa)}</b></div>
-              <div class="kpi"><span>Closing Balance</span><b>৳ ${taka(closingBalancePaisa)}</b></div>
+              <div class="kpi"><span>Total Bill</span><b>৳ ${taka(totalDebitPaisa)}</b></div>
+              <div class="kpi"><span>Total Paid/Return</span><b>৳ ${taka(totalCreditPaisa)}</b></div>
+              <div class="kpi"><span>Current Due</span><b>৳ ${taka(closingBalancePaisa)}</b></div>
             </div>
 
             <table>
@@ -186,24 +216,24 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
                   <th>Date</th>
                   <th>Reference</th>
                   <th>Description</th>
-                  <th class="num">Debit</th>
-                  <th class="num">Credit</th>
-                  <th class="num">Balance</th>
+                  <th class="num">Bill (৳)</th>
+                  <th class="num">Paid (৳)</th>
+                    <th class="num">Due Coll. (৳)</th>
+                  <th class="num">Due (৳)</th>
                 </tr>
               </thead>
               <tbody>
-                ${rows || '<tr><td colspan="6" style="text-align:center;color:#64748b">No transactions recorded.</td></tr>'}
+                ${rows || '<tr><td colspan="7" style="text-align:center;color:#64748b">No transactions recorded.</td></tr>'}
               </tbody>
             </table>
 
             <div class="closing">
-              <span class="strong">Closing Balance (amount due)</span>
+              <span class="strong">Closing Balance (Current Due)</span>
               <span class="strong">৳ ${taka(closingBalancePaisa)}</span>
             </div>
 
             <div class="foot muted">
-              Balance shown is as at the generated date above. Debit raises the balance
-              (invoices, refunds paid out); credit reduces it (payments received, returns).
+              Balance shown is as at the generated date above. Bill increases the due (purchases); Paid decreases it (cash/returns).
             </div>
           </div>
         </body>
@@ -251,11 +281,11 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
         {/* Statement Summary Card */}
         <div className="grid grid-cols-3 gap-3 font-mono bg-jungle-teal-50 border border-jungle-teal-200 p-3.5 rounded-xl text-xs">
           <div>
-            <span className="text-jungle-teal-500 font-sans block text-[10px]">Total Debit (invoices + refunds)</span>
+            <span className="text-jungle-teal-500 font-sans block text-[10px]">Total Bill (Invoices)</span>
             <span className="font-bold text-jungle-teal-900">৳ {(totalDebitPaisa / 100).toFixed(2)}</span>
           </div>
           <div>
-            <span className="text-jungle-teal-500 font-sans block text-[10px]">Total Credit (paid + returns)</span>
+            <span className="text-jungle-teal-500 font-sans block text-[10px]">Total Paid / Returned</span>
             <span className="font-bold text-muted-teal-800">৳ {(totalCreditPaisa / 100).toFixed(2)}</span>
           </div>
           <div>
@@ -272,8 +302,9 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
                 <th className="p-3">Date</th>
                 <th className="p-3">Reference</th>
                 <th className="p-3">Description</th>
-                <th className="p-3 text-right">Debit / Sale (৳)</th>
-                <th className="p-3 text-right">Credit / Paid (৳)</th>
+                <th className="p-3 text-right">Bill / Sale (৳)</th>
+                <th className="p-3 text-right">Paid / Return (৳)</th>
+                  <th className="p-3 text-right">Due Coll. (৳)</th>
                 <th className="p-3 text-right" title="Balance after this transaction. Reads top to bottom, oldest first.">
                   Running Due (৳)
                 </th>
@@ -282,7 +313,7 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
             <tbody className="divide-y divide-jungle-teal-100 font-mono text-[11px]">
               {history.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-jungle-teal-500 font-sans">
+                  <td colSpan={7} className="p-8 text-center text-jungle-teal-500 font-sans">
                     {loading ? 'Loading account statement...' : 'No transaction records found.'}
                   </td>
                 </tr>
@@ -295,7 +326,7 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
                     }`}
                   >
                     <td className="p-3 text-jungle-teal-600">
-                      {new Date(tx.date).toLocaleDateString()} {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(tx.date).toLocaleDateString('en-GB')} {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="p-3 text-azure-mist-800 font-bold">
                       {tx.ref_no?.startsWith('INV') ? (
@@ -315,9 +346,28 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
                     <td className="p-3 text-right text-jungle-teal-900 font-bold">
                       {tx.debit_paisa > 0 ? `৳ ${(tx.debit_paisa / 100).toFixed(2)}` : '-'}
                     </td>
-                    <td className="p-3 text-right text-muted-teal-800 font-bold">
-                      {tx.credit_paisa > 0 ? `৳ ${(tx.credit_paisa / 100).toFixed(2)}` : '-'}
-                    </td>
+                                          <td className="p-3 text-right text-muted-teal-800 font-bold">
+                        {(() => {
+                          let displayPaid = tx.credit_paisa;
+                          if (tx.type === 'payment' && tx.credit_paisa > 0) {
+                            displayPaid = 0; // Pure due collection, not a sale
+                          }
+                          return displayPaid > 0 ? `৳ ${(displayPaid / 100).toFixed(2)}` : '-';
+                        })()}
+                      </td>
+                      <td className="p-3 text-right text-indigo-700 font-bold">
+                        {(() => {
+                          let displayDueColl = 0;
+                          if (tx.type === 'sale') {
+                            if (tx.credit_paisa > tx.debit_paisa) {
+                              displayDueColl = tx.credit_paisa - tx.debit_paisa;
+                            }
+                          } else if (tx.type === 'payment' && tx.credit_paisa > 0) {
+                            displayDueColl = tx.credit_paisa;
+                          }
+                          return displayDueColl > 0 ? `৳ ${(displayDueColl / 100).toFixed(2)}` : '-';
+                        })()}
+                      </td>
                     <td className="p-3 text-right text-amber-700 font-extrabold">
                       ৳ {((tx.running_balance_paisa || 0) / 100).toFixed(2)}
                     </td>

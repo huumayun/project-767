@@ -586,7 +586,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                         onClick={() => setExpandedPurchaseId(isExpanded ? null : p.id)}
                         className={`h-[46px] hover:bg-azure-mist-50/40 transition-colors cursor-pointer ${isExpanded ? 'bg-azure-mist-50/50' : ''}`}
                       >
-                        <td className="px-3 text-jungle-teal-600">{new Date(p.created_at).toLocaleDateString()}</td>
+                        <td className="px-3 text-jungle-teal-600">{new Date(p.created_at).toLocaleDateString('en-GB')}</td>
                         <td className="px-3 font-sans text-jungle-teal-900 font-bold">{p.supplier_name || 'Generic Vendor'}</td>
                         <td className="px-3 text-azure-mist-800 font-bold">{p.invoice_ref || '-'}</td>
                         <td className="px-3 text-right font-mono text-ui-sm whitespace-nowrap text-amber-700">

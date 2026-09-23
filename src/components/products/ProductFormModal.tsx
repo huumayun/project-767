@@ -481,7 +481,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                         <span className="font-semibold text-jungle-teal-800">{b.remaining_qty} {product.unit}</span>
                         {b.received_at && (
                           <span className="text-[9px] text-jungle-teal-500 ml-2 font-sans" title={new Date(b.received_at).toLocaleString()}>
-                            {new Date(b.received_at).toLocaleDateString()}
+                            {new Date(b.received_at).toLocaleDateString('en-GB')}
                           </span>
                         )}
                       </div>

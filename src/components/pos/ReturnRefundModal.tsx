@@ -21,7 +21,7 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
 }) => {
   const toast = useToast();
   const [reason, setReason] = useState('Customer returned item');
-  const [refundMethod, setRefundMethod] = useState<'cash' | 'bkash' | 'nagad' | 'card'>('cash');
+  const [refundMethod, setRefundMethod] = useState<'cash' | 'bkash' | 'nagad' | 'card' | 'other'>('cash');
   const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -258,8 +258,16 @@ export const ReturnRefundModal: React.FC<ReturnRefundModalProps> = ({
             const netPaidPaisa = collectedPaisa - refundedBeforePaisa;
             const saleValueLeftPaisa = (sale.total_paisa || 0) - (returnedBeforePaisa + totalRefundPaisa);
             const overpaidPaisa = netPaidPaisa - saleValueLeftPaisa;
-            const cashRefundPaisa = Math.max(0, Math.min(totalRefundPaisa, netPaidPaisa, overpaidPaisa));
-            const creditedToDuePaisa = totalRefundPaisa - cashRefundPaisa;
+            let cashRefundPaisa = Math.max(0, Math.min(totalRefundPaisa, netPaidPaisa, overpaidPaisa));
+            let creditedToDuePaisa = totalRefundPaisa - cashRefundPaisa;
+            if (creditedToDuePaisa > 0 && customerInfo) {
+              const currentGlobalDue = customerInfo.due_paisa || 0;
+              if (creditedToDuePaisa > currentGlobalDue) {
+                const excessCredit = creditedToDuePaisa - Math.max(0, currentGlobalDue);
+                creditedToDuePaisa -= excessCredit;
+                cashRefundPaisa += excessCredit;
+              }
+            }
 
             return (
               <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 flex flex-col gap-2 text-xs font-mono">

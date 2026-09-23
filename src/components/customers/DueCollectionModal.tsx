@@ -35,6 +35,10 @@ export const DueCollectionModal: React.FC<DueCollectionModalProps> = ({
       setError('Please enter a valid payment amount.');
       return;
     }
+    if (payPaisa > currentDuePaisa) {
+      setError(`Cannot collect more than the current due (Tk ${(currentDuePaisa / 100).toFixed(2)}).`);
+      return;
+    }
     if (!window.api) return;
 
     setLoading(true);
@@ -109,12 +113,13 @@ export const DueCollectionModal: React.FC<DueCollectionModalProps> = ({
 
             <div>
               <label className="block text-jungle-teal-700 font-semibold mb-1">Collection Amount (৳) *</label>
-              <input
-                type="number"
-                required
-                min="1"
-                step="0.01"
-                value={amountTaka}
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  max={(currentDuePaisa / 100).toFixed(2)}
+                  step="0.01"
+                  value={amountTaka}
                 onChange={(e) => setAmountTaka(e.target.value)}
                 placeholder="Enter received amount"
                 className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono text-sm font-bold focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"

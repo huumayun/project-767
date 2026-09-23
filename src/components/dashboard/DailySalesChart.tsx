@@ -70,7 +70,7 @@ export const DailySalesChart: React.FC<DailySalesChartProps> = ({ trends, format
   );
 
   const dayLabel = (iso: string, long = false) =>
-    new Date(iso).toLocaleDateString('en-US',
+    new Date(iso).toLocaleDateString('en-GB',
       long ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short' });
 
   /*

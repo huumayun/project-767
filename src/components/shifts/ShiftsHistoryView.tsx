@@ -304,7 +304,7 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
                 <thead>
                   <tr>
                     <th>Time</th><th>Invoice</th><th>Customer</th>
-                    <th class="num">Total</th><th class="num">Paid</th><th class="num">Returned</th><th class="num">Due</th>
+                    <th class="num">Total</th><th class="num">Paid</th><th class="num">Due Collected</th><th class="num">Returned</th><th class="num">Due</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -315,6 +315,7 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
                       <td>${esc(t.customer_name)}</td>
                       <td class="num">৳ ${tk(t.total_paisa)}</td>
                       <td class="num">৳ ${tk(t.paid_paisa)}</td>
+                        <td class="num">${t.previous_due_paid_paisa ? '৳ ' + tk(t.previous_due_paid_paisa) : '—'}</td>
                       <td class="num">${t.returned_paisa > 0 ? '৳ ' + tk(t.returned_paisa) : '—'}</td>
                       <td class="num ${t.due_paisa > 0 ? 'neg strong' : ''}">${t.due_paisa > 0 ? '৳ ' + tk(t.due_paisa) : '—'}</td>
                     </tr>`).join('')}
@@ -918,7 +919,8 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
                         <th className="text-left font-medium px-3 py-2">Customer</th>
                         <th className="text-right font-medium px-3 py-2">Total</th>
                         <th className="text-right font-medium px-3 py-2">Paid</th>
-                        <th className="text-right font-medium px-3 py-2">Returned</th>
+                          <th className="text-right font-medium px-3 py-2">Due Collected</th>
+                          <th className="text-right font-medium px-3 py-2">Returned</th>
                         <th className="text-right font-medium px-4 py-2">Due</th>
                       </tr>
                     </thead>
@@ -932,6 +934,7 @@ export const ShiftsHistoryView: React.FC<ShiftsHistoryViewProps> = ({
                           <td className="px-3 py-2 font-sans text-jungle-teal-900 max-w-[200px] truncate">{row.customer_name}</td>
                           <td className="px-3 py-2 text-right whitespace-nowrap text-jungle-teal-900">৳ {tk(row.total_paisa)}</td>
                           <td className="px-3 py-2 text-right whitespace-nowrap text-muted-teal-800">৳ {tk(row.paid_paisa)}</td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap text-indigo-600 font-semibold">{row.previous_due_paid_paisa ? `৳ ${tk(row.previous_due_paid_paisa)}` : '—'}</td>
                           <td className="px-3 py-2 text-right whitespace-nowrap text-jungle-teal-500">
                             {row.returned_paisa > 0 ? `৳ ${tk(row.returned_paisa)}` : '—'}
                           </td>

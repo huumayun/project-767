@@ -291,6 +291,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
   const cardTaka = (((targetSummary?.total_card_sales_paisa || 0)) / 100).toFixed(2);
   // Non-cash taken on the merged Other button, plus the older per-wallet rows.
   const otherTaka = (((targetSummary?.total_other_sales_paisa || 0)) / 100).toFixed(2);
+    const digitalSalesTaka = (((targetSummary?.total_bkash_sales_paisa || 0) + (targetSummary?.total_nagad_sales_paisa || 0) + (targetSummary?.total_card_sales_paisa || 0) + (targetSummary?.total_other_sales_paisa || 0)) / 100).toFixed(2);
   const tk = (paisa?: number) => ((paisa || 0) / 100).toFixed(2);
   const returnedTaka = tk(targetSummary?.total_returned_paisa);
   const netSalesTaka = tk(targetSummary?.net_sales_paisa);
@@ -866,7 +867,14 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
               </div>
               <div className="p-3 bg-white border border-jungle-teal-200 rounded-2xl shadow-xs">
                 <span className="text-[10.5px] text-jungle-teal-600 font-sans block">Digital Sales</span>
-                <span className="text-sm font-bold text-azure-mist-700">৳ {otherTaka}</span>
+                <span className="text-sm font-bold text-azure-mist-700">৳ {digitalSalesTaka}</span>
+                  {(Number(bkashTaka) > 0 || Number(nagadTaka) > 0 || Number(cardTaka) > 0) && (
+                    <div className="mt-1 text-[10px] text-slate-500 font-mono leading-tight">
+                      {Number(bkashTaka) > 0 && <div>bKash: ৳{bkashTaka}</div>}
+                      {Number(nagadTaka) > 0 && <div>Nagad: ৳{nagadTaka}</div>}
+                      {Number(cardTaka) > 0 && <div>Card: ৳{cardTaka}</div>}
+                    </div>
+                  )}
               </div>
               <div className="p-3 bg-white border border-jungle-teal-200 rounded-2xl shadow-xs">
                 <span className="text-[10.5px] text-emerald-700 font-sans block">Cash In (+)</span>

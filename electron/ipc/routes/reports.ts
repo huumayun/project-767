@@ -79,13 +79,19 @@ export function registerReportsHandlers() {
       let nagadPaisa = 0;
       let cardPaisa = 0;
       let otherPaisa = 0;
+      let advanceUsagePaisa = 0;
+      let advanceCollectionPaisa = 0;
 
       paymentGroups.forEach(p => {
         if (p.direction === 'in') {
+          if (p.type === 'advance_collection') {
+            advanceCollectionPaisa += p.amount_paisa;
+          }
           if (p.method === 'cash') cashPaisa += p.amount_paisa;
           else if (p.method === 'bkash') bkashPaisa += p.amount_paisa;
           else if (p.method === 'nagad') nagadPaisa += p.amount_paisa;
           else if (p.method === 'card') cardPaisa += p.amount_paisa;
+          else if (p.method === 'advance') advanceUsagePaisa += p.amount_paisa;
           else otherPaisa += p.amount_paisa;
         } else if (p.direction === 'out' && p.type === 'refund') {
           totalRefundedPaisa += p.amount_paisa;
@@ -93,6 +99,7 @@ export function registerReportsHandlers() {
           else if (p.method === 'bkash') bkashPaisa -= p.amount_paisa;
           else if (p.method === 'nagad') nagadPaisa -= p.amount_paisa;
           else if (p.method === 'card') cardPaisa -= p.amount_paisa;
+          else if (p.method === 'advance') advanceUsagePaisa -= p.amount_paisa;
           else otherPaisa -= p.amount_paisa;
         }
       });
@@ -104,6 +111,69 @@ export function registerReportsHandlers() {
 
       // Daily trends, grouped on the same local-day expression as the totals so
       // the columns of the chart always add up to the header figures.
+      
+      // Due collection from standalone payments
+      const standaloneDue = db.prepare(`
+        SELECT COALESCE(SUM(amount_paisa), 0) AS total
+        FROM payments
+        WHERE deleted_at IS NULL AND type = 'due_collection' AND direction = 'in'
+          AND ${saleDay} BETWEEN ? AND ?
+      `).get(startDate, endDate) as any;
+
+      // Due collection from sales
+      const salesDue = db.prepare(`
+        SELECT COALESCE(SUM(previous_due_paid_paisa), 0) AS total
+        FROM sales
+        WHERE deleted_at IS NULL AND status != 'held'
+          AND ${saleDay} BETWEEN ? AND ?
+      `).get(startDate, endDate) as any;
+
+            const dueCollectionPaisa = (standaloneDue.total || 0) + (salesDue.total || 0);
+
+      // Fetch due collection details
+      const standaloneDueDetails = db.prepare(`
+        SELECT 
+          p.created_at, 
+          c.name as customer_name,
+          'Standalone' as source,
+          NULL as invoice_no,
+          0 as bill_amount_paisa,
+          p.amount_paisa as collected_paisa,
+          p.method as payment_method
+        FROM payments p
+        LEFT JOIN customers c ON p.customer_id = c.id
+        WHERE p.deleted_at IS NULL AND p.type = 'due_collection' AND p.direction = 'in'
+          AND COALESCE(date(p.created_at, 'localtime'), substr(p.created_at, 1, 10)) BETWEEN ? AND ?
+      `).all(startDate, endDate);
+
+      const salesDueDetails = db.prepare(`
+        SELECT 
+          s.created_at,
+          c.name as customer_name,
+          'Invoice' as source,
+          s.invoice_no,
+          s.total_paisa as bill_amount_paisa,
+          s.previous_due_paid_paisa as collected_paisa,
+          'Mixed' as payment_method
+        FROM sales s
+        LEFT JOIN customers c ON s.customer_id = c.id
+        WHERE s.deleted_at IS NULL AND s.status != 'held' AND s.previous_due_paid_paisa > 0
+          AND COALESCE(date(s.created_at, 'localtime'), substr(s.created_at, 1, 10)) BETWEEN ? AND ?
+      `).all(startDate, endDate);
+
+      const dueCollectionDetails = [...standaloneDueDetails, ...salesDueDetails].sort((a: any, b: any) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ).map((d: any) => ({
+        date: d.created_at,
+        customer_name: d.customer_name || 'Walk-in Customer',
+        source: d.source,
+        invoice_no: d.invoice_no,
+        bill_amount_paisa: d.bill_amount_paisa,
+        collected_paisa: d.collected_paisa,
+        payment_method: d.payment_method
+      }));
+
+      
       const trendsMap: Record<string, { orders_count: number; sales_paisa: number; refunded_paisa: number }> = {};
       const trendRows = db.prepare(`
         SELECT ${saleDay} AS day,
@@ -184,12 +254,17 @@ export function registerReportsHandlers() {
         total_refunded_paisa: totalRefundedPaisa,
         total_returned_paisa: totalReturnedPaisa,
         net_sales_paisa: netSalesPaisa,
+          due_collection_paisa: dueCollectionPaisa,
+        advance_collection_paisa: advanceCollectionPaisa,
+        advance_usage_paisa: advanceUsagePaisa,
+          due_collection_details: dueCollectionDetails,
         payments_breakdown: {
           cash_paisa: cashPaisa,
           bkash_paisa: bkashPaisa,
           nagad_paisa: nagadPaisa,
           card_paisa: cardPaisa,
           other_paisa: otherPaisa,
+          advance_usage_paisa: advanceUsagePaisa,
         },
         daily_trends: dailyTrends,
       };

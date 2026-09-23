@@ -257,7 +257,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentSession, onOwnAccou
                     </span>
                   </td>
                   <td className="p-3.5 text-jungle-teal-600">
-                    {new Date(u.created_at).toLocaleDateString()}
+                    {new Date(u.created_at).toLocaleDateString('en-GB')}
                   </td>
                   <td className="p-3.5 text-center">
                     <div className="flex items-center justify-center gap-2">

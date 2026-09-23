@@ -550,7 +550,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentSession, onSe
             Passwords are stored hashed and this app has no server to email a reset link from. These
             codes are the only way back into the owner account from the login screen. Each one works
             once; using one does not affect the rest.
-            {recoverySetAt && <> Sheet issued {new Date(recoverySetAt).toLocaleDateString()}.</>}
+            {recoverySetAt && <> Sheet issued {new Date(recoverySetAt).toLocaleDateString('en-GB')}.</>}
           </p>
 
           {issuedCodes ? (

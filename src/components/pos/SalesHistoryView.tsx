@@ -301,16 +301,23 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
                       </button>
                     </td>
                     <td className="p-3.5 text-jungle-teal-600">
-                      {new Date(sale.created_at).toLocaleDateString()} {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(sale.created_at).toLocaleDateString('en-GB')} {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="p-3.5 font-sans text-jungle-teal-800">
                       {sale.customer_name || <span className="text-jungle-teal-600 italic">Walk-in Customer</span>}
                     </td>
                     <td className="p-3.5 font-sans text-jungle-teal-700">{sale.cashier_name || 'Staff'}</td>
                     <td className="p-3.5 text-right">
-                      <div className="font-bold text-jungle-teal-900">
-                        ৳ {(sale.total_paisa / 100).toFixed(2)}
-                      </div>
+                      
+                        <div className="font-bold text-jungle-teal-900">
+                          ৳ {((sale.total_paisa + (sale.previous_due_paid_paisa || 0)) / 100).toFixed(2)}
+                        </div>
+                        {(sale.previous_due_paid_paisa || 0) > 0 && (
+                          <div className="text-[10px] text-indigo-600 font-semibold mt-0.5">
+                            (incl. ৳ {((sale.previous_due_paid_paisa || 0) / 100).toFixed(2)} due)
+                          </div>
+                        )}
+
                       {(sale.refunded_paisa ?? 0) > 0 && (
                         <div className="text-[10px] text-rose-600 font-semibold mt-0.5">
                           Refunded: -৳ {((sale.refunded_paisa || 0) / 100).toFixed(2)}
@@ -358,7 +365,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({ currentSessi
                           <span>Reprint</span>
                         </button>
 
-                        {(sale.status === 'completed' || sale.status === 'partial_refund') && (
+                        {(sale.status === 'completed' || sale.status === 'partial_refund') && !sale.invoice_no.startsWith('DUE-') && !(sale.total_paisa === 0 && sale.subtotal_paisa === 0) && (
                           <button
                             onClick={() => handleOpenReturn(sale)}
                             className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-300 transition-colors text-[11px] font-semibold flex items-center gap-1"

@@ -19,6 +19,7 @@ interface ReceiptPreviewModalProps {
   customer?: Customer | null;
   subtotalPaisa: number;
   discountPaisa: number;
+  previousDuePaidPaisa?: number;
   totalPaisa: number;
   paidPaisa: number;
   changePaisa: number;
@@ -41,6 +42,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   customer,
   subtotalPaisa,
   discountPaisa,
+  previousDuePaidPaisa,
   totalPaisa,
   paidPaisa,
   changePaisa,
@@ -213,16 +215,22 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
               <span>Subtotal:</span>
               <span>৳ {(subtotalPaisa / 100).toFixed(2)}</span>
             </div>
-            {discountPaisa > 0 && (
-              <div className="flex justify-between text-amber-700 font-bold">
-                <span>Discount:</span>
-                <span>- ৳ {(discountPaisa / 100).toFixed(2)}</span>
+              {discountPaisa > 0 && (
+                <div className="flex justify-between text-amber-700 font-bold">
+                  <span>Discount:</span>
+                  <span>- ৳ {(discountPaisa / 100).toFixed(2)}</span>
+                </div>
+              )}
+              {(previousDuePaidPaisa || 0) > 0 && (
+                <div className="flex justify-between text-amber-700 font-bold">
+                  <span>Prev. Due Add:</span>
+                  <span>+ ৳ {((previousDuePaidPaisa || 0) / 100).toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-ui-base font-extrabold text-jungle-teal-900 border-t border-jungle-teal-200 pt-1.5">
+                <span>Net Payable:</span>
+                <span className="text-azure-mist-800">৳ {((totalPaisa + (previousDuePaidPaisa || 0)) / 100).toFixed(2)}</span>
               </div>
-            )}
-            <div className="flex justify-between text-ui-base font-extrabold text-jungle-teal-900 border-t border-jungle-teal-200 pt-1.5">
-              <span>Net Payable:</span>
-              <span className="text-azure-mist-800">৳ {(totalPaisa / 100).toFixed(2)}</span>
-            </div>
             <div className="flex justify-between text-jungle-teal-700 font-semibold pt-1">
               <span>Paid ({paymentMethodSummary}):</span>
               <span>৳ {(paidPaisa / 100).toFixed(2)}</span>

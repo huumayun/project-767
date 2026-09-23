@@ -72,6 +72,7 @@ export interface ShiftRecord {
 }
 
 export interface ShiftSaleRow {
+    previous_due_paid_paisa?: number;
   id: string;
   invoice_no: string;
   total_paisa: number;
@@ -241,6 +242,7 @@ export interface PaymentItem {
 }
 
 export interface SalePayload {
+    previous_due_paid_paisa?: number;
   customer_id?: string | null;
   subtotal_paisa: number;
   discount_paisa: number;
@@ -259,6 +261,7 @@ export interface SalePayload {
 }
 
 export interface SaleRecord {
+    previous_due_paid_paisa?: number;
   id: string;
   invoice_no: string;
   status: 'completed' | 'held' | 'refunded' | 'partial_refund';
@@ -366,7 +369,18 @@ export interface SalesReportData {
   /** Value of goods returned, whether refunded in cash or credited to a due. */
   total_returned_paisa: number;
   net_sales_paisa: number;
-  payments_breakdown: {
+    due_collection_paisa: number;
+  due_collection_details?: Array<{
+    date: string;
+    customer_name: string;
+    source: string;
+    invoice_no?: string;
+    bill_amount_paisa: number;
+    collected_paisa: number;
+    payment_method: string;
+  }>;
+
+    payments_breakdown: {
     cash_paisa: number;
     bkash_paisa: number;
     nagad_paisa: number;

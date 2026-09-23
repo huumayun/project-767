@@ -293,6 +293,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           total_refunded_paisa: 0,
           total_returned_paisa: 0,
           net_sales_paisa: grossSalesPaisa,
+          due_collection_paisa: 0,
           payments_breakdown: {
             cash_paisa: grossSalesPaisa,
             bkash_paisa: 0,
@@ -445,7 +446,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <p className="text-ui-xs text-jungle-teal-600 mt-1 font-mono flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-azure-mist-700" />
             <span>
-              {new Date().toLocaleDateString('en-IN', {
+              {new Date().toLocaleDateString('en-GB', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
@@ -501,7 +502,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             Today
           </span>
           <span className="text-ui-xs text-jungle-teal-500 font-sans">
-            {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </span>
         </div>
       ) : (
@@ -558,7 +559,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* Main KPI Cards Grid */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-6 gap-4">
         {/* 1. Total Net Sales */}
         <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs relative overflow-hidden flex flex-col justify-between">
           <div>
@@ -650,6 +651,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             })()}
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-azure-mist-600" />
+        </div>
+
+        
+        {/* 2.5 Total Due Collection */}
+        <div className="bg-jungle-teal-50 border border-jungle-teal-200 rounded-2xl p-4 shadow-xs relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-ui-2xs font-semibold uppercase tracking-wider text-jungle-teal-600 font-sans">
+                {'Due Collection'}
+              </span>
+              <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            {(() => {
+              const dueCollected = salesReport?.due_collection_paisa ?? 0;
+              const { compact, full } = formatCompactTaka(dueCollected);
+              return (
+                <div className="mt-2.5">
+                  <div
+                    className="text-ui-2xl font-bold text-indigo-800 font-mono tracking-tight whitespace-nowrap truncate"
+                    title={full}
+                  >
+                    {compact}
+                  </div>
+                  <div className="text-ui-2xs text-jungle-teal-600 mt-1 font-sans">
+                    {'Collected from past dues'}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-500" />
         </div>
 
         {/* 3. Total Realized Profit (Owner) / Total Invoices (Staff) */}
@@ -1069,7 +1103,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             ) : (
               <div className="space-y-2.5 overflow-y-auto max-h-[480px] pr-1">
                 {recentSales.map((sale) => {
-                  const saleAmountObj = formatCompactTaka(sale.final_amount_paisa || sale.total_paisa || 0);
+                  const saleAmountObj = formatCompactTaka((sale.final_amount_paisa || sale.total_paisa || 0) + (sale.previous_due_paid_paisa || 0));
                   return (
                     <div
                       key={sale.id}

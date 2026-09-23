@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../../db';
 import { z } from 'zod';
 // cart calculations not needed
-import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, requireOpenShift } from '../shared';
+import { activeSession, setActiveSession, requireRole, getDeviceId, logAudit, requireOpenShift, generateInvoiceNumber, isInvoiceNumberCollision } from '../shared';
 
 
 export function registerCustomersHandlers() {
@@ -170,14 +170,49 @@ export function registerCustomersHandlers() {
       if (!customer) throw new Error('Customer not found.');
   
       const previousDuePaisa = customer.due_paisa || 0;
+    if (amountPaisa > previousDuePaisa) {
+      throw new Error('Cannot collect more than the current due.');
+    }
   
-      db.transaction(() => {
-        db.prepare(`
-          INSERT INTO payments (
-            id, customer_id, direction, method, amount_paisa, type, user_id, device_id, created_at, updated_at
-          ) VALUES (?, ?, 'in', ?, ?, 'due_collection', ?, ?, ?, ?)
-        `).run(paymentId, payload.customer_id, payload.method, amountPaisa, userId, deviceId, now, now);
-      })();
+          const saleId = uuidv7();
+    let invoiceNo = '';
+
+    const writeTransaction = db.transaction(() => {
+      const nowObj = new Date();
+      const datePart = nowObj.getFullYear().toString().slice(-2) +
+        (nowObj.getMonth() + 1).toString().padStart(2, '0') +
+        nowObj.getDate().toString().padStart(2, '0');
+      const prefix = `DUE-${datePart}-`;
+      const row = db.prepare(`
+        SELECT MAX(CAST(substr(invoice_no, ?) AS INTEGER)) AS max_serial
+        FROM sales
+        WHERE invoice_no LIKE ?
+      `).get(prefix.length + 1, `${prefix}%`) as any;
+      const nextSerial = (row?.max_serial || 0) + 1;
+      invoiceNo = `${prefix}${nextSerial.toString().padStart(4, '0')}`;
+      db.prepare(`
+        INSERT INTO sales (
+          id, invoice_no, status, subtotal_paisa, discount_paisa, total_paisa,
+          customer_id, user_id, device_id, created_at, updated_at,
+          previous_due_paid_paisa
+        ) VALUES (?, ?, 'completed', 0, 0, 0, ?, ?, ?, ?, ?, ?)
+      `).run(saleId, invoiceNo, payload.customer_id, userId, deviceId, now, now, amountPaisa);
+
+      db.prepare(`
+        INSERT INTO payments (
+          id, sale_id, customer_id, direction, method, amount_paisa, type, user_id, device_id, created_at, updated_at
+        ) VALUES (?, ?, ?, 'in', ?, ?, 'sale_payment', ?, ?, ?, ?)
+      `).run(paymentId, saleId, payload.customer_id, payload.method, amountPaisa, userId, deviceId, now, now);
+    });
+
+    for (let attempt = 1; ; attempt++) {
+      try {
+        writeTransaction();
+        break;
+      } catch (err) {
+        if (attempt >= 5 || !isInvoiceNumberCollision(err)) throw err;
+      }
+    }
   
       const remainingDuePaisa = Math.max(0, previousDuePaisa - amountPaisa);
   

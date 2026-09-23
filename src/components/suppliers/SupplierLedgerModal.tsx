@@ -147,7 +147,7 @@ export const SupplierLedgerModal: React.FC<SupplierLedgerModalProps> = ({ suppli
                 {rows.map((r) => (
                   <tr key={r.id} className="h-[46px] hover:bg-azure-mist-50/40 transition-colors">
                     <td className="px-3 font-mono text-ui-xs text-jungle-teal-600 whitespace-nowrap">
-                      {new Date(r.created_at).toLocaleDateString()}
+                      {new Date(r.created_at).toLocaleDateString('en-GB')}
                     </td>
                     <td className="px-3">
                       <div className="flex items-center gap-2">

@@ -518,7 +518,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                                         </span>
                                         {batch.received_at && (
                                           <span className="text-[10px] text-jungle-teal-400 bg-jungle-teal-50 px-1.5 py-0.5 rounded font-mono">
-                                            {new Date(batch.received_at).toLocaleDateString()}
+                                            {new Date(batch.received_at).toLocaleDateString('en-GB')}
                                           </span>
                                         )}
                                       </div>
@@ -577,7 +577,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                         <span className="font-semibold text-jungle-teal-900">{b.remaining_qty} {stockInProduct.unit}</span>
                         {b.received_at && (
                           <span className="text-[9px] text-jungle-teal-500 ml-2 font-sans opacity-80" title={new Date(b.received_at).toLocaleString()}>
-                            {new Date(b.received_at).toLocaleDateString()}
+                            {new Date(b.received_at).toLocaleDateString('en-GB')}
                           </span>
                         )}
                       </div>

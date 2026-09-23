@@ -64,7 +64,7 @@ export const StockHistoryModal: React.FC<StockHistoryModalProps> = ({ isOpen, on
                     <span className="font-bold text-jungle-teal-900 text-base">{b.remaining_qty} {product.unit}</span>
                     {b.received_at && (
                       <span className="text-xs text-jungle-teal-500 font-sans font-medium" title={new Date(b.received_at).toLocaleString()}>
-                        Received: {new Date(b.received_at).toLocaleDateString()}
+                        Received: {new Date(b.received_at).toLocaleDateString('en-GB')}
                       </span>
                     )}
                   </div>

@@ -175,6 +175,7 @@ export function applyBaseSchema(db: Database.Database) {
       subtotal_paisa INTEGER NOT NULL DEFAULT 0,
       discount_paisa INTEGER NOT NULL DEFAULT 0,
       total_paisa INTEGER NOT NULL DEFAULT 0,
+      previous_due_paid_paisa INTEGER NOT NULL DEFAULT 0,
       user_id TEXT NOT NULL,
       device_id TEXT,
       created_at TEXT NOT NULL,
@@ -941,6 +942,9 @@ export const MIGRATIONS: Migration[] = [
 const ADDITIVE_COLUMNS: Record<string, Record<string, string>> = {
   users: {
     pin_code: 'TEXT',
+  },
+  sales: {
+    previous_due_paid_paisa: 'INTEGER NOT NULL DEFAULT 0',
   },
   suppliers: {
     contact_person: 'TEXT',
