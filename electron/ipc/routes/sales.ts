@@ -113,12 +113,12 @@ export function registerSalesHandlers() {
         db.prepare(`
           INSERT INTO sales (
             id, invoice_no, status, customer_id, subtotal_paisa, discount_paisa, total_paisa,
-            user_id, device_id, created_at, updated_at
-          ) VALUES (?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)
+            user_id, device_id, created_at, updated_at, previous_due_paid_paisa
+          ) VALUES (?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           saleId, invoiceNo, payload.customer_id || null, payload.subtotal_paisa,
-          payload.discount_paisa, payload.total_paisa, userId, deviceId, now, now
-        );
+            payload.discount_paisa, payload.total_paisa, userId, deviceId, now, now, payload.previous_due_paid_paisa || 0
+          );
   
         // 2. Decrement Stock with Race-Safe Condition & Insert Sale Items
         const updateStockStmt = db.prepare(`
