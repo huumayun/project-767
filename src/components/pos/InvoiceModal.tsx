@@ -66,6 +66,14 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   };
 
   useEffect(() => {
+    if (initialPdf) {
+      setPdfData(initialPdf);
+    } else {
+      setPdfData('');
+    }
+  }, [initialPdf, invoiceNo]);
+
+  useEffect(() => {
     if (isOpen && invoiceNo) {
       // The modal stays mounted between bills; "Saved" belongs to the last one.
       setSaveState('idle');
