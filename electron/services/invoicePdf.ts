@@ -623,8 +623,11 @@ export async function generateInvoicePdf(
               },
               layout: 'noBorders',
             },
+            ],
+            margin: [0, 0, 0, 6],
+          },
               // Customer Balance Summary (Thermal)
-            data.customerPreviousDuePaisa !== undefined && data.previousDuePaidPaisa !== undefined && data.customerRemainingDuePaisa !== undefined && (data.customerPreviousDuePaisa > 0 || data.previousDuePaidPaisa > 0 || data.customerRemainingDuePaisa > 0) ? {
+            !isThermal ? {} : data.customerPreviousDuePaisa !== undefined && data.previousDuePaidPaisa !== undefined && data.customerRemainingDuePaisa !== undefined && (data.customerPreviousDuePaisa > 0 || data.previousDuePaidPaisa > 0 || data.customerRemainingDuePaisa > 0) ? {
               table: {
                 widths: ['*', 'auto'],
                 body: [
@@ -638,9 +641,6 @@ export async function generateInvoicePdf(
               layout: { hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length) ? 0.5 : 0, vLineWidth: () => 0, hLineColor: () => '#94a3b8' },
               margin: [0, 4, 0, 6]
             } : {},
-          ],
-          margin: [0, 0, 0, 6],
-        },
 
       // Split Payment Details
       data.payments.length > 0
