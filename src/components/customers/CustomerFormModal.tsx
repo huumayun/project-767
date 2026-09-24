@@ -19,6 +19,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [note, setNote] = useState('');
+  const [initialDue, setInitialDue] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,11 +29,13 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       setPhone(customer.phone || '');
       setAddress(customer.address || '');
       setNote(customer.note || '');
+      setInitialDue(customer.initial_due_paisa ? String(customer.initial_due_paisa / 100) : '');
     } else {
       setName('');
       setPhone('');
       setAddress('');
       setNote('');
+      setInitialDue('');
     }
   }, [customer, isOpen]);
 
@@ -67,6 +70,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
           phone: phone.trim() || null,
           address: address.trim() || null,
           note: note.trim() || null,
+          initialDuePaisa: initialDue ? Math.round(parseFloat(initialDue) * 100) : 0,
         });
         onSuccess(created);
       }
@@ -149,6 +153,23 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
               className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
             />
           </div>
+
+          
+          {!customer && (
+            <div>
+              <label className="block text-jungle-teal-700 font-semibold mb-1">Previous Due Amount (Tk)</label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={initialDue}
+                onChange={(e) => setInitialDue(e.target.value)}
+                placeholder="0"
+                className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
+              />
+              <p className="text-xs text-jungle-teal-500 mt-1">Leave empty if there is no previous due.</p>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2 border-t border-jungle-teal-200">
             <button

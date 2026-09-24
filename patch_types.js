@@ -1,16 +1,14 @@
 const fs = require('fs');
-const path = 'c:/Users/humay/Music/project-767/src/types/ipc.ts';
-let content = fs.readFileSync(path, 'utf8');
+let c = fs.readFileSync('src/types/ipc.ts', 'utf8');
 
-content = content.replace(
-  'net_sales_paisa: number;\n    payments_breakdown:',
-  'net_sales_paisa: number;\n    due_collection_paisa: number;\n    payments_breakdown:'
+c = c.replace(
+  /export interface Customer \{([\s\S]+?)\}/,
+  (match, inner) => `export interface Customer {${inner}  initial_due_paisa?: number;\n}`
 );
 
-content = content.replace(
-  'net_sales_paisa?: number;\n    /** What those goods cost, at the FIFO cost captured on each sale line. */',
-  'net_sales_paisa?: number;\n    cash_due_collected_paisa?: number;\n    other_due_collected_paisa?: number;\n    /** What those goods cost, at the FIFO cost captured on each sale line. */'
+c = c.replace(
+  /create: \(data: \{ name: string; phone\?: string \| null; address\?: string \| null; note\?: string \| null \}\) => Promise<Customer>;/,
+  'create: (data: { name: string; phone?: string | null; address?: string | null; note?: string | null; initialDuePaisa?: number }) => Promise<Customer>;'
 );
 
-fs.writeFileSync(path, content, 'utf8');
-console.log('Fixed ipc.ts types');
+fs.writeFileSync('src/types/ipc.ts', c);

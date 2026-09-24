@@ -67,8 +67,8 @@ export function registerCustomersHandlers() {
       const deviceId = getDeviceId(db);
   
       db.prepare(`
-        INSERT INTO customers (id, name, phone, address, note, device_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO customers (id, name, phone, address, note, device_id, created_at, updated_at, initial_due_paisa)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, data.name.trim(), data.phone?.trim() || null,
         data.address?.trim() || null, data.note?.trim() || null,
@@ -260,6 +260,9 @@ export function registerCustomersHandlers() {
         WHERE customer_id = ? AND deleted_at IS NULL AND status != 'held'
       `).all(customerId) as any[];
 
+      const customerRow = db.prepare('SELECT initial_due_paisa, created_at FROM customers WHERE id = ?').get(customerId) as any;
+      const initialDue = customerRow?.initial_due_paisa || 0;
+      
       const returns = db.prepare(`
         SELECT ri.id, s.invoice_no as ref_no, ri.amount_paisa, r.created_at
         FROM returns r
@@ -278,7 +281,7 @@ export function registerCustomersHandlers() {
 
       const history: Array<{
         id: string;
-        type: 'sale' | 'payment' | 'return' | 'refund';
+        type: 'sale' | 'payment' | 'return' | 'refund' | 'opening_balance';
         date: string;
         ref_no: string;
         description: string;
@@ -289,6 +292,18 @@ export function registerCustomersHandlers() {
         /** Ties rows sharing a timestamp into a readable order. */
         seq?: number;
       }> = [];
+      if (initialDue > 0) {
+        history.push({
+          id: 'opening_balance',
+          type: 'opening_balance' as any,
+          date: customerRow.created_at,
+          ref_no: 'Opening Balance',
+          description: 'Previous Due Account Opening',
+          debit_paisa: initialDue,
+          credit_paisa: 0,
+          seq: -1
+        });
+      }
 
       sales.forEach(s => {
         history.push({

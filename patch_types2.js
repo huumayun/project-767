@@ -1,11 +1,9 @@
 const fs = require('fs');
-const path = 'c:/Users/humay/Music/project-767/src/types/ipc.ts';
-let content = fs.readFileSync(path, 'utf8');
 
-content = content.replace(
-  /net_sales_paisa: number;\s*payments_breakdown:/g,
-  'net_sales_paisa: number;\n    due_collection_paisa: number;\n    payments_breakdown:'
-);
+let c1 = fs.readFileSync('src/types/ipc.ts', 'utf8');
+c1 = c1.replace(/'sale' \| 'payment' \| 'return' \| 'refund'/g, "'sale' | 'payment' | 'return' | 'refund' | 'opening_balance'");
+fs.writeFileSync('src/types/ipc.ts', c1);
 
-fs.writeFileSync(path, content, 'utf8');
-console.log('Fixed ipc.ts types');
+let c2 = fs.readFileSync('electron/ipc/routes/customers.ts', 'utf8');
+c2 = c2.replace(/'sale' \| 'payment' \| 'return' \| 'refund'/g, "'sale' | 'payment' | 'return' | 'refund' | 'opening_balance'");
+fs.writeFileSync('electron/ipc/routes/customers.ts', c2);

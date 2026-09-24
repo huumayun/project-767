@@ -160,7 +160,8 @@ export function applyBaseSchema(db: Database.Database) {
       device_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      deleted_at TEXT
+      deleted_at TEXT,
+        initial_due_paisa INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
   `);
@@ -404,7 +405,7 @@ export function applyBaseSchema(db: Database.Database) {
       c.phone,
       COALESCE(sales_total.sum_sales, 0) AS total_sales_paisa,
       COALESCE(payments_total.sum_payments, 0) AS total_paid_paisa,
-      (COALESCE(sales_total.sum_sales, 0) - COALESCE(payments_total.sum_payments, 0)) AS due_paisa
+      (c.initial_due_paisa + COALESCE(sales_total.sum_sales, 0) - COALESCE(payments_total.sum_payments, 0)) AS due_paisa
     FROM customers c
     LEFT JOIN (
       SELECT customer_id, SUM(total_paisa) AS sum_sales 
@@ -941,8 +942,11 @@ export const MIGRATIONS: Migration[] = [
  */
 const ADDITIVE_COLUMNS: Record<string, Record<string, string>> = {
   users: {
-    pin_code: 'TEXT',
-  },
+      pin_code: 'TEXT',
+    },
+    customers: {
+      initial_due_paisa: 'INTEGER NOT NULL DEFAULT 0',
+    },
   sales: {
     previous_due_paid_paisa: 'INTEGER NOT NULL DEFAULT 0',
   },

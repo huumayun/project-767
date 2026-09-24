@@ -312,6 +312,7 @@ export interface Customer {
   due_paisa?: number;
   created_at?: string;
   updated_at?: string;
+  initial_due_paisa?: number;
 }
 
 export interface CustomerDueSummary {
@@ -328,7 +329,7 @@ export interface CustomerHistoryItem {
    * handed over the counter (balance back up). Both are needed for the
    * statement to close on the same figure v_customer_due reports.
    */
-  type: 'sale' | 'payment' | 'return' | 'refund';
+  type: 'sale' | 'payment' | 'return' | 'refund' | 'opening_balance';
   date: string;
   ref_no: string;
   description: string;
@@ -678,7 +679,7 @@ export interface IElectronApi {
   customers: {
     list: (search?: string) => Promise<Customer[]>;
     getById: (id: string) => Promise<Customer | null>;
-    create: (data: { name: string; phone?: string | null; address?: string | null; note?: string | null }) => Promise<Customer>;
+    create: (data: { name: string; phone?: string | null; address?: string | null; note?: string | null; initialDuePaisa?: number }) => Promise<Customer>;
     update: (data: { id: string; name: string; phone?: string | null; address?: string | null; note?: string | null }) => Promise<{ success: boolean }>;
     delete: (id: string) => Promise<{ success: boolean }>;
     getHistory: (customerId: string) => Promise<CustomerHistoryItem[]>;
