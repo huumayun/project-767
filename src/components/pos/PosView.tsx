@@ -690,6 +690,11 @@ export const PosView: React.FC<PosViewProps> = ({
     // Guarded here rather than only on the button: the checkout shortcut and
     // the payment panel both reach this, and either would otherwise walk into
     // the main process's refusal with a full cart already rung up.
+    if (selectedCustomer && previousDuePaidPaisa > (selectedCustomer.due_paisa || 0)) {
+      toast.error(`You cannot collect more than the customer's previous due (৳ ${((selectedCustomer.due_paisa || 0) / 100).toFixed(2)})!`);
+      return;
+    }
+
     if (!canTakeMoney) {
       toast.warning('No shift is open. Open one before taking money.');
       onOpenShift();

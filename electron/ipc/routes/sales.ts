@@ -70,6 +70,12 @@ export function registerSalesHandlers() {
         if (dueRow) customerPreviousDuePaisa = dueRow.due_paisa;
       }
   
+      if (payload.customer_id) {
+        if ((payload.previous_due_paid_paisa || 0) > customerPreviousDuePaisa) {
+          throw new Error('Cannot collect more than the current due.');
+        }
+      }
+
       const totalCollected = payload.payments.reduce((sum, p) => sum + (p.amount_paisa || 0), 0);
       const netCollected = payload.change_paisa > 0 ? Math.max(0, totalCollected - payload.change_paisa) : totalCollected;
       const remainingDue = Math.max(0, payload.total_paisa - netCollected);
