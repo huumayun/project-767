@@ -222,7 +222,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       
       const headers = ['barcode', 'name', 'name_bn', 'category_name', 'brand', 'unit', 'cost_price_taka', 'sell_price_taka', 'stock_qty', 'low_stock_threshold'];
       
-      const escapeCsv = (str) => {
+      const escapeCsv = (str: any) => {
         if (str == null) return '';
         const s = String(str);
         if (s.includes(',') || s.includes('"') || s.includes('\n')) {
