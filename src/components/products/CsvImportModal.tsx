@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Upload, Download, CheckCircle2, AlertTriangle, X, FileSpreadsheet } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -41,6 +41,26 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result;
+      if (typeof text === 'string') {
+        setCsvText(text);
+        setReport(null);
+      }
+    };
+    reader.readAsText(file);
+    // Reset input so the same file can be selected again
+    e.target.value = '';
   };
 
   const parseCsvLines = (text: string) => {
@@ -159,14 +179,33 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
 
         <div className="flex items-center justify-between">
           <span className="text-xs text-jungle-teal-600 font-semibold">Paste CSV Data or use the standard template:</span>
-          <button
-            type="button"
-            onClick={handleDownloadTemplate}
-            className="text-xs text-azure-mist-800 hover:text-azure-mist-950 font-bold flex items-center gap-1"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Download CSV Template</span>
-          </button>
+          
+          <div className="flex gap-3 items-center">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-xs px-2.5 py-1.5 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-lg font-bold flex items-center gap-1.5 border border-jungle-teal-300 transition-colors shadow-xs"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Select CSV File</span>
+            </button>
+            <input
+              type="file"
+              accept=".csv"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="text-xs text-azure-mist-800 hover:text-azure-mist-950 font-bold flex items-center gap-1"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Template</span>
+            </button>
+          </div>
+
         </div>
 
         <textarea
