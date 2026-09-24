@@ -59,6 +59,7 @@ export function registerCustomersHandlers() {
         phone: z.string().optional().nullable(),
         address: z.string().optional().nullable(),
         note: z.string().optional().nullable(),
+          initialDuePaisa: z.number().optional().default(0),
       });
       const data = schema.parse(rawData);
       const db = getDb();
