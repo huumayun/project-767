@@ -72,8 +72,8 @@ export function registerCustomersHandlers() {
       `).run(
         id, data.name.trim(), data.phone?.trim() || null,
         data.address?.trim() || null, data.note?.trim() || null,
-        deviceId, now, now
-      );
+        deviceId, now, now, data.initialDuePaisa || 0
+        );
   
       logAudit('CREATE_CUSTOMER', 'customers', id, { name: data.name, phone: data.phone });
       return {
