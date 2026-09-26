@@ -1526,7 +1526,12 @@ export const PosView: React.FC<PosViewProps> = ({
                       step="any"
                       placeholder="Amount"
                       value={previousDuePaidTaka}
-                      onChange={(e) => setPreviousDuePaidTaka(e.target.value)}
+                      onChange={(e) => {
+                      setPreviousDuePaidTaka(e.target.value);
+                      if (Math.round((parseFloat(e.target.value) || 0) * 100) > 0) {
+                        setIsDueSaleMode(false);
+                      }
+                    }}
                       className="w-24 text-right bg-white border border-amber-300 rounded-lg text-sm font-mono font-bold text-amber-900 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
                     />
                   </div>
@@ -1802,14 +1807,19 @@ export const PosView: React.FC<PosViewProps> = ({
               </label>
               <button
                 type="button"
+                disabled={previousDuePaidPaisa > 0}
                 onClick={() => (isDueSaleMode ? setIsDueSaleMode(false) : handleFullDue())}
                 className={`h-8 px-3 text-ui-xs font-medium rounded-xl border transition-colors flex items-center gap-1.5 ${
-                  isDueSaleMode
+                  previousDuePaidPaisa > 0
+                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                    : isDueSaleMode
                     ? 'bg-amber-500 border-amber-600 text-white'
                     : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
                 }`}
                 title={
-                  isDueSaleMode
+                  previousDuePaidPaisa > 0
+                    ? 'Cannot make a due sale while collecting previous due'
+                    : isDueSaleMode
                     ? 'This bill is set to due — click to cancel'
                     : 'Put the whole bill on the customer’s account'
                 }

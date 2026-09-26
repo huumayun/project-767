@@ -127,19 +127,23 @@ export async function disconnectDrive() {
   db.prepare('DELETE FROM settings WHERE key = ?').run('gdrive_refresh_token');
 }
 
-async function getOrCreateFolder(drive: any, folderName: string): Promise<string> {
+async function getOrCreateFolder(drive: any, folderName: string, parentId?: string): Promise<string> {
+  const parentQuery = parentId ? ` and '${parentId}' in parents` : '';
   const res = await drive.files.list({
-    q: `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`,
+    q: `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false${parentQuery}`,
     fields: 'files(id)',
     spaces: 'drive',
   });
   if (res.data.files && res.data.files.length > 0) {
     return res.data.files[0].id;
   } else {
-    const fileMetadata = {
+    const fileMetadata: any = {
       name: folderName,
       mimeType: 'application/vnd.google-apps.folder',
     };
+    if (parentId) {
+      fileMetadata.parents = [parentId];
+    }
     const folder = await drive.files.create({
       requestBody: fileMetadata,
       fields: 'id',
@@ -148,7 +152,7 @@ async function getOrCreateFolder(drive: any, folderName: string): Promise<string
   }
 }
 
-export async function uploadToDrive(filePath: string): Promise<void> {
+export async function uploadToDrive(filePath: string, mimeType: string = 'application/x-sqlite3', subFolder?: string): Promise<void> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) {
     console.log('Google Drive is not connected. Skipping upload.');
@@ -164,14 +168,17 @@ export async function uploadToDrive(filePath: string): Promise<void> {
   try {
     console.log(`Starting upload to Google Drive: ${fileName}`);
     const folderName = getShopNameForFolder();
-    const folderId = await getOrCreateFolder(drive, folderName);
+    let folderId = await getOrCreateFolder(drive, folderName);
+    if (subFolder) {
+      folderId = await getOrCreateFolder(drive, subFolder, folderId);
+    }
 
     const fileMetadata = {
       name: fileName,
       parents: [folderId],
     };
     const media = {
-      mimeType: 'application/x-sqlite3',
+      mimeType: mimeType,
       body: fs.createReadStream(filePath),
     };
 

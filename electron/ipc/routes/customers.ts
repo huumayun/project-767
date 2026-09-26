@@ -451,4 +451,92 @@ export function registerCustomersHandlers() {
       };
     });
 
+  ipcMain.handle('api:customers:bulkImport', async (_event, rawPayload) => {
+    requireRole(['owner', 'staff']);
+    const schema = z.object({
+      mode: z.enum(['dry_run', 'commit']),
+      rows: z.array(z.object({
+        name: z.string(),
+        phone: z.string().optional().nullable(),
+        address: z.string().optional().nullable(),
+        note: z.string().optional().nullable(),
+        due_taka: z.number().optional().default(0),
+      })),
+    });
+
+    const payload = schema.parse(rawPayload);
+    const db = getDb();
+    const deviceId = getDeviceId(db);
+
+    const errors: string[] = [];
+    const validRows: any[] = [];
+    const phoneSeenInFile = new Set<string>();
+
+    const existingPhonesRows = db.prepare('SELECT phone FROM customers WHERE phone IS NOT NULL AND deleted_at IS NULL').all() as { phone: string }[];
+    const dbPhones = new Set(existingPhonesRows.map(r => r.phone));
+
+    payload.rows.forEach((row, idx) => {
+      let rowHasError = false;
+      const lineNo = idx + 1;
+      const name = row.name?.trim();
+      if (!name) {
+        errors.push(`Row ${lineNo}: Customer name is required.`);
+        rowHasError = true;
+      }
+
+      let phone = row.phone?.trim() || null;
+      if (phone) {
+        if (phoneSeenInFile.has(phone)) {
+          errors.push(`Row ${lineNo}: Duplicate phone "${phone}" in import file.`);
+          rowHasError = true;
+        } else if (dbPhones.has(phone)) {
+          errors.push(`Row ${lineNo}: Phone "${phone}" already exists in database. Skipped to prevent duplicates.`);
+          rowHasError = true;
+        } else {
+          phoneSeenInFile.add(phone);
+        }
+      }
+
+      if (!rowHasError) {
+        validRows.push({
+          ...row,
+          name,
+          phone,
+          initial_due_paisa: Math.round(row.due_taka * 100),
+        });
+      }
+    });
+
+    if (payload.mode === 'dry_run') {
+        return { success: errors.length === 0, totalRows: payload.rows.length, validRowsCount: validRows.length, errors, validRows };
+      }
+
+    const now = new Date().toISOString();
+    const insertStmt = db.prepare(`
+      INSERT INTO customers (id, name, phone, address, note, device_id, created_at, updated_at, initial_due_paisa)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let imported = 0;
+    db.transaction(() => {
+      for (const row of validRows) {
+        insertStmt.run(
+          uuidv7(),
+          row.name,
+          row.phone,
+          row.address?.trim() || null,
+          row.note?.trim() || null,
+          deviceId,
+          now,
+          now,
+          row.initial_due_paisa
+        );
+        imported++;
+      }
+    })();
+
+    logAudit('BULK_IMPORT', 'customers', 'bulk', { imported });
+    return { success: true, validRowsCount: validRows.length, imported, errors };
+  });
+
 }

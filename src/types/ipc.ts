@@ -632,7 +632,7 @@ export interface IElectronApi {
     stockIn: (data: { product_id: string; qty: number; cost_price_paisa?: number; sell_price_paisa?: number; reason?: string }) => Promise<{ success: boolean; newStock: number }>;
     stockAdjustment: (data: { product_id: string; qty_delta: number; reason: string }) => Promise<{ success: boolean; newStock: number }>;
     getStockHistory: (productId: string) => Promise<any[]>;
-    bulkImport: (payload: { mode: 'dry_run' | 'commit'; rows: any[] }) => Promise<{ success: boolean; totalRows?: number; validRowsCount?: number; imported?: number; errors: string[] }>;
+    bulkImport: (payload: { mode: 'dry_run' | 'commit'; rows: any[] }) => Promise<{ success: boolean; totalRows?: number; validRowsCount?: number; imported?: number; errors: string[]; validRows?: any[] }>;
   };
   suppliers: {
     update: (data: { id: string; name: string; phone?: string | null; address?: string | null; contact_person?: string | null; opening_balance_taka?: number; payment_terms_days?: number | null; note?: string | null }) => Promise<{ success: boolean }>;
@@ -685,6 +685,7 @@ export interface IElectronApi {
     getHistory: (customerId: string) => Promise<CustomerHistoryItem[]>;
     collectDue: (payload: DueCollectionPayload) => Promise<DueCollectionResult>;
     getDueSummary: () => Promise<CustomerDueSummary>;
+    bulkImport: (payload: { mode: 'dry_run' | 'commit'; rows: any[] }) => Promise<{ success: boolean; totalRows?: number; validRowsCount?: number; imported?: number; errors: string[]; validRows?: any[] }>;
   };
   reports: {
     getSalesReport: (args: { startDate: string; endDate: string }) => Promise<SalesReportData>;

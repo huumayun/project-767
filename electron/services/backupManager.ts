@@ -39,6 +39,75 @@ export function getBackupsDirectory(): string {
 /**
  * Creates an atomic, online SQLite backup using the VACUUM INTO command.
  */
+
+function escapeCsv(str: any): string {
+  if (str == null) return '';
+  const s = String(str);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function exportProductsToCSV(backupDir: string, timestamp: string, isAuto: boolean): string | null {
+  try {
+    const { getDb } = require('../db');
+    const db = getDb();
+    const products = db.prepare('SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.deleted_at IS NULL').all() as any[];
+    const headers = ['barcode', 'name', 'name_bn', 'category_name', 'brand', 'unit', 'cost_price_taka', 'sell_price_taka', 'stock_qty', 'low_stock_threshold'];
+    
+    const rows = products.map(p => {
+      return [
+        escapeCsv(p.barcode),
+        escapeCsv(p.name),
+        escapeCsv(p.name_bn),
+        escapeCsv(p.category_name),
+        escapeCsv(p.brand),
+        escapeCsv(p.unit || 'pcs'),
+        ((p.buy_price_paisa || 0) / 100).toFixed(2),
+        ((p.sell_price_paisa || 0) / 100).toFixed(2),
+        p.stock || 0,
+        p.min_stock || 0
+      ].join(',');
+    });
+    
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const finalPath = require('path').join(backupDir, `shop-backup-${timestamp}${isAuto ? '-auto' : ''}-products.csv`);
+    fs.writeFileSync(finalPath, csvContent, 'utf-8');
+    return finalPath;
+  } catch (err) {
+    console.error('Failed to export products to CSV:', err);
+    return null;
+  }
+}
+
+function exportCustomersToCSV(backupDir: string, timestamp: string, isAuto: boolean): string | null {
+  try {
+    const { getDb } = require('../db');
+    const db = getDb();
+    const customers = db.prepare('SELECT c.*, v.due_paisa FROM customers c LEFT JOIN v_customer_due v ON c.id = v.customer_id WHERE c.deleted_at IS NULL').all() as any[];
+    const headers = ['name', 'phone', 'address', 'note', 'due_taka'];
+    
+    const rows = customers.map(c => {
+      return [
+        escapeCsv(c.name),
+        escapeCsv(c.phone),
+        escapeCsv(c.address),
+        escapeCsv(c.note),
+        ((c.due_paisa || 0) / 100).toFixed(2)
+      ].join(',');
+    });
+    
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const finalPath = require('path').join(backupDir, `shop-backup-${timestamp}${isAuto ? '-auto' : ''}-customers.csv`);
+    fs.writeFileSync(finalPath, csvContent, 'utf-8');
+    return finalPath;
+  } catch (err) {
+    console.error('Failed to export customers to CSV:', err);
+    return null;
+  }
+}
+
 export function createDatabaseBackup(targetFilePath?: string, isAuto: boolean = false): BackupFileInfo {
   const db = getDb();
   const backupDir = getBackupsDirectory();
@@ -66,7 +135,22 @@ export function createDatabaseBackup(targetFilePath?: string, isAuto: boolean = 
   // Trigger Google Drive upload asynchronously for BOTH auto and manual backups
   import('./googleDrive').then((gdrive) => {
     if (gdrive.isDriveConnected()) {
-      gdrive.uploadToDrive(finalPath).catch(err => console.error('GDrive Upload error:', err));
+      if (!targetFilePath) {
+        const timestamp = `${dateStr}-${timeStr}`;
+        const productsCsvPath = exportProductsToCSV(backupDir, timestamp, isAuto);
+        const customersCsvPath = exportCustomersToCSV(backupDir, timestamp, isAuto);
+        
+        gdrive.uploadToDrive(finalPath)
+          .then(() => {
+            if (productsCsvPath) return gdrive.uploadToDrive(productsCsvPath, 'text/csv', 'Products');
+          })
+          .then(() => {
+            if (customersCsvPath) return gdrive.uploadToDrive(customersCsvPath, 'text/csv', 'Customers');
+          })
+          .catch(err => console.error('GDrive Upload error:', err));
+      } else {
+        gdrive.uploadToDrive(finalPath).catch(err => console.error('GDrive Upload error:', err));
+      }
     }
   }).catch(err => console.error('Failed to load Google Drive service', err));
 

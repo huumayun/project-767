@@ -147,6 +147,7 @@ contextBridge.exposeInMainWorld('api', {
     getHistory: (customerId: string) => ipcRenderer.invoke('api:customers:getHistory', customerId),
     collectDue: (payload: any) => ipcRenderer.invoke('api:customers:collectDue', payload),
     getDueSummary: () => ipcRenderer.invoke('api:customers:getDueSummary'),
+    bulkImport: (payload: any) => ipcRenderer.invoke('api:customers:bulkImport', payload),
   },
   reports: {
     getSalesReport: (args: { startDate: string; endDate: string }) =>

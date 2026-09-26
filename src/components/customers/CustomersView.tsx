@@ -16,10 +16,13 @@ import {
   UserPlus,
   MessageSquare,
   Share2,
+  Upload,
+  Download,
 } from 'lucide-react';
 import { CustomerFormModal } from './CustomerFormModal';
 import { DueCollectionModal } from './DueCollectionModal';
 import { CustomerLedgerModal } from './CustomerLedgerModal';
+import { CustomerCsvImportModal } from './CustomerCsvImportModal';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { useToast } from '../../context/ToastContext';
 
@@ -50,11 +53,46 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession, on
   const [showCollectModal, setShowCollectModal] = useState(false);
   const [ledgerTargetCustomer, setLedgerTargetCustomer] = useState<Customer | null>(null);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
+  const [showCsvModal, setShowCsvModal] = useState(false);
 
   // Delete Confirm Modal State
   const [deleteTargetCustomer, setDeleteTargetCustomer] = useState<Customer | null>(null);
 
   const isOwner = currentSession?.role === 'owner';
+
+  const handleExportCsv = () => {
+    const headers = ['name', 'phone', 'address', 'note', 'due_taka'];
+    
+    const escapeCsv = (str: any) => {
+      if (str == null) return '';
+      const s = String(str);
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    };
+
+    const rows = customers.map(c => [
+      escapeCsv(c.name),
+      escapeCsv(c.phone),
+      escapeCsv(c.address),
+      escapeCsv(c.note),
+      ((c.due_paisa || 0) / 100).toFixed(2),
+    ].join(','));
+    
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `fatema_electronics_customers_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Customers exported successfully!');
+  };
 
   const fetchData = async () => {
     if (!window.api) return;
@@ -158,6 +196,22 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession, on
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setShowCsvModal(true)}
+            className="h-[40px] px-4 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-xl text-ui-sm font-semibold flex items-center gap-1.5 border border-jungle-teal-300 transition-colors"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Bulk CSV</span>
+          </button>
+
+          <button
+            onClick={handleExportCsv}
+            className="h-[40px] px-4 bg-azure-mist-100 hover:bg-azure-mist-200 text-azure-mist-800 rounded-xl text-ui-sm font-bold flex items-center gap-1 border border-azure-mist-300 shadow-xs transition-colors"
+            title="Download all customers as CSV"
+          >
+            <Download className="w-4 h-4" />
+            <span>Download CSV</span>
+          </button>
           <button
             onClick={() => {
               setEditingCustomer(null);
@@ -436,6 +490,15 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession, on
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTargetCustomer(null)}
       />
+
+      {/* Bulk CSV Import Modal */}
+      {showCsvModal && (
+        <CustomerCsvImportModal
+          isOpen={showCsvModal}
+          onClose={() => setShowCsvModal(false)}
+          onSuccess={() => { fetchData(); setShowCsvModal(false); }}
+        />
+      )}
     </div>
   );
 };
