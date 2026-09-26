@@ -85,7 +85,7 @@ export function registerCustomersHandlers() {
         note: data.note?.trim() || null,
         total_sales_paisa: 0,
         total_paid_paisa: 0,
-        due_paisa: 0,
+        due_paisa: data.initialDuePaisa || 0,
         created_at: now,
         updated_at: now,
       };
