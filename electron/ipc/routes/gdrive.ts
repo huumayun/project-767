@@ -3,6 +3,7 @@ import path from 'path';
 import { getAuthUrl, authorizeWithCode, isDriveConnected, disconnectDrive, findAndDownloadLatestBackup } from '../../services/googleDrive';
 import { requireRole, requireOwnerOrFirstRun, logAudit } from '../shared';
 import { isGoogleConfigured, GOOGLE_NOT_CONFIGURED } from '../../services/googleCredentials';
+import { checkAndRunAutoBackup } from '../../services/autoBackupScheduler';
 
 export function registerGDriveHandlers() {
   // Gated like everything else. It was the one handler in the app that answered
@@ -35,13 +36,20 @@ export function registerGDriveHandlers() {
       } catch (e) {
         console.warn('Failed to read last_gdrive_backup info:', e);
       }
+
+      // Check if 12+ hours have passed and trigger auto-backup asynchronously if overdue
+      checkAndRunAutoBackup().catch((err) => console.warn('Auto-backup check on status query error:', err));
     }
+
+    const lastBackupTime = lastBackupAt ? new Date(lastBackupAt).getTime() : 0;
+    const isBackupDue = !lastBackupTime || (Date.now() - lastBackupTime >= 12 * 60 * 60 * 1000);
 
     return {
       isConnected: connected,
       isConfigured: isGoogleConfigured(),
       lastBackupAt,
       lastFileName,
+      isBackupDue,
     };
   });
 

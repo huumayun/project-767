@@ -13,6 +13,7 @@ import { setupSecurityPolicies } from './security';
 import { getDb } from './db';
 import { registerIpcHandlers } from './ipc/handlers';
 import { startSyncEngine, stopSyncEngine } from './services/syncEngine';
+import { startAutoBackupScheduler } from './services/autoBackupScheduler';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -115,6 +116,7 @@ npx electron-builder install-app-deps`
    * configured, so an offline-only shop pays for one settings read a minute.
    */
   startSyncEngine();
+  startAutoBackupScheduler();
 
   // Load URL
   if (process.env.VITE_DEV_SERVER_URL) {

@@ -766,6 +766,7 @@ export interface IElectronApi {
       isConfigured?: boolean;
       lastBackupAt?: string | null;
       lastFileName?: string | null;
+      isBackupDue?: boolean;
     }>;
     getAuthUrl: () => Promise<{ success: boolean; autoHandled?: boolean; error?: string }>;
     authorize: (code: string) => Promise<{ success: boolean }>;

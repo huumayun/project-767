@@ -163,6 +163,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [driveRefreshKey, setDriveRefreshKey] = useState(0);
 
   // Invoice Modal State
   const [selectedInvoiceNo, setSelectedInvoiceNo] = useState<string | null>(null);
@@ -389,6 +390,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleRefresh = () => {
     setRefreshing(true);
+    setDriveRefreshKey((prev) => prev + 1);
     fetchDashboardData(datePreset, appliedCustom.start, appliedCustom.end);
   };
 
@@ -466,15 +468,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Action Controls & POS CTA */}
         <div className="flex items-center gap-2.5">
           {isOwner && onOpenSyncModal && (
-            <GoogleDriveStatusBadge onOpenSyncModal={onOpenSyncModal} />
+            <GoogleDriveStatusBadge onOpenSyncModal={onOpenSyncModal} refreshTrigger={driveRefreshKey} />
           )}
 
           <button
             type="button"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-xl text-ui-xs font-semibold border border-jungle-teal-300 transition-colors shadow-2xs"
-            title="Refresh Data"
+            className="inline-flex items-center gap-1.5 px-3.5 h-[40px] bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-800 rounded-xl text-ui-xs font-semibold border border-jungle-teal-300 transition-colors shadow-2xs cursor-pointer active:scale-98"
+            title="Refresh Data & Backup Status"
           >
             <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             <span>{'Refresh'}</span>
@@ -482,7 +484,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <button
             onClick={() => onNavigateTab('pos')}
-            className="inline-flex items-center justify-center gap-2 bg-linear-to-r from-azure-mist-700 to-azure-mist-600 hover:from-azure-mist-600 hover:to-azure-mist-400 text-white font-semibold px-5 h-[40px] rounded-xl shadow-sm text-ui-sm transition-colors active:scale-95"
+            className="inline-flex items-center justify-center gap-2 bg-linear-to-r from-azure-mist-700 to-azure-mist-600 hover:from-azure-mist-600 hover:to-azure-mist-400 text-white font-semibold px-5 h-[40px] rounded-xl shadow-sm text-ui-sm transition-colors active:scale-95 cursor-pointer"
           >
             <ShoppingCart className="w-4 h-4" />
             <span>{'Launch POS Terminal'}</span>
