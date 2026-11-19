@@ -756,6 +756,7 @@ function MainApp() {
             currentSession={currentSession}
             products={products}
             onNavigateTab={(tab) => setActiveTab(tab as any)}
+            onOpenSyncModal={() => setShowSyncModal(true)}
           />
         )}
 

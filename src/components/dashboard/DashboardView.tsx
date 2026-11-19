@@ -23,11 +23,13 @@ import {
 import { translations } from '../../i18n/translations';
 import { InvoiceModal } from '../pos/InvoiceModal';
 import { DailySalesChart } from './DailySalesChart';
+import { GoogleDriveStatusBadge } from '../sync/GoogleDriveStatusBadge';
 
 interface DashboardViewProps {
   currentSession: UserSession | null;
   products: Product[];
   onNavigateTab: (tab: 'pos' | 'sales' | 'customers' | 'products' | 'suppliers' | 'reports' | 'dashboard') => void;
+  onOpenSyncModal?: () => void;
 }
 
 type DatePreset = 'today' | '7days' | '15days' | '30days' | 'custom';
@@ -128,6 +130,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   currentSession,
   products,
   onNavigateTab,
+  onOpenSyncModal,
 }) => {
   const t = translations;
   const isOwner = currentSession?.role === 'owner';
@@ -462,6 +465,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Action Controls & POS CTA */}
         <div className="flex items-center gap-2.5">
+          {isOwner && onOpenSyncModal && (
+            <GoogleDriveStatusBadge onOpenSyncModal={onOpenSyncModal} />
+          )}
+
           <button
             type="button"
             onClick={handleRefresh}

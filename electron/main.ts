@@ -1,6 +1,14 @@
 import { app, BrowserWindow, dialog, Tray, Menu , powerSaveBlocker} from 'electron';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
+
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {
+  // Ignore if not supported
+}
+
 import { setupSecurityPolicies } from './security';
 import { getDb } from './db';
 import { registerIpcHandlers } from './ipc/handlers';

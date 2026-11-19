@@ -85,9 +85,12 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
     setError(null);
     try {
       const backup = await window.api.backup.createManual();
-      toast.success('Backup saved: ' + backup.fileName);
-      setSuccessMsg('Backup saved: ' + backup.fileName + ' (' + (backup.sizeBytes / 1024).toFixed(1) + ' KB)');
-      setTimeout(() => setSuccessMsg(null), 3000);
+      const msg = gdriveConnected
+        ? `Backup saved locally & uploading to Google Drive: ${backup.fileName}`
+        : `Backup saved: ${backup.fileName}`;
+      toast.success(msg);
+      setSuccessMsg(msg + ' (' + (backup.sizeBytes / 1024).toFixed(1) + ' KB)');
+      setTimeout(() => setSuccessMsg(null), 4000);
       loadData();
     } catch (err: any) {
       toast.error(err.message || 'Failed to create backup.');

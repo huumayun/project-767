@@ -10,7 +10,39 @@ export function registerGDriveHandlers() {
   // up - is not something the login screen needs to know.
   ipcMain.handle('api:gdrive:status', async () => {
     requireRole(['owner', 'staff']);
-    return { isConnected: isDriveConnected(), isConfigured: isGoogleConfigured() };
+    const connected = isDriveConnected();
+    let lastBackupAt: string | null = null;
+    let lastFileName: string | null = null;
+
+    if (connected) {
+      try {
+        const { getDb } = require('../../db');
+        const db = getDb();
+        const rowAt = db.prepare("SELECT value FROM settings WHERE key = 'last_gdrive_backup_at'").get() as any;
+        const rowFile = db.prepare("SELECT value FROM settings WHERE key = 'last_gdrive_backup_file'").get() as any;
+        lastBackupAt = rowAt?.value || null;
+        lastFileName = rowFile?.value || null;
+
+        // If not stored in settings yet, fallback to most recent local backup
+        if (!lastBackupAt) {
+          const { listBackups } = require('../../services/backupManager');
+          const backups = listBackups();
+          if (backups.length > 0) {
+            lastBackupAt = backups[0].createdAt;
+            lastFileName = backups[0].fileName;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to read last_gdrive_backup info:', e);
+      }
+    }
+
+    return {
+      isConnected: connected,
+      isConfigured: isGoogleConfigured(),
+      lastBackupAt,
+      lastFileName,
+    };
   });
 
     ipcMain.handle('api:gdrive:getAuthUrl', async () => {

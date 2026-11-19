@@ -64,10 +64,10 @@ function exportProductsToCSV(backupDir: string, timestamp: string, isAuto: boole
         escapeCsv(p.category_name),
         escapeCsv(p.brand),
         escapeCsv(p.unit || 'pcs'),
-        ((p.buy_price_paisa || 0) / 100).toFixed(2),
-        ((p.sell_price_paisa || 0) / 100).toFixed(2),
-        p.stock || 0,
-        p.min_stock || 0
+        (((p.cost_price_paisa ?? p.buy_price_paisa ?? 0)) / 100).toFixed(2),
+        (((p.sell_price_paisa ?? 0)) / 100).toFixed(2),
+        p.stock_qty ?? p.stock ?? 0,
+        p.low_stock_threshold ?? p.min_stock ?? 0
       ].join(',');
     });
     
@@ -135,6 +135,23 @@ export function createDatabaseBackup(targetFilePath?: string, isAuto: boolean = 
   // Trigger Google Drive upload asynchronously for BOTH auto and manual backups
   import('./googleDrive').then((gdrive) => {
     if (gdrive.isDriveConnected()) {
+      const recordSuccess = () => {
+        try {
+          const db = getDb();
+          const now = new Date().toISOString();
+          db.prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES ('last_gdrive_backup_at', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+          `).run(now, now);
+          db.prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES ('last_gdrive_backup_file', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+          `).run(path.basename(finalPath), now);
+        } catch (e) {
+          console.error('Failed to update last_gdrive_backup_at:', e);
+        }
+      };
+
       if (!targetFilePath) {
         const timestamp = `${dateStr}-${timeStr}`;
         const productsCsvPath = exportProductsToCSV(backupDir, timestamp, isAuto);
@@ -147,9 +164,16 @@ export function createDatabaseBackup(targetFilePath?: string, isAuto: boolean = 
           .then(() => {
             if (customersCsvPath) return gdrive.uploadToDrive(customersCsvPath, 'text/csv', 'Customers');
           })
+          .then(() => {
+            recordSuccess();
+          })
           .catch(err => console.error('GDrive Upload error:', err));
       } else {
-        gdrive.uploadToDrive(finalPath).catch(err => console.error('GDrive Upload error:', err));
+        gdrive.uploadToDrive(finalPath)
+          .then(() => {
+            recordSuccess();
+          })
+          .catch(err => console.error('GDrive Upload error:', err));
       }
     }
   }).catch(err => console.error('Failed to load Google Drive service', err));

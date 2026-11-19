@@ -742,7 +742,12 @@ export interface IElectronApi {
   };
   gdrive: {
     /** isConfigured is false when this build shipped without OAuth credentials. */
-    status: () => Promise<{ isConnected: boolean; isConfigured?: boolean }>;
+    status: () => Promise<{
+      isConnected: boolean;
+      isConfigured?: boolean;
+      lastBackupAt?: string | null;
+      lastFileName?: string | null;
+    }>;
     getAuthUrl: () => Promise<{ success: boolean; autoHandled?: boolean; error?: string }>;
     authorize: (code: string) => Promise<{ success: boolean }>;
     disconnect: () => Promise<{ success: boolean }>;
