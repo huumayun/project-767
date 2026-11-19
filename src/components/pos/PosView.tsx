@@ -35,11 +35,13 @@ import {
   ChevronRight,
   ChevronDown,
   Clock,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 import { InvoiceModal } from './InvoiceModal';
 import { HeldSalesModal } from './HeldSalesModal';
 import { CustomerFormModal } from '../customers/CustomerFormModal';
+import { CustomerDueAdjustmentModal } from '../customers/CustomerDueAdjustmentModal';
 import { ReceiptPreviewModal } from './ReceiptPreviewModal';
 import { SaleSuccessModal } from './SaleSuccessModal';
 import { ConfirmModal } from '../common/ConfirmModal';
@@ -189,6 +191,7 @@ export const PosView: React.FC<PosViewProps> = ({
   const [heldCount, setHeldCount] = useState(0);
   const [customerQuery, setCustomerQuery] = useState('');
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [showDueAdjustmentModal, setShowDueAdjustmentModal] = useState(false);
 
   // Scan Feedback visual state ('success' | 'error' | null)
   const [scanStatus, setScanStatus] = useState<'success' | 'error' | null>(null);
@@ -1519,7 +1522,17 @@ export const PosView: React.FC<PosViewProps> = ({
 
                 {selectedCustomer && (selectedCustomer.due_paisa || 0) > 0 && (
                   <div className="w-full mt-2 flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                    <span className="text-xs font-semibold text-amber-800">Collect Previous Due ৳</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-amber-800">Collect Previous Due ৳</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowDueAdjustmentModal(true)}
+                        className="text-[10px] text-amber-800 hover:text-amber-950 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer"
+                        title="Adjust Due / পুরোনো খাতার বাকি যোগ বা সমন্বয়"
+                      >
+                        Adjust
+                      </button>
+                    </div>
                     <input
                       type="number"
                       min="0"
@@ -1534,6 +1547,21 @@ export const PosView: React.FC<PosViewProps> = ({
                     }}
                       className="w-24 text-right bg-white border border-amber-300 rounded-lg text-sm font-mono font-bold text-amber-900 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
                     />
+                  </div>
+                )}
+
+                {selectedCustomer && (selectedCustomer.due_paisa || 0) <= 0 && (
+                  <div className="w-full mt-1.5 flex items-center justify-between px-1">
+                    <span className="text-[11px] text-jungle-teal-600">No previous due</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowDueAdjustmentModal(true)}
+                      className="text-[10px] text-amber-800 hover:text-amber-950 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Add previous due from manual khata / পুরোনো খাতার বকেয়া হিসাব যোগ"
+                    >
+                      <SlidersHorizontal className="w-3 h-3 text-amber-700" />
+                      <span>Add Previous Due (খাতার বাকি)</span>
+                    </button>
                   </div>
                 )}
                 
@@ -2117,6 +2145,19 @@ export const PosView: React.FC<PosViewProps> = ({
             fetchData();
             setSelectedCustomerId(newCust.id);
             setShowAddCustomerModal(false);
+          }}
+        />
+      )}
+
+      {/* Adjust Customer Due Modal */}
+      {showDueAdjustmentModal && selectedCustomer && (
+        <CustomerDueAdjustmentModal
+          isOpen={showDueAdjustmentModal}
+          onClose={() => setShowDueAdjustmentModal(false)}
+          customer={selectedCustomer}
+          onSuccess={() => {
+            fetchData();
+            setShowDueAdjustmentModal(false);
           }}
         />
       )}

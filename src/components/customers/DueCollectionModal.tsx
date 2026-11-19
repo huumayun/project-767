@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Customer } from '../../types/ipc';
 import { DollarSign, X, CheckCircle2, AlertCircle, Printer } from 'lucide-react';
+import { printCustomerDueCollection } from '../../utils/receiptGenerator';
 
 interface DueCollectionModalProps {
   isOpen: boolean;
@@ -62,8 +63,19 @@ export const DueCollectionModal: React.FC<DueCollectionModalProps> = ({
     }
   };
 
-  const handlePrintReceipt = () => {
-    window.print();
+  const handlePrintReceipt = async () => {
+    if (!receiptData) return;
+    await printCustomerDueCollection({
+      paymentId: receiptData.payment_id,
+      customer,
+      amountPaisa: receiptData.amount_paisa,
+      previousDuePaisa: receiptData.previous_due_paisa,
+      remainingDuePaisa: receiptData.remaining_due_paisa,
+      method,
+      trxId: trxId.trim() || null,
+      note: note.trim() || null,
+      date: receiptData.date,
+    });
   };
 
   return (

@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Customer } from '../../types/ipc';
-import { UserPlus, X, AlertCircle } from 'lucide-react';
+import { UserPlus, X, AlertCircle, SlidersHorizontal } from 'lucide-react';
 
 interface CustomerFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   customer?: Customer | null;
   onSuccess: (customer: Customer) => void;
+  onOpenAdjustModal?: (customer: Customer) => void;
 }
 
 export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
@@ -14,6 +15,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
   onClose,
   customer,
   onSuccess,
+  onOpenAdjustModal,
 }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -168,6 +170,32 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
                 className="w-full bg-jungle-teal-50 border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 font-mono focus:outline-hidden focus:border-azure-mist-600 focus:bg-jungle-teal-50"
               />
               <p className="text-xs text-jungle-teal-500 mt-1">Leave empty if there is no previous due.</p>
+            </div>
+          )}
+
+          {customer && (
+            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-amber-900">Current Due (বর্তমান বাকি):</span>
+                <span className="font-mono text-sm font-bold text-amber-900">
+                  ৳ {((customer.due_paisa || 0) / 100).toFixed(2)}
+                </span>
+              </div>
+              {onOpenAdjustModal && (
+                <div className="flex items-center justify-between pt-1.5 border-t border-amber-200/70">
+                  <span className="text-[11px] text-amber-800">
+                    পুরোনো খাতার বকেয়া যোগ বা সমন্বয় করতে চান?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onOpenAdjustModal(customer)}
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                    <span>Adjust Due / সমন্বয়</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

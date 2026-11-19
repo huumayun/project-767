@@ -146,6 +146,7 @@ contextBridge.exposeInMainWorld('api', {
     delete: (id: string) => ipcRenderer.invoke('api:customers:delete', id),
     getHistory: (customerId: string) => ipcRenderer.invoke('api:customers:getHistory', customerId),
     collectDue: (payload: any) => ipcRenderer.invoke('api:customers:collectDue', payload),
+    adjustDue: (payload: any) => ipcRenderer.invoke('api:customers:adjustDue', payload),
     getDueSummary: () => ipcRenderer.invoke('api:customers:getDueSummary'),
     bulkImport: (payload: any) => ipcRenderer.invoke('api:customers:bulkImport', payload),
   },

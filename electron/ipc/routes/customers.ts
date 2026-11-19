@@ -15,7 +15,7 @@ export function registerCustomersHandlers() {
   
       let sql = `
         SELECT 
-          c.id, c.name, c.phone, c.address, c.note, c.created_at, c.updated_at,
+          c.id, c.name, c.phone, c.address, c.note, c.created_at, c.updated_at, c.initial_due_paisa,
           COALESCE(vd.total_sales_paisa, 0) AS total_sales_paisa,
           COALESCE(vd.total_paid_paisa, 0) AS total_paid_paisa,
           COALESCE(vd.due_paisa, 0) AS due_paisa
@@ -42,7 +42,7 @@ export function registerCustomersHandlers() {
   
       return db.prepare(`
         SELECT 
-          c.id, c.name, c.phone, c.address, c.note, c.created_at, c.updated_at,
+          c.id, c.name, c.phone, c.address, c.note, c.created_at, c.updated_at, c.initial_due_paisa,
           COALESCE(vd.total_sales_paisa, 0) AS total_sales_paisa,
           COALESCE(vd.total_paid_paisa, 0) AS total_paid_paisa,
           COALESCE(vd.due_paisa, 0) AS due_paisa
@@ -237,6 +237,89 @@ export function registerCustomersHandlers() {
       };
     });
 
+  ipcMain.handle('api:customers:adjustDue', async (_event, rawPayload) => {
+    requireRole(['owner', 'staff']);
+    const schema = z.object({
+      customer_id: z.string().min(1),
+      amount_taka: z.number().positive(),
+      type: z.enum(['add', 'deduct']).default('add'),
+      note: z.string().min(1, 'Reason / Note is required for due adjustment'),
+      date: z.string().optional().nullable(),
+    });
+
+    const payload = schema.parse(rawPayload);
+    const db = getDb();
+    const userId = activeSession?.id || 'system';
+    const deviceId = getDeviceId(db);
+    const adjustmentId = uuidv7();
+
+    const customer = db.prepare(`
+      SELECT c.*, COALESCE(vd.due_paisa, 0) as due_paisa
+      FROM customers c
+      LEFT JOIN v_customer_due vd ON c.id = vd.customer_id
+      WHERE c.id = ? AND c.deleted_at IS NULL
+    `).get(payload.customer_id) as any;
+
+    if (!customer) throw new Error('Customer not found.');
+
+    const previousDuePaisa = customer.due_paisa || 0;
+    const amountPaisa = Math.round(payload.amount_taka * 100);
+
+    if (payload.type === 'deduct' && amountPaisa > previousDuePaisa) {
+      throw new Error(`Cannot deduct more than current due (৳ ${(previousDuePaisa / 100).toFixed(2)}).`);
+    }
+
+    const adjustmentPaisa = payload.type === 'deduct' ? -amountPaisa : amountPaisa;
+    const newDuePaisa = previousDuePaisa + adjustmentPaisa;
+
+    let createdAt = new Date().toISOString();
+    if (payload.date) {
+      const parsedDate = new Date(payload.date);
+      if (!isNaN(parsedDate.getTime())) {
+        if (payload.date.length === 10) {
+          const now = new Date();
+          parsedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+        }
+        createdAt = parsedDate.toISOString();
+      }
+    }
+
+    db.prepare(`
+      INSERT INTO customer_due_adjustments (
+        id, customer_id, amount_paisa, note, created_at, user_id, device_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      adjustmentId,
+      payload.customer_id,
+      adjustmentPaisa,
+      payload.note.trim(),
+      createdAt,
+      userId,
+      deviceId
+    );
+
+    logAudit('ADJUST_CUSTOMER_DUE', 'customer_due_adjustments', adjustmentId, {
+      customerId: payload.customer_id,
+      customerName: customer.name,
+      type: payload.type,
+      amountPaisa: Math.abs(adjustmentPaisa),
+      adjustmentPaisa,
+      previousDuePaisa,
+      newDuePaisa,
+      note: payload.note.trim(),
+      date: createdAt,
+    });
+
+    return {
+      success: true,
+      id: adjustmentId,
+      customer_id: payload.customer_id,
+      previous_due_paisa: previousDuePaisa,
+      adjustment_paisa: adjustmentPaisa,
+      new_due_paisa: newDuePaisa,
+    };
+  });
+
   ipcMain.handle('api:customers:getHistory', async (_event, rawCustomerId) => {
       requireRole(['owner', 'staff']);
       const customerId = z.string().min(1).parse(rawCustomerId);
@@ -247,13 +330,9 @@ export function registerCustomersHandlers() {
        * or the header of the modal and the last line of its table disagree and
        * neither can be trusted.
        *
-       * v_customer_due is:  (sales - returns) - (payments in - payments out)
+       * v_customer_due is:  initial_due + adjustments + (sales - returns) - (payments in - payments out)
        *
-       * so all four terms have to appear here. Two of them did not: returns
-       * were missing entirely, and the payments query filtered direction='in',
-       * which dropped every refund. A customer who had returned goods saw a
-       * statement whose running balance drifted from their real due, with
-       * nothing on it to explain the gap.
+       * so all terms appear here.
        */
       const sales = db.prepare(`
         SELECT id, invoice_no as ref_no, total_paisa, created_at
@@ -263,6 +342,12 @@ export function registerCustomersHandlers() {
 
       const customerRow = db.prepare('SELECT initial_due_paisa, created_at FROM customers WHERE id = ?').get(customerId) as any;
       const initialDue = customerRow?.initial_due_paisa || 0;
+
+      const adjustments = db.prepare(`
+        SELECT id, amount_paisa, note, created_at
+        FROM customer_due_adjustments
+        WHERE customer_id = ?
+      `).all(customerId) as any[];
       
       const returns = db.prepare(`
         SELECT ri.id, s.invoice_no as ref_no, ri.amount_paisa, r.created_at
@@ -282,7 +367,7 @@ export function registerCustomersHandlers() {
 
       const history: Array<{
         id: string;
-        type: 'sale' | 'payment' | 'return' | 'refund' | 'opening_balance';
+        type: 'sale' | 'payment' | 'return' | 'refund' | 'opening_balance' | 'adjustment';
         date: string;
         ref_no: string;
         description: string;
@@ -305,6 +390,22 @@ export function registerCustomersHandlers() {
           seq: -1
         });
       }
+
+      adjustments.forEach(adj => {
+        const isAddition = adj.amount_paisa >= 0;
+        history.push({
+          id: adj.id,
+          type: 'adjustment',
+          date: adj.created_at,
+          ref_no: 'Adjustment',
+          description: isAddition
+            ? `Due Adjustment (+): ${adj.note}`
+            : `Due Adjustment (-): ${adj.note}`,
+          debit_paisa: isAddition ? adj.amount_paisa : 0,
+          credit_paisa: isAddition ? 0 : Math.abs(adj.amount_paisa),
+          seq: -0.5,
+        });
+      });
 
       sales.forEach(s => {
         history.push({

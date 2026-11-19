@@ -328,8 +328,9 @@ export interface CustomerHistoryItem {
    * `return` is a credit note (goods back, balance down) and `refund` is cash
    * handed over the counter (balance back up). Both are needed for the
    * statement to close on the same figure v_customer_due reports.
+   * `adjustment` is an explicit manual balance adjustment (e.g. adding older khata debts).
    */
-  type: 'sale' | 'payment' | 'return' | 'refund' | 'opening_balance';
+  type: 'sale' | 'payment' | 'return' | 'refund' | 'opening_balance' | 'adjustment';
   date: string;
   ref_no: string;
   description: string;
@@ -337,6 +338,23 @@ export interface CustomerHistoryItem {
   debit_paisa: number;
   credit_paisa: number;
   running_balance_paisa?: number;
+}
+
+export interface CustomerDueAdjustmentPayload {
+  customer_id: string;
+  amount_taka: number;
+  type?: 'add' | 'deduct';
+  note: string;
+  date?: string;
+}
+
+export interface CustomerDueAdjustmentResult {
+  success: boolean;
+  id: string;
+  customer_id: string;
+  previous_due_paisa: number;
+  adjustment_paisa: number;
+  new_due_paisa: number;
 }
 
 export interface DueCollectionPayload {
@@ -684,6 +702,7 @@ export interface IElectronApi {
     delete: (id: string) => Promise<{ success: boolean }>;
     getHistory: (customerId: string) => Promise<CustomerHistoryItem[]>;
     collectDue: (payload: DueCollectionPayload) => Promise<DueCollectionResult>;
+    adjustDue: (payload: CustomerDueAdjustmentPayload) => Promise<CustomerDueAdjustmentResult>;
     getDueSummary: () => Promise<CustomerDueSummary>;
     bulkImport: (payload: { mode: 'dry_run' | 'commit'; rows: any[] }) => Promise<{ success: boolean; totalRows?: number; validRowsCount?: number; imported?: number; errors: string[]; validRows?: any[] }>;
   };

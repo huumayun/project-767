@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Customer, CustomerHistoryItem } from '../../types/ipc';
-import { FileText, X, Printer, RefreshCw, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { FileText, X, Printer, RefreshCw, ArrowDownRight, ArrowUpRight, SlidersHorizontal } from 'lucide-react';
 import { InvoiceModal } from '../pos/InvoiceModal';
 import { openPrintPreview } from '../../utils/printPreview';
+import { CustomerDueAdjustmentModal } from './CustomerDueAdjustmentModal';
+import { printCustomerDueAdjustment, printCustomerDueCollection } from '../../utils/receiptGenerator';
 
 interface CustomerLedgerModalProps {
   isOpen: boolean;
@@ -18,12 +20,18 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
   const [history, setHistory] = useState<CustomerHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedInvoiceNo, setSelectedInvoiceNo] = useState<string | null>(null);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [currentCustomer, setCurrentCustomer] = useState(customer);
+
+  useEffect(() => {
+    setCurrentCustomer(customer);
+  }, [customer]);
 
   const fetchLedger = async () => {
-    if (!window.api || !customer) return;
+    if (!window.api || !currentCustomer) return;
     setLoading(true);
     try {
-      const list = await window.api.customers.getHistory(customer.id);
+      const list = await window.api.customers.getHistory(currentCustomer.id);
         const grouped = [];
         for (let i = 0; i < list.length; i++) {
           const row = list[i];
@@ -265,6 +273,15 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setShowAdjustModal(true)}
+              className="px-3.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-amber-300 transition-colors"
+              title="Adjust Due / বাকি সমন্বয় (পুরোনো খাতার বকেয়া যোগ বা সংশোধন)"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-amber-700" />
+              <span>Adjust Due</span>
+            </button>
+
+            <button
               onClick={handlePrintStatement}
               className="px-3.5 py-1.5 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-jungle-teal-300 transition-colors"
             >
@@ -338,6 +355,48 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
                         >
                           {tx.ref_no}
                         </button>
+                      ) : tx.type === 'adjustment' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            printCustomerDueAdjustment({
+                              adjustmentId: tx.id,
+                              customer: currentCustomer,
+                              type: tx.debit_paisa > 0 ? 'add' : 'deduct',
+                              amountPaisa: tx.debit_paisa > 0 ? tx.debit_paisa : tx.credit_paisa,
+                              previousDuePaisa: (tx.running_balance_paisa || 0) - (tx.debit_paisa - tx.credit_paisa),
+                              newDuePaisa: tx.running_balance_paisa || 0,
+                              note: tx.description.replace(/^Due Adjustment \([+-]\): /, ''),
+                              date: tx.date,
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 transition-colors cursor-pointer"
+                          title="Click to print adjustment slip / রশিদ প্রিন্ট"
+                        >
+                          <Printer className="w-2.5 h-2.5" />
+                          <span>Adjustment</span>
+                        </button>
+                      ) : tx.type === 'payment' && tx.ref_no?.startsWith('RCPT-') ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            printCustomerDueCollection({
+                              paymentId: tx.id,
+                              customer: currentCustomer,
+                              amountPaisa: tx.credit_paisa,
+                              previousDuePaisa: (tx.running_balance_paisa || 0) + tx.credit_paisa,
+                              remainingDuePaisa: tx.running_balance_paisa || 0,
+                              method: tx.method || 'cash',
+                              note: tx.description,
+                              date: tx.date,
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 transition-colors cursor-pointer font-mono"
+                          title="Click to print money receipt / মানি রশিদ প্রিন্ট"
+                        >
+                          <Printer className="w-2.5 h-2.5" />
+                          <span>{tx.ref_no}</span>
+                        </button>
                       ) : (
                         <span>{tx.ref_no}</span>
                       )}
@@ -395,6 +454,20 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
           isOpen={Boolean(selectedInvoiceNo)}
           onClose={() => setSelectedInvoiceNo(null)}
           invoiceNo={selectedInvoiceNo}
+        />
+      )}
+
+      {/* Due Adjustment Modal */}
+      {showAdjustModal && currentCustomer && (
+        <CustomerDueAdjustmentModal
+          isOpen={showAdjustModal}
+          onClose={() => setShowAdjustModal(false)}
+          customer={currentCustomer}
+          onSuccess={(res) => {
+            setCurrentCustomer((prev) => ({ ...prev, due_paisa: res.new_due_paisa }));
+            fetchLedger();
+            setShowAdjustModal(false);
+          }}
         />
       )}
     </div>

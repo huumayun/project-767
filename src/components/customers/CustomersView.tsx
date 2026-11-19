@@ -18,10 +18,12 @@ import {
   Share2,
   Upload,
   Download,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { CustomerFormModal } from './CustomerFormModal';
 import { DueCollectionModal } from './DueCollectionModal';
 import { CustomerLedgerModal } from './CustomerLedgerModal';
+import { CustomerDueAdjustmentModal } from './CustomerDueAdjustmentModal';
 import { CustomerCsvImportModal } from './CustomerCsvImportModal';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { useToast } from '../../context/ToastContext';
@@ -51,6 +53,8 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession, on
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [collectTargetCustomer, setCollectTargetCustomer] = useState<Customer | null>(null);
   const [showCollectModal, setShowCollectModal] = useState(false);
+  const [adjustTargetCustomer, setAdjustTargetCustomer] = useState<Customer | null>(null);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [ledgerTargetCustomer, setLedgerTargetCustomer] = useState<Customer | null>(null);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
@@ -395,6 +399,17 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession, on
 
                           <button
                             onClick={() => {
+                              setAdjustTargetCustomer(cust);
+                              setShowAdjustModal(true);
+                            }}
+                            className="p-1.5 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-lg border border-jungle-teal-300 transition-colors"
+                            title="Adjust Due / বাকি সমন্বয় (পুরোনো খাতার বকেয়া যোগ বা সংশোধন)"
+                          >
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-700" />
+                          </button>
+
+                          <button
+                            onClick={() => {
                               setLedgerTargetCustomer(cust);
                               setShowLedgerModal(true);
                             }}
@@ -444,6 +459,28 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession, on
           onSuccess={() => {
             fetchData();
             setShowFormModal(false);
+          }}
+          onOpenAdjustModal={(cust) => {
+            setShowFormModal(false);
+            setAdjustTargetCustomer(cust);
+            setShowAdjustModal(true);
+          }}
+        />
+      )}
+
+      {/* Adjust Due Modal */}
+      {showAdjustModal && adjustTargetCustomer && (
+        <CustomerDueAdjustmentModal
+          isOpen={showAdjustModal}
+          onClose={() => {
+            setShowAdjustModal(false);
+            setAdjustTargetCustomer(null);
+          }}
+          customer={adjustTargetCustomer}
+          onSuccess={() => {
+            fetchData();
+            setShowAdjustModal(false);
+            setAdjustTargetCustomer(null);
           }}
         />
       )}
