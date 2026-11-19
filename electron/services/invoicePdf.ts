@@ -148,11 +148,11 @@ function buildMemoContent(
   });
 
   // ── the money ───────────────────────────────────────────────────────────
-  const totalsRow = (label: string, value: string, o: { bold?: boolean; rule?: boolean; color?: string } = {}) => [
+  const totalsRow = (label: string, value: string, o: { bold?: boolean; rule?: boolean; color?: string; fontSize?: number } = {}) => [
     {
       text: label,
       alignment: 'right',
-      fontSize: o.bold ? size.total : size.meta,
+      fontSize: o.fontSize || (o.bold ? size.total : size.meta),
       bold: o.bold,
       color: o.color || (o.bold ? INK : MUTED),
       margin: [0, o.rule ? 3 : 1, 6, 1],
@@ -162,7 +162,7 @@ function buildMemoContent(
     {
       text: value,
       alignment: 'right',
-      fontSize: o.bold ? size.total : size.meta,
+      fontSize: o.fontSize || (o.bold ? size.total : size.meta),
       bold: o.bold,
       color: o.color || INK,
       margin: [0, o.rule ? 3 : 1, 0, 1],
@@ -171,20 +171,69 @@ function buildMemoContent(
     },
   ];
 
-  const totalsBody: any[] = [totalsRow('Total Amount :', money(data.subtotalPaisa))];
-  if (data.discountPaisa > 0) totalsBody.push(totalsRow('Discount :', money(data.discountPaisa)));
-  if ((data.returnedPaisa || 0) > 0) totalsBody.push(totalsRow('Returns Deducted :', `-${money(data.returnedPaisa || 0)}`, { color: '#e11d48' }));
-  if (data.previousDuePaidPaisa && data.previousDuePaidPaisa > 0) { totalsBody.push(totalsRow('Prev. Due Collected :', money(data.previousDuePaidPaisa || 0))); }
-    const finalTotal = data.totalPaisa - (data.returnedPaisa || 0) + (data.previousDuePaidPaisa || 0);
-    totalsBody.push(totalsRow('Net Payable :', money(finalTotal), { bold: true, rule: true }));
-  if ((data.refundedPaisa || 0) > 0) {
-    totalsBody.push(totalsRow('Paid Amount (Original) :', money(data.totalPaidPaisa)));
-    totalsBody.push(totalsRow('Refunded to Customer :', `-${money(data.refundedPaisa || 0)}`, { color: '#e11d48' }));
-  } else {
-    totalsBody.push(totalsRow('Paid Amount :', money(data.totalPaidPaisa)));
+  const isWalkIn = !data.customerName ||
+    /^\s*(walk[- ]?in(\s+(customer|client))?|cash\s+(customer|client))\s*$/i.test(data.customerName);
+
+  const prevDuePaisa = data.customerPreviousDuePaisa || 0;
+  const hasPreviousDue = Boolean(
+    data.customerPreviousDuePaisa !== undefined &&
+    (prevDuePaisa > 0 || (data.previousDuePaidPaisa || 0) > 0)
+  );
+  const billTotalPaisa = Math.max(0, data.totalPaisa - (data.returnedPaisa || 0));
+  const netPayablePaisa = billTotalPaisa + prevDuePaisa;
+  const remainingDuePaisa = data.customerRemainingDuePaisa !== undefined
+    ? data.customerRemainingDuePaisa
+    : Math.max(0, netPayablePaisa - data.totalPaidPaisa);
+
+  const totalsBody: any[] = [];
+  totalsBody.push(totalsRow('Total Amount :', money(data.subtotalPaisa)));
+  totalsBody.push(totalsRow('Discount :', money(data.discountPaisa || 0)));
+  if ((data.returnedPaisa || 0) > 0) {
+    totalsBody.push(totalsRow('Returns Deducted :', `-${money(data.returnedPaisa || 0)}`, { color: '#e11d48' }));
   }
-  if ((data.changePaisa || 0) > 0) totalsBody.push(totalsRow('Change Returned :', money(data.changePaisa || 0)));
-  totalsBody.push(totalsRow('Total Outstanding :', money(data.duePaisa || 0), { bold: true, rule: true }));
+  totalsBody.push(totalsRow('Sub Total :', money(billTotalPaisa), { bold: true }));
+
+  if (hasPreviousDue) {
+    totalsBody.push(totalsRow('Previous Due :', money(prevDuePaisa), { rule: true }));
+    totalsBody.push(totalsRow('Net Payable :', money(netPayablePaisa), { bold: true }));
+    if ((data.refundedPaisa || 0) > 0) {
+      totalsBody.push(totalsRow('Paid Amount (Original) :', money(data.totalPaidPaisa)));
+      totalsBody.push(totalsRow('Refunded to Customer :', `-${money(data.refundedPaisa || 0)}`, { color: '#e11d48' }));
+    } else {
+      totalsBody.push(totalsRow('Paid Amount :', money(data.totalPaidPaisa)));
+    }
+    if ((data.changePaisa || 0) > 0) {
+      totalsBody.push(totalsRow('Change Returned :', money(data.changePaisa || 0)));
+    }
+    if (!isWalkIn) {
+      totalsBody.push(totalsRow('Remaining Due :', money(remainingDuePaisa), {
+        bold: true,
+        rule: true,
+        fontSize: size.total + 1.5,
+        color: remainingDuePaisa > 0 ? '#b91c1c' : INK,
+      }));
+    }
+  } else {
+    totalsBody.push(totalsRow('Net Payable :', money(billTotalPaisa), { bold: true, rule: true }));
+    if ((data.refundedPaisa || 0) > 0) {
+      totalsBody.push(totalsRow('Paid Amount (Original) :', money(data.totalPaidPaisa)));
+      totalsBody.push(totalsRow('Refunded to Customer :', `-${money(data.refundedPaisa || 0)}`, { color: '#e11d48' }));
+    } else {
+      totalsBody.push(totalsRow('Paid Amount :', money(data.totalPaidPaisa)));
+    }
+    if ((data.changePaisa || 0) > 0) {
+      totalsBody.push(totalsRow('Change Returned :', money(data.changePaisa || 0)));
+    }
+    const finalDuePaisa = data.duePaisa || 0;
+    if (!isWalkIn) {
+      totalsBody.push(totalsRow('Remaining Due :', money(finalDuePaisa), {
+        bold: true,
+        rule: true,
+        fontSize: size.total + 1.5,
+        color: finalDuePaisa > 0 ? '#b91c1c' : INK,
+      }));
+    }
+  }
 
   const sigHeightPt = Math.round(opts.signatureHeightMm * MM_TO_PT);
 
@@ -320,45 +369,25 @@ function buildMemoContent(
           width: '*',
           stack: [
             { text: 'In words', fontSize: size.fine, color: MUTED, margin: [0, 6, 0, 1] },
-            { text: takaInWords(data.totalPaisa), fontSize: size.meta, bold: true, color: INK },
-              {
-                columns: [
-                  qrDataUrl ? { width: 64, image: qrDataUrl, fit: [56, 56], margin: [0, 8, 0, 0] } : { width: 0, text: '' },
-                  (data.customerPreviousDuePaisa !== undefined && data.previousDuePaidPaisa !== undefined && data.customerRemainingDuePaisa !== undefined) && 
-                  (data.customerPreviousDuePaisa > 0 || data.previousDuePaidPaisa > 0 || data.customerRemainingDuePaisa > 0)
-                    ? {
-                        width: 180,
-                        table: {
-                          widths: ['*', 65],
-                          body: [
-                            [{ text: 'Customer Balance Summary', bold: true, colSpan: 2, fontSize: size.meta - 1, margin: [0, 0, 0, 2], alignment: 'left', color: INK }, {}],
-                            [{ text: 'Previous Due :', alignment: 'left', fontSize: size.fine, color: MUTED }, { text: money(data.customerPreviousDuePaisa || 0), alignment: 'right', fontSize: size.fine, color: INK }],
-                              ...((data.duePaisa || 0) > 0 ? [[{ text: "Today's Due :", alignment: 'left', fontSize: size.fine, color: MUTED }, { text: money(data.duePaisa || 0), alignment: 'right', fontSize: size.fine, color: INK }]] : []),
-                              ...(data.previousDuePaidPaisa > 0 ? [[{ text: 'Paid Today :', alignment: 'left', fontSize: size.fine, color: MUTED }, { text: money(data.previousDuePaidPaisa || 0), alignment: 'right', fontSize: size.fine, color: INK }]] : []),
-                              [{ text: 'Remaining Due :', alignment: 'left', bold: true, fontSize: size.fine, color: INK }, { text: money(data.customerRemainingDuePaisa || 0), bold: true, alignment: 'right', fontSize: size.fine, color: INK }]
-                          ]
-                        },
-                        layout: 'noBorders',
-                        margin: [0, 8, 0, 0]
-                      }
-                    : { width: '*', text: '' }
-                ]
-              }
-],
+            { text: takaInWords(hasPreviousDue ? netPayablePaisa : data.totalPaisa), fontSize: size.meta, bold: true, color: INK },
+            ...(qrDataUrl
+              ? [{ image: qrDataUrl, fit: [56, 56], margin: [0, 10, 0, 0] }]
+              : []),
+          ],
         },
-                  {
-            width: 230,
-            table: { widths: ['*', 78], body: totalsBody },
-            layout: {
-              defaultBorder: false,
-              hLineWidth: (i: number, node: any) => (node.table.body[i]?.[0]?.border?.[1] ? 0.8 : 0),
-              vLineWidth: () => 0,
-              hLineColor: () => RULE,
-            },
+        {
+          width: 240,
+          table: { widths: ['*', 85], body: totalsBody },
+          layout: {
+            defaultBorder: false,
+            hLineWidth: (i: number, node: any) => (node.table.body[i]?.[0]?.border?.[1] ? 0.8 : 0),
+            vLineWidth: () => 0,
+            hLineColor: () => RULE,
           },
-        ],
-        margin: [0, 0, 0, 4],
-      },
+        },
+      ],
+      margin: [0, 0, 0, 4],
+    },
       
 
     // ── the undertaking, and the two people to it
@@ -489,6 +518,20 @@ export async function generateInvoicePdf(
   const changeTaka = ((data.changePaisa || 0) / 100).toFixed(2);
   const dueTaka = ((data.duePaisa || 0) / 100).toFixed(2);
 
+  const isWalkIn = !data.customerName ||
+    /^\s*(walk[- ]?in(\s+(customer|client))?|cash\s+(customer|client))\s*$/i.test(data.customerName);
+
+  const prevDuePaisa = data.customerPreviousDuePaisa || 0;
+  const hasPreviousDue = Boolean(
+    data.customerPreviousDuePaisa !== undefined &&
+    (prevDuePaisa > 0 || (data.previousDuePaidPaisa || 0) > 0)
+  );
+  const billTotalPaisa = Math.max(0, data.totalPaisa - (data.returnedPaisa || 0));
+  const netPayablePaisa = billTotalPaisa + prevDuePaisa;
+  const remainingDuePaisa = data.customerRemainingDuePaisa !== undefined
+    ? data.customerRemainingDuePaisa
+    : Math.max(0, netPayablePaisa - data.totalPaidPaisa);
+
   const isMemo = opts.paper === 'a4';
 
   const docDefinition: any = {
@@ -601,46 +644,35 @@ export async function generateInvoicePdf(
             table: {
               widths: ['*', 'auto'],
               body: [
-                [{ text: 'Subtotal:', fontSize: size.total }, { text: `Tk ${subtotalTaka}`, alignment: 'right', fontSize: size.total }],
-                data.discountPaisa > 0
-                  ? [{ text: 'Discount:', fontSize: size.total }, { text: `- Tk ${discountTaka}`, alignment: 'right', fontSize: size.total }]
+                [{ text: 'Total Amount:', fontSize: size.total }, { text: `Tk ${subtotalTaka}`, alignment: 'right', fontSize: size.total }],
+                [{ text: 'Discount:', fontSize: size.total }, { text: `- Tk ${discountTaka}`, alignment: 'right', fontSize: size.total }],
+                hasPreviousDue
+                  ? [{ text: 'Sub Total:', bold: true, fontSize: size.total }, { text: `Tk ${((billTotalPaisa) / 100).toFixed(2)}`, bold: true, alignment: 'right', fontSize: size.total }]
                   : [],
-                (data.previousDuePaidPaisa && data.previousDuePaidPaisa > 0)
-                    ? [{ text: 'Prev. Due Collected:', fontSize: size.total }, { text: `Tk ${((data.previousDuePaidPaisa || 0) / 100).toFixed(2)}`, alignment: 'right', fontSize: size.total }]
-                    : [],
-                  [
-                    { text: 'Grand Total To Pay:', bold: true, fontSize: size.grandTotal },
-                    { text: `Tk ${((data.totalPaisa + (data.previousDuePaidPaisa || 0)) / 100).toFixed(2)}`, bold: true, alignment: 'right', fontSize: size.grandTotal },
-                  ],
-                  [{ text: 'Total Paid:', fontSize: size.total }, { text: `Tk ${paidTaka}`, alignment: 'right', fontSize: size.total }],
-                  data.changePaisa && data.changePaisa > 0
-                    ? [{ text: 'Change Returned:', fontSize: size.total }, { text: `Tk ${changeTaka}`, alignment: 'right', fontSize: size.total }]
-                    : [],
-                  data.duePaisa && data.duePaisa > 0
-                    ? [{ text: 'Remaining Due:', bold: true, fontSize: size.total, color: '#dc2626' }, { text: `Tk ${dueTaka}`, bold: true, alignment: 'right', fontSize: size.total, color: '#dc2626' }]
-                    : [],
-                ].filter(row => row.length > 0),
-              },
-              layout: 'noBorders',
+                hasPreviousDue
+                  ? [{ text: 'Previous Due:', fontSize: size.total }, { text: `Tk ${((prevDuePaisa) / 100).toFixed(2)}`, alignment: 'right', fontSize: size.total }]
+                  : [],
+                [
+                  { text: 'Net Payable:', bold: true, fontSize: size.grandTotal },
+                  { text: `Tk ${((hasPreviousDue ? netPayablePaisa : billTotalPaisa) / 100).toFixed(2)}`, bold: true, alignment: 'right', fontSize: size.grandTotal },
+                ],
+                [{ text: 'Paid Amount:', fontSize: size.total }, { text: `Tk ${paidTaka}`, alignment: 'right', fontSize: size.total }],
+                data.changePaisa && data.changePaisa > 0
+                  ? [{ text: 'Change Returned:', fontSize: size.total }, { text: `Tk ${changeTaka}`, alignment: 'right', fontSize: size.total }]
+                  : [],
+                !isWalkIn
+                  ? [
+                      { text: 'Remaining Due:', bold: true, fontSize: size.total, color: (hasPreviousDue ? remainingDuePaisa : (data.duePaisa || 0)) > 0 ? '#dc2626' : undefined },
+                      { text: `Tk ${((hasPreviousDue ? remainingDuePaisa : (data.duePaisa || 0)) / 100).toFixed(2)}`, bold: true, alignment: 'right', fontSize: size.total, color: (hasPreviousDue ? remainingDuePaisa : (data.duePaisa || 0)) > 0 ? '#dc2626' : undefined }
+                    ]
+                  : [],
+              ].filter(row => row.length > 0),
             },
-            ],
-            margin: [0, 0, 0, 6],
+            layout: 'noBorders',
           },
-              // Customer Balance Summary (Thermal)
-            !isThermal ? {} : data.customerPreviousDuePaisa !== undefined && data.previousDuePaidPaisa !== undefined && data.customerRemainingDuePaisa !== undefined && (data.customerPreviousDuePaisa > 0 || data.previousDuePaidPaisa > 0 || data.customerRemainingDuePaisa > 0) ? {
-              table: {
-                widths: ['*', 'auto'],
-                body: [
-                  [{ text: 'Customer Balance Summary', bold: true, colSpan: 2, fontSize: size.meta, margin: [0, 6, 0, 2], alignment: 'center' }, {}],
-                  [{ text: 'Previous Due:', fontSize: size.meta }, { text: `Tk ${((data.customerPreviousDuePaisa || 0) / 100).toFixed(2)}`, alignment: 'right', fontSize: size.meta }],
-                    ...((data.duePaisa || 0) > 0 ? [[{ text: "Today's Due:", fontSize: size.meta }, { text: `Tk ${((data.duePaisa || 0) / 100).toFixed(2)}`, alignment: 'right', fontSize: size.meta }]] : []),
-                    ...(data.previousDuePaidPaisa > 0 ? [[{ text: 'Paid Today:', fontSize: size.meta }, { text: `Tk ${((data.previousDuePaidPaisa || 0) / 100).toFixed(2)}`, alignment: 'right', fontSize: size.meta }]] : []),
-                    [{ text: 'Remaining Due:', bold: true, fontSize: size.meta }, { text: `Tk ${((data.customerRemainingDuePaisa || 0) / 100).toFixed(2)}`, bold: true, alignment: 'right', fontSize: size.meta }]
-                ]
-              },
-              layout: { hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length) ? 0.5 : 0, vLineWidth: () => 0, hLineColor: () => '#94a3b8' },
-              margin: [0, 4, 0, 6]
-            } : {},
+        ],
+        margin: [0, 0, 0, 6],
+      },
 
       // Split Payment Details
       data.payments.length > 0
