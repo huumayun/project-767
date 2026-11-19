@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { app } from 'electron';
 
 /**
  * The Google OAuth client this build uses for Drive backup.
@@ -28,13 +29,49 @@ export interface GoogleOAuthCredentials {
 let cached: GoogleOAuthCredentials | null | undefined;
 
 function readFromFile(): GoogleOAuthCredentials | null {
-  // Beside the app root in both shapes: dist-electron/services in development,
-  // and the same path inside app.asar once packaged (the file is listed in
-  // electron-builder.json5 "files" so it travels with the build).
-  const candidates = [
-    path.join(__dirname, '../../google-oauth.json'),
-    path.join(process.resourcesPath || '', 'google-oauth.json'),
-  ];
+  const candidates: string[] = [];
+
+  // 1. Electron app path (inside app.asar in production or project root in dev)
+  try {
+    if (app && typeof app.getAppPath === 'function') {
+      candidates.push(path.join(app.getAppPath(), 'google-oauth.json'));
+    }
+  } catch {
+    // app may not be ready or available
+  }
+
+  // 2. Extra resources path (unpacked in resources/ alongside app.asar)
+  if (process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, 'google-oauth.json'));
+  }
+
+  // 3. User data directory (%APPDATA%/Fatema Electronics POS/google-oauth.json)
+  try {
+    if (app && typeof app.getPath === 'function') {
+      candidates.push(path.join(app.getPath('userData'), 'google-oauth.json'));
+    }
+  } catch {
+    // app may not be ready or available
+  }
+
+  // 4. Executable directory (next to .exe or inside its resources folder)
+  if (process.execPath) {
+    const exeDir = path.dirname(process.execPath);
+    candidates.push(path.join(exeDir, 'resources', 'google-oauth.json'));
+    candidates.push(path.join(exeDir, 'google-oauth.json'));
+  }
+
+  // 5. Current working directory
+  try {
+    candidates.push(path.join(process.cwd(), 'google-oauth.json'));
+  } catch {
+    // ignore
+  }
+
+  // 6. Relative to compiled bundle in dist-electron/services
+  candidates.push(path.join(__dirname, '../../google-oauth.json'));
+  candidates.push(path.join(__dirname, '../google-oauth.json'));
+  candidates.push(path.join(__dirname, 'google-oauth.json'));
 
   for (const candidate of candidates) {
     try {
