@@ -262,9 +262,17 @@ export const SaleSuccessModal: React.FC<SaleSuccessModalProps> = ({
           )}
 
           {duePaisa > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between">
-              <span className="text-amber-800 font-bold text-xs font-sans">Customer Due:</span>
-              <span className="text-amber-900 font-extrabold text-base font-mono">৳ {(duePaisa / 100).toFixed(2)}</span>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-amber-800 font-bold text-xs font-sans">Bill Due:</span>
+                <span className="text-rose-700 font-extrabold text-base font-mono">৳ {(duePaisa / 100).toFixed(2)}</span>
+              </div>
+              {customer && (
+                <div className="flex items-center justify-between pt-1 border-t border-amber-200/80 text-xs">
+                  <span className="text-amber-900 font-sans font-semibold">Total Customer Due:</span>
+                  <span className="text-amber-950 font-bold font-mono">৳ {(((customer.due_paisa || 0) + duePaisa) / 100).toFixed(2)}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

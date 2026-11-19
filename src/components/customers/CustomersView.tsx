@@ -403,7 +403,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ currentSession, on
                               setShowAdjustModal(true);
                             }}
                             className="p-1.5 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-lg border border-jungle-teal-300 transition-colors"
-                            title="Adjust Due / বাকি সমন্বয় (পুরোনো খাতার বকেয়া যোগ বা সংশোধন)"
+                            title="Adjust Due"
                           >
                             <SlidersHorizontal className="w-3.5 h-3.5 text-amber-700" />
                           </button>

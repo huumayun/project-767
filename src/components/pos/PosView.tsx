@@ -589,7 +589,7 @@ export const PosView: React.FC<PosViewProps> = ({
   const nagadPaisa = Math.round((parseFloat(nagadAmount) || 0) * 100);
   const cardPaisa = Math.round((parseFloat(cardAmount) || 0) * 100);
   const otherPaisa = Math.round((parseFloat(otherAmount) || 0) * 100);
-  const currentCustomerInfo = customers.find(c => c.id === selectedCustomerId);
+  const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
   const totalPaidPaisa = cashPaisa + bkashPaisa + nagadPaisa + cardPaisa + otherPaisa;
   /*
@@ -611,6 +611,20 @@ export const PosView: React.FC<PosViewProps> = ({
 
   const changePaisa = Math.max(0, totalPaidPaisa - grandTotalExpectedPaisa);
   const duePaisa = Math.max(0, grandTotalExpectedPaisa - totalPaidPaisa);
+
+  // Live Customer Due Calculation Preview
+  const customerPrevDuePaisa = selectedCustomer ? (selectedCustomer.due_paisa || 0) : 0;
+  const remainingPrevDuePaisa = Math.max(0, customerPrevDuePaisa - previousDuePaidPaisa);
+  const currentSaleDuePaisa = isFullDue
+    ? totalPaisa
+    : (totalPaidPaisa > 0 && duePaisa > 0)
+      ? duePaisa
+      : 0;
+  const projectedCustomerDuePaisa = Math.max(0, remainingPrevDuePaisa + currentSaleDuePaisa);
+  const isDueSaleActive = Boolean(selectedCustomer) && (
+    (isDueSaleMode && totalPaisa > 0) ||
+    (totalPaidPaisa > 0 && duePaisa > 0)
+  );
 
   // Every method that took money, by name. The old chain knew only "Cash +
   // bKash" and "Cash + Other", so a bill paid partly in cash and partly on
@@ -1043,8 +1057,6 @@ export const PosView: React.FC<PosViewProps> = ({
   const selectedCategoryName = selectedCategory
     ? categoryPath(selectedCategory, categories)
     : 'All products';
-
-  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
 
   // Name or phone. Digits are matched against the number with separators
   // stripped, so "01712" finds "01712-345678".
@@ -1521,32 +1533,55 @@ export const PosView: React.FC<PosViewProps> = ({
                 </button>
 
                 {selectedCustomer && (selectedCustomer.due_paisa || 0) > 0 && (
-                  <div className="w-full mt-2 flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-amber-800">Collect Previous Due ৳</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowDueAdjustmentModal(true)}
-                        className="text-[10px] text-amber-800 hover:text-amber-950 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer"
-                        title="Adjust Due / পুরোনো খাতার বাকি যোগ বা সমন্বয়"
-                      >
-                        Adjust
-                      </button>
+                  <div className="w-full mt-2 bg-amber-50 border border-amber-200 rounded-xl p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-amber-800">Collect Previous Due ৳</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowDueAdjustmentModal(true)}
+                          className="text-[10px] text-amber-800 hover:text-amber-950 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer"
+                          title="Adjust Due / Khata balance adjustment"
+                        >
+                          Adjust
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Amount"
+                        value={previousDuePaidTaka}
+                        onChange={(e) => {
+                          setPreviousDuePaidTaka(e.target.value);
+                          if (Math.round((parseFloat(e.target.value) || 0) * 100) > 0) {
+                            setIsDueSaleMode(false);
+                          }
+                        }}
+                        className="w-28 text-right bg-white border border-amber-300 rounded-lg text-sm font-mono font-bold text-amber-900 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                      />
                     </div>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="Amount"
-                      value={previousDuePaidTaka}
-                      onChange={(e) => {
-                      setPreviousDuePaidTaka(e.target.value);
-                      if (Math.round((parseFloat(e.target.value) || 0) * 100) > 0) {
-                        setIsDueSaleMode(false);
-                      }
-                    }}
-                      className="w-24 text-right bg-white border border-amber-300 rounded-lg text-sm font-mono font-bold text-amber-900 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                    />
+
+                    {previousDuePaidPaisa > 0 && (
+                      <div className="flex items-center justify-between pt-1.5 border-t border-amber-200/80 text-[11px] font-mono">
+                        <span className="text-amber-800 font-sans font-medium">
+                          Remaining Due:
+                        </span>
+                        <span
+                          className={`font-bold text-xs ${
+                            previousDuePaidPaisa > (selectedCustomer.due_paisa || 0)
+                              ? 'text-rose-700'
+                              : 'text-amber-950'
+                          }`}
+                        >
+                          {previousDuePaidPaisa > (selectedCustomer.due_paisa || 0)
+                            ? `Max ৳ ${((selectedCustomer.due_paisa || 0) / 100).toFixed(2)}`
+                            : previousDuePaidPaisa === (selectedCustomer.due_paisa || 0)
+                            ? '৳ 0.00 (Fully Paid)'
+                            : `৳ ${(((selectedCustomer.due_paisa || 0) - previousDuePaidPaisa) / 100).toFixed(2)}`}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1557,10 +1592,10 @@ export const PosView: React.FC<PosViewProps> = ({
                       type="button"
                       onClick={() => setShowDueAdjustmentModal(true)}
                       className="text-[10px] text-amber-800 hover:text-amber-950 font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Add previous due from manual khata / পুরোনো খাতার বকেয়া হিসাব যোগ"
+                      title="Add previous due from manual khata / ledger"
                     >
                       <SlidersHorizontal className="w-3 h-3 text-amber-700" />
-                      <span>Add Previous Due (খাতার বাকি)</span>
+                      <span>Add Previous Due</span>
                     </button>
                   </div>
                 )}
@@ -1811,11 +1846,21 @@ export const PosView: React.FC<PosViewProps> = ({
             {/* Big Highlighted Payable Box */}
             <div className="flex flex-col gap-1 mt-1">
               {previousDuePaidPaisa > 0 && (
-                <div className="flex items-center bg-amber-50 text-amber-900 px-3.5 py-1.5 rounded-xl border border-amber-200">
-                  <span className="text-ui-xs text-amber-700 font-sans font-medium">Prev. Due Added</span>
-                  <span className="ml-auto text-sm font-semibold font-mono tracking-tight leading-none">
-                    + ৳ {(previousDuePaidPaisa / 100).toFixed(2)}
-                  </span>
+                <div className="bg-amber-50 text-amber-900 px-3.5 py-2 rounded-xl border border-amber-200 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-ui-xs text-amber-700 font-sans font-medium">Prev. Due Added</span>
+                    <span className="text-sm font-semibold font-mono tracking-tight leading-none">
+                      + ৳ {(previousDuePaidPaisa / 100).toFixed(2)}
+                    </span>
+                  </div>
+                  {selectedCustomer && (
+                    <div className="flex items-center justify-between pt-1 border-t border-amber-200/70 text-[11px] font-mono">
+                      <span className="text-amber-800 font-sans">Remaining Due After This</span>
+                      <span className="font-bold text-amber-900">
+                        ৳ {((Math.max(0, (selectedCustomer.due_paisa || 0) - previousDuePaidPaisa)) / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
               <div className="flex items-center bg-white text-jungle-teal-900 px-3.5 py-2 rounded-xl border border-jungle-teal-200/50">
@@ -1979,20 +2024,31 @@ export const PosView: React.FC<PosViewProps> = ({
               </div>
             )}
 
-            {totalPaidPaisa > 0 && (
+            {(totalPaidPaisa > 0 || isFullDue) && (
               <div className="pt-2.5 border-t border-jungle-teal-100 flex items-center justify-between text-ui-sm font-mono">
                 <div className="text-jungle-teal-600">
-                  Received: <span className="font-semibold text-jungle-teal-900">৳ {(totalPaidPaisa / 100).toFixed(2)}</span>
-                  <span className="ml-1.5 font-sans text-ui-2xs text-jungle-teal-500">{paymentSummaryStr}</span>
+                  {isFullDue ? (
+                    <span className="font-semibold text-amber-900">Due Sale</span>
+                  ) : (
+                    <>
+                      Received: <span className="font-semibold text-jungle-teal-900">৳ {(totalPaidPaisa / 100).toFixed(2)}</span>
+                      <span className="ml-1.5 font-sans text-ui-2xs text-jungle-teal-500">{paymentSummaryStr}</span>
+                    </>
+                  )}
                 </div>
                 {changePaisa > 0 && (
                   <div className="text-muted-teal-800 bg-muted-teal-50 px-2.5 py-0.5 rounded-lg border border-muted-teal-200 font-semibold">
                     Change: ৳ {(changePaisa / 100).toFixed(2)}
                   </div>
                 )}
-                {duePaisa > 0 && (
-                  <div className="text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-lg border border-rose-200 font-semibold">
-                    Due: ৳ {(duePaisa / 100).toFixed(2)}
+                {effectiveDuePaisa > 0 && (
+                  <div className="text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-lg border border-rose-200 font-semibold flex items-center gap-1.5">
+                    <span>Due: ৳ {(effectiveDuePaisa / 100).toFixed(2)}</span>
+                    {selectedCustomer && remainingPrevDuePaisa > 0 && (
+                      <span className="text-rose-900 font-bold border-l border-rose-300 pl-1.5">
+                        Total Due: ৳ {(projectedCustomerDuePaisa / 100).toFixed(2)}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

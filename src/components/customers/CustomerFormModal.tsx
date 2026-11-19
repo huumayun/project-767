@@ -176,7 +176,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
           {customer && (
             <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-amber-900">Current Due (বর্তমান বাকি):</span>
+                <span className="font-semibold text-amber-900">Current Outstanding Due:</span>
                 <span className="font-mono text-sm font-bold text-amber-900">
                   ৳ {((customer.due_paisa || 0) / 100).toFixed(2)}
                 </span>
@@ -184,7 +184,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
               {onOpenAdjustModal && (
                 <div className="flex items-center justify-between pt-1.5 border-t border-amber-200/70">
                   <span className="text-[11px] text-amber-800">
-                    পুরোনো খাতার বকেয়া যোগ বা সমন্বয় করতে চান?
+                    Need to add or adjust previous balance?
                   </span>
                   <button
                     type="button"
@@ -192,7 +192,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
                     className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                   >
                     <SlidersHorizontal className="w-3 h-3" />
-                    <span>Adjust Due / সমন্বয়</span>
+                    <span>Adjust Due</span>
                   </button>
                 </div>
               )}

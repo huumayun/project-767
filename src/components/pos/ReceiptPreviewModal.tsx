@@ -242,9 +242,23 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
               </div>
             )}
             {duePaisa > 0 && (
-              <div className="flex justify-between text-amber-700 font-bold">
-                <span>Remaining Due:</span>
-                <span>৳ {(duePaisa / 100).toFixed(2)}</span>
+              <div className="space-y-1 pt-1.5 border-t border-dashed border-amber-300">
+                <div className="flex justify-between text-amber-800 font-bold">
+                  <span>Bill Due:</span>
+                  <span>৳ {(duePaisa / 100).toFixed(2)}</span>
+                </div>
+                {customer && (
+                  <>
+                    <div className="flex justify-between text-jungle-teal-700 text-xs font-medium">
+                      <span>Previous Due:</span>
+                      <span>৳ {((Math.max(0, (customer.due_paisa || 0) - (previousDuePaidPaisa || 0))) / 100).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-rose-800 font-extrabold text-sm pt-1 border-t border-amber-300">
+                      <span>Total Customer Due:</span>
+                      <span>৳ {(((Math.max(0, (customer.due_paisa || 0) - (previousDuePaidPaisa || 0))) + duePaisa) / 100).toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

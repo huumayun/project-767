@@ -32,7 +32,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
   const [type, setType] = useState<'add' | 'deduct'>('add');
   const [amountTaka, setAmountTaka] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [note, setNote] = useState('পুরোনো খাতার বকেয়া যোগ');
+  const [note, setNote] = useState('Previous khata balance');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoPrint, setAutoPrint] = useState(false);
@@ -50,10 +50,10 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
       : Math.max(0, currentDuePaisa - amountPaisa);
 
   const quickNotes = [
-    'পুরোনো খাতার বকেয়া যোগ',
-    'পূর্বের হিসাব সমন্বয়',
-    'হিসাবের ভুল সংশোধন',
-    'বিশেষ ছাড় / বাকি মওকুফ',
+    'Previous khata balance',
+    'Manual ledger adjustment',
+    'Correction of accounting error',
+    'Special discount / due waiver',
   ];
 
   const handlePrintSlip = async (result: CustomerDueAdjustmentResult) => {
@@ -70,28 +70,28 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
       });
     } catch (err: any) {
       console.error('Failed to print receipt:', err);
-      toast.error('রশিদ প্রিন্ট করতে সমস্যা হয়েছে।');
+      toast.error('Failed to print receipt.');
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (amountPaisa <= 0) {
-      setError('দয়া করে টাকার পরিমাণ ০ এর বেশি দিন (Please enter an amount greater than 0).');
+      setError('Please enter an amount greater than 0.');
       return;
     }
 
     if (type === 'deduct' && amountPaisa > currentDuePaisa) {
       setError(
-        `কমানোর পরিমাণ বর্তমান বাকির চেয়ে বেশি হতে পারে না (বর্তমান বাকি: ৳ ${(
+        `Deduction amount cannot exceed current due (Current Due: ৳ ${(
           currentDuePaisa / 100
-        ).toFixed(2)})।`
+        ).toFixed(2)}).`
       );
       return;
     }
 
     if (!note.trim()) {
-      setError('বাকি সমন্বয়ের কারণ / নোট দেওয়া আবশ্যক (Note / Reason is required).');
+      setError('Reason / Note is required.');
       return;
     }
 
@@ -111,8 +111,8 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
       if (res.success) {
         toast.success(
           type === 'add'
-            ? `৳ ${(amountPaisa / 100).toFixed(2)} বাকি সফলভাবে যোগ করা হয়েছে।`
-            : `৳ ${(amountPaisa / 100).toFixed(2)} বাকি সফলভাবে কমানো হয়েছে।`
+            ? `৳ ${(amountPaisa / 100).toFixed(2)} due added successfully.`
+            : `৳ ${(amountPaisa / 100).toFixed(2)} due deducted successfully.`
         );
         setReceiptData(res);
 
@@ -121,7 +121,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
         }
       }
     } catch (err: any) {
-      setError(err.message || 'বাকি সমন্বয় ব্যর্থ হয়েছে (Adjustment failed).');
+      setError(err.message || 'Due adjustment failed.');
     } finally {
       setLoading(false);
     }
@@ -171,7 +171,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
           <form onSubmit={handleSubmit} className="space-y-4 text-xs">
             {/* Current Due Banner */}
             <div className="bg-jungle-teal-100/60 border border-jungle-teal-200 rounded-xl p-3 flex items-center justify-between">
-              <span className="font-semibold text-jungle-teal-800">Current Outstanding Due (বর্তমান বাকি):</span>
+              <span className="font-semibold text-jungle-teal-800">Current Outstanding Due:</span>
               <span className="font-mono text-sm font-bold text-amber-800">
                 ৳ {(currentDuePaisa / 100).toFixed(2)}
               </span>
@@ -179,14 +179,14 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
 
             {/* Adjustment Type Switcher */}
             <div>
-              <label className="block text-jungle-teal-800 font-semibold mb-1.5">Adjustment Type (সমন্বয়ের ধরন):</label>
+              <label className="block text-jungle-teal-800 font-semibold mb-1.5">Adjustment Type:</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setType('add');
-                    if (note.includes('মওকুফ') || note.includes('কমানো') || note.includes('সংশোধন')) {
-                      setNote('পুরোনো খাতার বকেয়া যোগ');
+                    if (note.includes('waiver') || note.includes('Error') || note.includes('Deduct')) {
+                      setNote('Previous khata balance');
                     }
                   }}
                   className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 font-bold transition-all ${
@@ -196,15 +196,15 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                   }`}
                 >
                   <PlusCircle className="w-4 h-4" />
-                  <span>Add Due (+ বাকি যোগ)</span>
+                  <span>Add Due (+)</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     setType('deduct');
-                    if (note.includes('যোগ')) {
-                      setNote('হিসাবের ভুল সংশোধন');
+                    if (note.includes('balance') || note.includes('Add')) {
+                      setNote('Correction of error');
                     }
                   }}
                   className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 font-bold transition-all ${
@@ -214,7 +214,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                   }`}
                 >
                   <MinusCircle className="w-4 h-4" />
-                  <span>Deduct (- বাকি কমানো)</span>
+                  <span>Deduct Due (-)</span>
                 </button>
               </div>
             </div>
@@ -222,7 +222,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
             {/* Amount Input */}
             <div>
               <label className="block text-jungle-teal-800 font-semibold mb-1">
-                Adjustment Amount (সমন্বয় পরিমাণ ৳) *
+                Adjustment Amount (৳) *
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-jungle-teal-500">৳</span>
@@ -244,17 +244,17 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
             <div className="bg-azure-mist-50/70 border border-azure-mist-200 rounded-xl p-3.5 space-y-2">
               <div className="text-[11px] font-semibold text-azure-mist-800 flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-azure-mist-700" />
-                <span>Calculation Preview (হিসাব পূর্বরূপ):</span>
+                <span>Calculation Preview:</span>
               </div>
 
               <div className="flex items-center justify-between text-xs font-mono text-jungle-teal-800 border-b border-azure-mist-200/60 pb-1.5">
-                <span>Previous Due (পূর্বের বাকি):</span>
+                <span>Previous Due:</span>
                 <span className="font-bold">৳ {(currentDuePaisa / 100).toFixed(2)}</span>
               </div>
 
               <div className="flex items-center justify-between text-xs font-mono border-b border-azure-mist-200/60 pb-1.5">
                 <span className={type === 'add' ? 'text-amber-800 font-semibold' : 'text-muted-teal-800 font-semibold'}>
-                  {type === 'add' ? '(+) Added Amount (নতুন যোগ):' : '(-) Deducted Amount (কমানো):'}
+                  {type === 'add' ? '(+) Added Amount:' : '(-) Deducted Amount:'}
                 </span>
                 <span className={`font-bold ${type === 'add' ? 'text-amber-800' : 'text-muted-teal-800'}`}>
                   {type === 'add' ? '+' : '-'} ৳ {(amountPaisa / 100).toFixed(2)}
@@ -262,7 +262,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
               </div>
 
               <div className="flex items-center justify-between text-sm font-mono pt-1">
-                <span className="font-bold text-jungle-teal-900">New Total Due (নতুন মোট বাকি):</span>
+                <span className="font-bold text-jungle-teal-900">New Total Due:</span>
                 <span className="font-extrabold text-base text-amber-800">
                   ৳ {(newDuePaisa / 100).toFixed(2)}
                 </span>
@@ -273,7 +273,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
             <div>
               <label className="block text-jungle-teal-800 font-semibold mb-1 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-jungle-teal-600" />
-                <span>Effective Date (তারিখ):</span>
+                <span>Effective Date:</span>
               </label>
               <input
                 type="date"
@@ -288,14 +288,14 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
             <div>
               <label className="block text-jungle-teal-800 font-semibold mb-1 flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-jungle-teal-600" />
-                <span>Reason / Note (বাকি সমন্বয় কারণ বা নোট) *</span>
+                <span>Reason / Note *</span>
               </label>
               <input
                 type="text"
                 required
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. পুরোনো খাতার বকেয়া হিসাব যোগ করা হলো"
+                placeholder="e.g. Previous khata balance added"
                 className="w-full bg-white border border-jungle-teal-300 rounded-xl px-3 py-2 text-jungle-teal-900 text-xs focus:outline-hidden focus:border-azure-mist-600"
               />
               {/* Quick chips */}
@@ -327,7 +327,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                 className="rounded border-jungle-teal-300 text-azure-mist-700 focus:ring-azure-mist-500 w-4 h-4 cursor-pointer"
               />
               <label htmlFor="autoPrintCheckbox" className="text-xs text-jungle-teal-700 font-medium cursor-pointer">
-                সমন্বয় সম্পন্ন হওয়ার সাথে সাথে রসিদ প্রিন্ট প্রিভিউ ওপেন করুন
+                Automatically open print preview after saving
               </label>
             </div>
 
@@ -338,7 +338,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                 onClick={onClose}
                 className="px-4 py-2 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-xl font-semibold transition-colors"
               >
-                Cancel (বাতিল)
+                Cancel
               </button>
               <button
                 type="submit"
@@ -346,7 +346,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                 className="px-5 py-2 bg-azure-mist-700 hover:bg-azure-mist-600 disabled:opacity-50 text-white font-bold rounded-xl shadow-md transition-colors cursor-pointer flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                <span>{loading ? 'Saving...' : 'Confirm Adjustment (সমন্বয় সম্পন্ন করুন)'}</span>
+                <span>{loading ? 'Saving...' : 'Confirm Adjustment'}</span>
               </button>
             </div>
           </form>
@@ -359,9 +359,6 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                 <h4 className="font-extrabold text-sm text-jungle-teal-950">
                   {type === 'add' ? 'Due Addition Receipt' : 'Due Deduction Receipt'}
                 </h4>
-                <p className="text-[11px] text-jungle-teal-600 font-medium">
-                  {type === 'add' ? 'বাকি বৃদ্ধি রশিদ' : 'বাকি হ্রাস / সমন্বয় রশিদ'}
-                </p>
                 <p className="text-[10px] text-jungle-teal-500 font-mono mt-0.5">
                   Ref: ADJ-{receiptData.id.slice(0, 8).toUpperCase()}
                 </p>
@@ -369,36 +366,36 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
 
               <div className="space-y-1.5 text-xs font-mono pt-1">
                 <div className="flex justify-between font-sans">
-                  <span className="text-jungle-teal-600">Customer (গ্রাহক):</span>
+                  <span className="text-jungle-teal-600">Customer:</span>
                   <span className="font-bold text-jungle-teal-950">{customer.name}</span>
                 </div>
                 {customer.phone && (
                   <div className="flex justify-between font-sans">
-                    <span className="text-jungle-teal-600">Phone (ফোন):</span>
+                    <span className="text-jungle-teal-600">Phone:</span>
                     <span className="font-mono">{customer.phone}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-sans">
-                  <span className="text-jungle-teal-600">Date (তারিখ):</span>
+                  <span className="text-jungle-teal-600">Date:</span>
                   <span>{date || new Date().toISOString().split('T')[0]}</span>
                 </div>
                 <div className="flex justify-between font-sans">
-                  <span className="text-jungle-teal-600">Type (ধরন):</span>
+                  <span className="text-jungle-teal-600">Type:</span>
                   <span className={`font-bold ${type === 'add' ? 'text-amber-800' : 'text-emerald-700'}`}>
-                    {type === 'add' ? '(+) Added Due / বাকি বৃদ্ধি' : '(-) Deducted Due / বাকি হ্রাস'}
+                    {type === 'add' ? '(+) Added Due' : '(-) Deducted Due'}
                   </span>
                 </div>
 
                 <div className="divider border-t border-jungle-teal-100 my-1.5"></div>
 
                 <div className="flex justify-between font-sans">
-                  <span className="text-jungle-teal-600">Previous Due (পূর্বের বাকি):</span>
+                  <span className="text-jungle-teal-600">Previous Due:</span>
                   <span className="font-mono">৳ {(receiptData.previous_due_paisa / 100).toFixed(2)}</span>
                 </div>
 
                 <div className="flex justify-between font-sans text-sm font-bold">
                   <span className={type === 'add' ? 'text-amber-800' : 'text-emerald-700'}>
-                    {type === 'add' ? '(+) Added Amount (যোগকৃত):' : '(-) Deducted Amount (কমানো):'}
+                    {type === 'add' ? '(+) Added Amount:' : '(-) Deducted Amount:'}
                   </span>
                   <span className={`font-mono ${type === 'add' ? 'text-amber-800' : 'text-emerald-700'}`}>
                     {type === 'add' ? '+' : '-'} ৳ {(Math.abs(receiptData.adjustment_paisa) / 100).toFixed(2)}
@@ -406,7 +403,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                 </div>
 
                 <div className="flex justify-between font-sans p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl mt-1.5">
-                  <span className="font-bold text-jungle-teal-950">New Total Due (বর্তমান মোট বাকি):</span>
+                  <span className="font-bold text-jungle-teal-950">New Total Due:</span>
                   <span className="font-mono font-extrabold text-base text-amber-900">
                     ৳ {(receiptData.new_due_paisa / 100).toFixed(2)}
                   </span>
@@ -430,7 +427,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                 }}
                 className="px-4 py-2 bg-jungle-teal-100 hover:bg-jungle-teal-200 text-jungle-teal-700 rounded-xl font-semibold text-xs transition-colors"
               >
-                Close (সম্পন্ন)
+                Close
               </button>
 
               <button
@@ -439,7 +436,7 @@ export const CustomerDueAdjustmentModal: React.FC<CustomerDueAdjustmentModalProp
                 className="px-5 py-2.5 bg-azure-mist-700 hover:bg-azure-mist-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                <span>Print Receipt (রশিদ প্রিন্ট)</span>
+                <span>Print Receipt</span>
               </button>
             </div>
           </div>

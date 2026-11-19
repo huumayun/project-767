@@ -275,7 +275,7 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
             <button
               onClick={() => setShowAdjustModal(true)}
               className="px-3.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-amber-300 transition-colors"
-              title="Adjust Due / বাকি সমন্বয় (পুরোনো খাতার বকেয়া যোগ বা সংশোধন)"
+              title="Adjust Due"
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-amber-700" />
               <span>Adjust Due</span>
@@ -371,7 +371,7 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
                             });
                           }}
                           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 transition-colors cursor-pointer"
-                          title="Click to print adjustment slip / রশিদ প্রিন্ট"
+                          title="Click to print adjustment slip"
                         >
                           <Printer className="w-2.5 h-2.5" />
                           <span>Adjustment</span>
@@ -392,7 +392,7 @@ export const CustomerLedgerModal: React.FC<CustomerLedgerModalProps> = ({
                             });
                           }}
                           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 transition-colors cursor-pointer font-mono"
-                          title="Click to print money receipt / মানি রশিদ প্রিন্ট"
+                          title="Click to print receipt"
                         >
                           <Printer className="w-2.5 h-2.5" />
                           <span>{tx.ref_no}</span>
